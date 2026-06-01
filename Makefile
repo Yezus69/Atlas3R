@@ -13,7 +13,7 @@ typecheck:
 	$(PYTHON) -m mypy src
 
 test:
-	$(PYTHON) -m unittest discover -s tests/unit -p "test_*.py"
+	$(PYTHON) -m unittest discover -s tests -p "test_*.py"
 
 smoke:
 	$(PYTHON) -m atlas3r smoke --help

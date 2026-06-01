@@ -9,7 +9,9 @@ description = "Real-time RGB neural metric mapping toolkit."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Atlas3R contributors" }]
-dependencies = []
+dependencies = [
+  "numpy>=1.26",
+]
 
 [project.optional-dependencies]
 dev = [

@@ -66,6 +66,21 @@ class PoseEstimate:
     diagnostics: dict[str, Any]
 ```
 
+## DenseMatchSet
+
+Minimal Phase 0A placeholder used by `FramePrediction`. Later teacher/student model
+work may extend this schema, but the core frame-to-frame correspondence contract is:
+
+```python
+@dataclass(frozen=True)
+class DenseMatchSet:
+    source_frame_id: int
+    target_frame_id: int
+    source_pixels_uv: NDArray[np.float32] # N,2
+    target_pixels_uv: NDArray[np.float32] # N,2
+    confidence: NDArray[np.float32]       # N values in [0,1]
+```
+
 ## FramePrediction
 
 ```python
@@ -199,4 +214,3 @@ Every export must include:
 - voxel size;
 - accuracy report path or `null`;
 - warnings if RGB-only best effort.
-
