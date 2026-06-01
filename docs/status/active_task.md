@@ -3,38 +3,40 @@
 Codex should keep the current task checklist here so context compaction does not lose state.
 
 ```text
-Goal: Phase 2A - add a dependency-free WorldMap sidecar path for CPU TSDF
-MeshChunk sidecars, preserving observed-only truth boundaries and
-confidence/uncertainty metadata.
+Goal: Phase 2B - add a dependency-free CPU TSDF output folder inspector that
+validates Phase 0D/1D surface artifacts, Phase 1E MeshChunk sidecars, and Phase
+2A WorldMap sidecars together, then emits deterministic JSON for early mapper
+pipeline checks.
 Relevant docs read: AGENTS.md, README.md, PLANS.md, docs/08_API_CONTRACTS.md,
 docs/status/active_task.md, docs/status/progress.md,
 docs/status/decisions.md, docs/status/next_task.md.
 Plan:
-1. Inspect only the WorldMap/MeshChunk contracts, Phase 1E MeshChunk sidecar
-   helper, CPU TSDF smoke/replay writers, CLI smoke/inspect wiring, and focused
+1. Inspect only the CPU TSDF surface artifact loaders, MeshChunk sidecar helper,
+   WorldMap sidecar helper, CLI inspect wiring, Makefile targets, and focused
    synthetic tests.
-2. Add a deterministic WorldMap sidecar helper that consumes
-   mesh_chunk_sidecar.json, validates the MeshChunk contract, wraps it in a
-   contract-valid WorldMap with no object meshes, and preserves coordinate
-   frame, source frames, voxel size, scale source, coverage, confidence, and
-   mean/p95 uncertainty metadata.
-3. Wire optional CPU TSDF smoke/replay output and a validation-oriented inspect
-   command without removing or renaming existing Phase 0D/1D/1E artifacts.
-4. Add focused tests for contract validation, deterministic fixture replay map
-   sidecars, metadata preservation, and path-named missing/malformed MeshChunk
-   sidecar errors.
-5. Update docs/08_API_CONTRACTS.md and status logs, append a decision for the
-   public sidecar format, replace next_task.md with the Phase 2B prompt, and
+2. Add a narrow output-folder inspector that validates metadata.json,
+   surface_points.npz, optional metrics.json, mesh_chunk_sidecar.json, and
+   world_map_sidecar.json, with explicit required-sidecar modes and
+   path-named mismatch errors.
+3. Cross-check coordinate frame, source frame IDs, voxel size, metric scale
+   source, observed coverage, confidence summary, and mean/p95 uncertainty
+   across the surface, MeshChunk, and WorldMap records.
+4. Wire `atlas3r inspect tsdf-output --input <folder>` as deterministic JSON
+   without adding dependencies or changing existing smoke artifact names.
+5. Add focused synthetic tests for TSDF smoke and teacher-cache replay
+   inspection determinism, metadata mismatch rejection, required sidecar
+   errors, and CLI behavior.
+6. Update docs/08_API_CONTRACTS.md, status logs, next_task.md for Phase 2C, and
    run the requested verification commands.
 Checklist:
 - [x] Read required docs and status files.
 - [x] Inspect focused source/tests.
-- [x] Add TSDF MeshChunk WorldMap sidecar helper.
-- [x] Wire optional CLI smoke/inspect output.
+- [x] Add TSDF output folder inspector.
+- [x] Wire CLI inspect output.
 - [x] Add/update focused tests.
-- [x] Update API/status docs and Phase 2B handoff.
+- [x] Update API/status docs and Phase 2C handoff.
 - [x] Run verification commands and record results.
 Known exclusions: No GLB/PLY/trimesh/marching-cubes dependencies, model
 downloads, vendored third-party code, cloud APIs, neural inference, CUDA, or
-real-world accuracy claims in Phase 2A.
+real-world accuracy claims in Phase 2B.
 ```

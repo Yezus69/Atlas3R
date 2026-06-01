@@ -561,3 +561,53 @@ Known gaps:
   testing only; it is not an accuracy report and does not claim hidden or
   completed geometry as measured.
 ```
+
+```text
+2026-06-01 13:13 local
+Task: Phase 2B - dependency-free CPU TSDF output folder inspection.
+Changed files:
+- Added src/atlas3r/mapping/tsdf_output_inspection.py and
+  src/atlas3r/mapping/_tsdf_output_inspection_helpers.py with deterministic
+  folder inspection for Phase 0D/1D surface artifacts, Phase 1E MeshChunk
+  sidecars, and Phase 2A WorldMap sidecars.
+- Exported the inspector through src/atlas3r/mapping/__init__.py.
+- Added `atlas3r inspect tsdf-output --input <folder> [--mode ...]` and wired
+  the Makefile inspect target to exercise the complete folder path.
+- Added tests/synthetic/test_tsdf_output_inspection.py for deterministic TSDF
+  smoke and teacher-cache replay inspection, metadata mismatch rejection,
+  required-sidecar modes, and CLI behavior.
+- Updated docs/08_API_CONTRACTS.md, docs/status/active_task.md,
+  docs/status/decisions.md, docs/status/next_task.md, and the status handoff
+  test for the Phase 2C prompt.
+Commands run:
+- python -m unittest tests.synthetic.test_tsdf_output_inspection
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused TSDF output inspection unittest ran 5 tests and passed.
+- Ruff format left 57 files unchanged on the final run.
+- Ruff format check passed with 57 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 41 source files after fixing one nullable
+  cross-check value.
+- Full unittest discovery ran 77 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2B intentionally does not implement GLB/PLY export, trimesh,
+  marching-cubes extraction, object-aware meshing, neural inference, external
+  model execution, cloud APIs, CUDA, model downloads, or vendored third-party
+  code/weights.
+- The folder inspection JSON is a deterministic mapper pipeline diagnostic; it
+  is not an accuracy report and does not claim hidden or completed geometry as
+  measured.
+```

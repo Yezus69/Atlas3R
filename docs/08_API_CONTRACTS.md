@@ -407,6 +407,47 @@ summarizing the map ID, frame name, mesh chunk IDs, source frame IDs, coordinate
 frame, scale source, confidence, uncertainty, truth-boundary flags, and the fact
 that the sidecar is not an accuracy report.
 
+### Phase 2B CPU TSDF output folder inspection
+
+Complete CPU TSDF smoke output folders can be inspected without GLB/PLY/trimesh,
+marching-cubes, model, or cloud dependencies:
+
+```bash
+atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]
+```
+
+The command validates `metadata.json` and `surface_points.npz` in every mode,
+validates `metrics.json` when present, validates `mesh_chunk_sidecar.json` when
+present or required, and validates `world_map_sidecar.json` when present or
+required. The default `complete` mode requires both sidecars. `surface` permits
+surface-only Phase 0D/1D outputs, `mesh` requires the Phase 1E MeshChunk
+sidecar, and `world-map`/`complete` require both the MeshChunk and WorldMap
+sidecars so the folder can be checked as one mapper pipeline output.
+
+Inspection prints deterministic JSON:
+
+```text
+{
+  "format_name": "atlas3r_cpu_tsdf_output_folder_inspection",
+  "format_version": 1,
+  "inspect_mode": "complete",
+  "artifacts": { ... required and optional artifact presence ... },
+  "surface": { ... surface artifact summary ... },
+  "mesh_chunk": { ... MeshChunk sidecar summary or null ... },
+  "world_map": { ... WorldMap sidecar summary or null ... },
+  "cross_checks": { ... shared metadata checks, "passed": true ... },
+  "truth_boundary": { ... explicit not-accuracy-report flags ... }
+}
+```
+
+The inspector cross-checks coordinate frame, source frame IDs, voxel size,
+metric scale source, observed coverage estimate, confidence summary, and
+mean/p95 uncertainty across the surface arrays/metadata, MeshChunk sidecar, and
+WorldMap sidecar. Missing required artifacts and metadata mismatches must raise
+path-named errors. The inspection JSON is a mapper pipeline diagnostic only; it
+is low-fidelity/reference-only, observed-only, not completed geometry, and not
+an accuracy report.
+
 ## ObjectInstance
 
 ```python

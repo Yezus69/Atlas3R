@@ -14,6 +14,10 @@ from atlas3r.io.session import validate_session
 from atlas3r.io.teacher_cache_inspection import format_teacher_cache_inspection
 from atlas3r.mapping.cpu_tsdf import write_tsdf_cube_room_smoke
 from atlas3r.mapping.teacher_cache_replay import write_teacher_cache_tsdf_replay
+from atlas3r.mapping.tsdf_output_inspection import (
+    TSDF_OUTPUT_INSPECTION_MODES,
+    format_tsdf_output_folder_inspection,
+)
 from atlas3r.mapping.world_map_sidecar import format_world_map_sidecar_inspection
 from atlas3r.models.adapters import list_adapters
 from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
@@ -67,6 +71,15 @@ def _run_inspect_session(args: argparse.Namespace) -> int:
 def _run_inspect_teacher_cache(args: argparse.Namespace) -> int:
     try:
         print(format_teacher_cache_inspection(args.input), end="")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+def _run_inspect_tsdf_output(args: argparse.Namespace) -> int:
+    try:
+        print(format_tsdf_output_folder_inspection(args.input, mode=args.mode), end="")
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -215,6 +228,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Input teacher prediction cache folder.",
     )
     inspect_teacher_cache_parser.set_defaults(handler=_run_inspect_teacher_cache)
+    inspect_tsdf_output_parser = inspect_subparsers.add_parser(
+        "tsdf-output",
+        help="Validate a CPU TSDF output folder and print deterministic metadata.",
+    )
+    inspect_tsdf_output_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input CPU TSDF output folder.",
+    )
+    inspect_tsdf_output_parser.add_argument(
+        "--mode",
+        choices=TSDF_OUTPUT_INSPECTION_MODES,
+        default="complete",
+        help=(
+            "Inspection strictness: surface allows missing sidecars, mesh requires "
+            "mesh_chunk_sidecar.json, and world-map/complete require both sidecars."
+        ),
+    )
+    inspect_tsdf_output_parser.set_defaults(handler=_run_inspect_tsdf_output)
     inspect_world_map_parser = inspect_subparsers.add_parser(
         "world-map",
         help="Validate a WorldMap sidecar and print deterministic metadata.",

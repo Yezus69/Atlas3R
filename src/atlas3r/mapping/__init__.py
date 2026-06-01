@@ -29,6 +29,13 @@ from atlas3r.mapping.teacher_cache_replay import (
     run_teacher_cache_tsdf_replay,
     write_teacher_cache_tsdf_replay,
 )
+from atlas3r.mapping.tsdf_output_inspection import (
+    TSDF_OUTPUT_INSPECTION_FORMAT_NAME,
+    TSDF_OUTPUT_INSPECTION_FORMAT_VERSION,
+    TSDF_OUTPUT_INSPECTION_MODES,
+    format_tsdf_output_folder_inspection,
+    tsdf_output_folder_inspection_record,
+)
 from atlas3r.mapping.world_map_sidecar import (
     DEFAULT_WORLD_MAP_ID,
     DETERMINISTIC_CREATED_AT_NS,
@@ -51,6 +58,9 @@ __all__ = [
     "TeacherCacheTSDFReplayFrame",
     "TeacherCacheTSDFReplayResult",
     "DEFAULT_MAX_SURFACE_SAMPLES",
+    "TSDF_OUTPUT_INSPECTION_FORMAT_NAME",
+    "TSDF_OUTPUT_INSPECTION_FORMAT_VERSION",
+    "TSDF_OUTPUT_INSPECTION_MODES",
     "DEFAULT_WORLD_MAP_ID",
     "DETERMINISTIC_CREATED_AT_NS",
     "MESH_SIDECAR_FILENAME",
@@ -62,6 +72,7 @@ __all__ = [
     "WORLD_MAP_SIDECAR_FORMAT_VERSION",
     "evaluate_surface_against_synthetic_cube_room",
     "extract_tsdf_surface",
+    "format_tsdf_output_folder_inspection",
     "format_world_map_sidecar_inspection",
     "integrate_synthetic_cube_room_scene",
     "load_teacher_cache_tsdf_replay_frames",
@@ -72,6 +83,7 @@ __all__ = [
     "run_teacher_cache_tsdf_replay",
     "run_tsdf_cube_room_smoke",
     "tsdf_surface_mesh_sidecar_record",
+    "tsdf_output_folder_inspection_record",
     "tsdf_world_map_sidecar_record",
     "world_map_from_mesh_sidecar",
     "write_teacher_cache_tsdf_replay",

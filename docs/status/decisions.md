@@ -212,3 +212,23 @@ reference-only, observed-only, not completed, and not an accuracy report.
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/synthetic/test_world_map_sidecar.py.
 ```
+
+```text
+Decision ID: D-0012
+Date: 2026-06-01
+Context: Phase 2B needs one dependency-free inspection path for complete CPU
+TSDF output folders instead of inspecting surface artifacts, MeshChunk sidecars,
+and WorldMap sidecars separately.
+Decision: Add `atlas3r inspect tsdf-output --input <folder>` with deterministic
+JSON output and explicit `surface`, `mesh`, `world-map`, and `complete` modes.
+The default `complete` mode requires both sidecars and cross-checks shared
+coordinate frame, source frame IDs, voxel size, scale source, observed coverage,
+confidence, and uncertainty metadata across the folder artifacts.
+Alternatives considered: Only extend `inspect world-map`; always require all
+sidecars with no partial mode; add a generated manifest file to every smoke run.
+Consequences: Early mapper pipeline checks can validate a complete output folder
+without changing Phase 0D/1D/1E/2A artifacts or adding export dependencies.
+Partial surface-only outputs remain inspectable when explicitly requested.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/synthetic/test_tsdf_output_inspection.py.
+```
