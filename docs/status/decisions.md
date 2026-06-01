@@ -37,3 +37,19 @@ contract-validatable ground-truth mesh payload. Later exporter work can add GLB
 without breaking the JSON sidecar.
 Docs/tests updated: docs/08_API_CONTRACTS.md and tests/synthetic/test_synthetic_cube_room.py.
 ```
+
+```text
+Decision ID: D-0003
+Date: 2026-06-01
+Context: Phase 0C needs humans and Codex to inspect synthetic geometry before
+neural models, TSDF fusion, GLB export, or visualization dependencies exist.
+Decision: Add a narrow Phase 0B `.atlas3r` sidecar reader and deterministic
+HTML/SVG preview output under `atlas3r inspect session`, using only stdlib and
+NumPy and leaving generated previews outside version control.
+Alternatives considered: Add matplotlib/Pillow/trimesh; emit PNG or GLB
+previews; generalize the session format now.
+Consequences: Early geometry can be inspected in any browser while runtime
+dependencies stay unchanged. Future export/viewer work can add richer formats
+without changing the Phase 0B reader contract.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/synthetic/test_session_inspect.py.
+```

@@ -1,49 +1,89 @@
-# Next task
+# Codex Prompt - Atlas3R Phase 0D: CPU TSDF Reference Integrator on Synthetic Cube-Room
 
-```text
-# Codex Prompt - Atlas3R Phase 0B: Deterministic Synthetic Cube-Room Generator
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0C.
+Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
+the current `docs/status/*` files before coding. Then read only the source and
+tests needed for the TSDF smoke path.
 
-You are working in the existing Atlas3R repo after Phase 0A. Reload `README.md`,
-`PLANS.md`, `docs/08_API_CONTRACTS.md`, and `docs/status/*` before coding.
-Read any additional docs only if they are directly relevant.
+## Task goal
 
-Task goal:
-Implement Phase 0B: a deterministic synthetic cube-room generator and
-`atlas3r smoke synthetic-cube-room`. Do not implement neural models, teacher
-adapters, TSDF fusion, learned mesh extraction, or runtime video capture yet.
+Implement a tiny deterministic CPU TSDF reference integrator for the Phase 0B
+synthetic cube-room session. This is a correctness reference only, not the
+real-time mapper.
 
-Required implementation:
-- Create a synthetic cube-room scene with known camera intrinsics, camera poses,
-  analytic depth maps, object masks, and a ground-truth triangle mesh.
-- Use the Phase 0A coordinate convention: meters; camera frame x right, y down,
-  z forward; `T_A_B` maps homogeneous points from frame B into frame A.
-- Use the Phase 0A contracts and validation helpers for cameras, poses,
-  mesh chunks, and world/session metadata.
-- Add projection/unprojection integration tests using
-  `atlas3r.camera.pinhole` and `atlas3r.pose.transforms`.
-- Add a smoke command:
-  `atlas3r smoke synthetic-cube-room --output <folder>`
-  which writes a tiny `.atlas3r` session folder containing metadata, poses,
-  cameras, optional depth `.npz` files, object records, and mesh chunk metadata.
-- Keep outputs deterministic with fixed scene parameters and no global random
-  state. If randomness is useful, require an explicit seed.
+Do **not** implement CUDA, neural models, teacher adapters, nvblox integration,
+OpenGL, web servers, notebooks, trimesh, or GLB export in this task.
 
-Required tests:
-- Synthetic intrinsics and poses validate with Phase 0A contracts.
-- Analytic depth agrees with projection/unprojection for selected pixels.
-- Object masks align with the generated object geometry.
-- Ground-truth mesh validates as `MeshChunk`/`WorldMap` data.
-- Smoke command creates the expected session folder files.
+## Required implementation
 
-Verification commands:
-- `python -m ruff format --check src tests`
-- `python -m ruff check src tests`
-- `python -m mypy src`
-- `python -m unittest discover -s tests -p test_*.py`
-- If available: `make test`, `make lint`, `make typecheck`, and `make smoke`.
+1. Add a small CPU TSDF module under `src/atlas3r/mapping/`.
+   - Integrate the Phase 0B analytic depth arrays and Phase 0A/0B
+     `T_world_camera` poses into a voxel grid.
+   - Use meters, the documented camera convention, and explicit
+     `T_world_camera` naming.
+   - Store deterministic per-voxel weight/confidence or uncertainty values.
+   - Keep the implementation intentionally small and pure NumPy.
 
-After coding:
-- Update `docs/status/active_task.md`.
-- Append commands/results/known gaps to `docs/status/progress.md`.
-- Update `docs/status/decisions.md` only for interface or coordinate decisions.
+2. Extract a minimal deterministic surface result sufficient for tests.
+   - A simple occupied-surface point cloud or coarse triangle/face
+     approximation is acceptable for Phase 0D.
+   - Preserve metadata: source frame IDs, voxel size, coordinate frame,
+     metric scale source, observed coverage estimate, and uncertainty summary.
+
+3. Compare the fused result against the synthetic ground-truth mesh with simple
+   deterministic metrics.
+   - Keep metrics conservative and clearly named.
+   - Do not claim millimeter accuracy.
+   - Report known limitations such as voxel resolution and analytic fixture
+     assumptions.
+
+4. Add CLI smoke command:
+
+```bash
+atlas3r smoke tsdf-cube-room --output <folder>
 ```
+
+The command should generate or reuse a synthetic cube-room session, run the CPU
+TSDF reference integration, write the minimal surface/metrics outputs under the
+requested folder, and print concise paths.
+
+5. Add tests.
+   - TSDF integration is deterministic across runs.
+   - The output carries uncertainty/confidence metadata.
+   - The fused surface overlaps the synthetic room/object bounds within a
+     voxel-scale tolerance.
+   - The CLI smoke command succeeds.
+   - Existing Phase 0A-0C tests keep passing.
+
+6. Update docs/status.
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 0D
+     plan and checklist.
+   - Append results to `docs/status/progress.md` after verification.
+   - Append to `docs/status/decisions.md` only if an interface or format
+     decision changed.
+   - Replace this file with the Phase 0E prompt before declaring done.
+
+## Verification commands
+
+Run:
+
+```bash
+python -m ruff format src tests
+python -m ruff format --check src tests
+python -m ruff check src tests
+python -m mypy src
+python -m unittest discover -s tests -p 'test_*.py'
+```
+
+If `make` is available, also run:
+
+```bash
+make test
+make lint
+make typecheck
+make smoke
+make inspect
+```
+
+Record any unavailable command with the exact environment reason in
+`docs/status/progress.md`.

@@ -1,4 +1,4 @@
-.PHONY: format lint typecheck test smoke profile
+.PHONY: format lint typecheck test smoke inspect profile
 
 PYTHON ?= python
 export PYTHONPATH := src
@@ -17,6 +17,10 @@ test:
 
 smoke:
 	$(PYTHON) -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r
+
+inspect:
+	$(PYTHON) -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r
+	$(PYTHON) -m atlas3r inspect session --input build/smoke/synthetic_cube_room.atlas3r --output build/smoke/preview
 
 profile:
 	$(PYTHON) -m atlas3r profile --help

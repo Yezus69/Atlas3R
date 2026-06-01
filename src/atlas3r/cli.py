@@ -9,11 +9,22 @@ from typing import cast
 
 from atlas3r import __version__
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
+from atlas3r.io.session import validate_session
+from atlas3r.visualization.session_preview import write_session_preview
 
 
 def _run_synthetic_cube_room(args: argparse.Namespace) -> int:
     output = write_synthetic_cube_room_session(args.output)
     print(f"Wrote synthetic cube-room session to {output}")
+    return 0
+
+
+def _run_inspect_session(args: argparse.Namespace) -> int:
+    validate_session(args.input)
+    written_paths = write_session_preview(args.input, args.output)
+    print("Wrote session preview:")
+    for path in written_paths:
+        print(f"  {path}")
     return 0
 
 
@@ -43,6 +54,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output session folder to create or update.",
     )
     synthetic_parser.set_defaults(handler=_run_synthetic_cube_room)
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect Atlas3R outputs.")
+    inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", required=True)
+    inspect_session_parser = inspect_subparsers.add_parser(
+        "session",
+        help="Validate a `.atlas3r` session and write dependency-free previews.",
+    )
+    inspect_session_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input `.atlas3r` session folder.",
+    )
+    inspect_session_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output preview folder.",
+    )
+    inspect_session_parser.set_defaults(handler=_run_inspect_session)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser
 

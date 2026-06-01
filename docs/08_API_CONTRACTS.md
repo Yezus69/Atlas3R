@@ -203,6 +203,27 @@ session.atlas3r/
     runtime_profile.json
 ```
 
+Phase 0C supports a minimal reader for this Phase 0B sidecar format. The reader
+reconstructs `PoseEstimate`, `CameraModel`, `ObjectInstance`, and `MeshChunk`
+records from JSON/JSONL sidecars and records sorted `depth/frame_<id>.npz` paths
+without loading every depth array by default.
+
+### Session inspection preview
+
+`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>` writes
+deterministic dependency-free HTML/SVG files:
+
+```text
+preview_dir/
+  index.html
+  top_down.svg
+  depth_frame_000000.svg
+  object_mask_frame_000000.svg
+```
+
+The preview is diagnostic only. It must not be used as an accuracy report, and
+hidden or completed geometry must not be presented as measured geometry.
+
 ### Metadata requirements
 
 Every export must include:

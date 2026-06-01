@@ -103,3 +103,47 @@ Known gaps:
 - The smoke session writes a JSON mesh sidecar for the ground-truth synthetic
   mesh; GLB export remains future mapper/exporter work.
 ```
+
+```text
+2026-05-31 21:17 local
+Task: Phase 0C - session inspector and dependency-free synthetic previews.
+Changed files:
+- Added src/atlas3r/io/session.py and src/atlas3r/io/__init__.py with a
+  Phase 0B `.atlas3r` reader/validator, contract reconstruction, sorted depth
+  file discovery, and one-depth-file load helper.
+- Added src/atlas3r/visualization/session_preview.py and
+  src/atlas3r/visualization/__init__.py with deterministic HTML/SVG previews
+  for top-down scene layout, first depth frame, and first object-id mask.
+- Added `atlas3r inspect session --input <session.atlas3r> --output <preview>`
+  and a Makefile `inspect` target.
+- Added .gitignore coverage for build outputs, `.atlas3r` folders, caches, and
+  egg-info directories.
+- Documented the Phase 0C reader/preview outputs in docs/08_API_CONTRACTS.md
+  and recorded decision D-0003.
+- Replaced docs/status/next_task.md with the Phase 0D CPU TSDF reference
+  integrator prompt and updated docs/status/active_task.md.
+- Added tests/synthetic/test_session_inspect.py for load/validate failures,
+  depth ordering, preview outputs and determinism, CLI inspect, and the Phase
+  0D status handoff.
+Commands run:
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- make --version
+Results:
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 24 source files.
+- unittest discovery ran 33 tests and passed.
+- `make --version` reported: `make` is not recognized as the name of a cmdlet,
+  function, script file, or operable program. Therefore `make test`,
+  `make lint`, `make typecheck`, `make smoke`, and `make inspect` were not run.
+Known gaps:
+- Phase 0C intentionally does not implement neural models, teacher adapters,
+  TSDF fusion, learned mesh extraction, OpenGL, web servers, notebooks,
+  matplotlib, Pillow, trimesh, or GLB export.
+- SVG/HTML previews are diagnostic inspection artifacts only, not accuracy
+  reports.
+```
