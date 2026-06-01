@@ -171,11 +171,11 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_2d(self) -> None:
+    def test_status_handoff_points_to_phase_2e(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Codex Prompt - Atlas3R Phase 2D", next_task)
-        self.assertIn("Deterministic Streaming Runtime Scheduler Skeleton", next_task)
+        self.assertIn("Codex Prompt - Atlas3R Phase 2E", next_task)
+        self.assertIn("Runtime Fixture Output Inspection", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

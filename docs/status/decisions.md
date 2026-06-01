@@ -276,3 +276,28 @@ Docs/tests updated: docs/08_API_CONTRACTS.md,
 tests/unit/test_mapping_observations.py, and
 tests/synthetic/test_teacher_cache_replay.py.
 ```
+
+```text
+Decision ID: D-0015
+Date: 2026-06-01
+Context: Phase 2D needs a deterministic runtime scheduler skeleton that
+exercises the synthetic fixture adapter cache path into TSDF mapping without
+introducing threads, asyncio, GPU work, neural inference, video decoding, or new
+heavy dependencies.
+Decision: Add `atlas3r smoke runtime-fixture --output <folder>` and a public
+runtime fixture event-log format. The smoke output writes relative-path
+`runtime_events.jsonl`, `runtime_summary.json`, a generated synthetic
+cube-room session, a full-array `fixture-cube-room` teacher cache, and the
+existing teacher-cache TSDF artifacts including MeshChunk and WorldMap sidecars.
+Event timestamps and latencies are deterministic placeholders, and bounded
+memory counters describe scheduler-owned frame-array payload state only.
+Alternatives considered: Build a threaded or asyncio scheduler now; reuse
+wall-clock runtime logs; add a separate runtime output manifest without event
+records; skip MeshChunk/WorldMap sidecars in the runtime smoke output.
+Consequences: Runtime plumbing can be tested deterministically and inspected
+through existing cache/TSDF artifact paths while avoiding premature performance
+or accuracy claims. Future real runtime work must replace placeholder timing
+with measured profiling and broaden the memory accounting deliberately.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/synthetic/test_runtime_fixture_scheduler.py.
+```

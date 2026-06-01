@@ -497,6 +497,102 @@ path-named errors. The inspection JSON is a mapper pipeline diagnostic only; it
 is low-fidelity/reference-only, observed-only, not completed geometry, and not
 an accuracy report.
 
+### Phase 2D runtime fixture scheduler smoke
+
+`atlas3r smoke runtime-fixture --output <folder>` runs a single-threaded,
+deterministic scheduler skeleton over the synthetic cube-room fixture. It writes
+a Phase 0B session, runs `fixture-cube-room` through the existing teacher-cache
+path with `store_arrays=True`, and replays that full-array cache into CPU TSDF
+mapping through the public `DepthObservation` mapper input path. It does not
+start threads, asyncio workers, GPU work, neural inference, video decoding, or
+mesh export.
+
+The output layout is:
+
+```text
+<folder>/
+  runtime_events.jsonl
+  runtime_summary.json
+  synthetic_cube_room.atlas3r/
+  teacher_cache/
+    metadata.json
+    frame_summaries.jsonl
+    arrays/frame_000000.npz
+    arrays/frame_000001.npz
+    arrays/frame_000002.npz
+  teacher_cache_tsdf/
+    tsdf_grid.npz
+    surface_points.npz
+    metadata.json
+    metrics.json
+    mesh_chunk_sidecar.json
+    world_map_sidecar.json
+```
+
+`runtime_events.jsonl` contains deterministic JSON Lines records. Paths inside
+event records are relative to `<folder>` so two runs in different output folders
+produce byte-identical event logs. Each event has:
+
+```text
+{
+  "format_name": "atlas3r_runtime_fixture_event_log",
+  "format_version": 1,
+  "event_index": 0,
+  "stage_name": "runtime_start",
+  "frame_id": null,
+  "timestamp_ns": 0,
+  "latency_ns": 0,
+  "dropped_frame": false,
+  "memory_counters": {
+    "configured_frame_array_bound": 1,
+    "frame_arrays_in_memory": 0,
+    "peak_frame_arrays_in_memory": 0,
+    "processed_frame_count": 0,
+    "dropped_frame_count": 0,
+    "queued_frame_count": 0
+  },
+  "paths": { ... relative source/cache/output paths ... },
+  "metadata": { ... deterministic stage metadata ... }
+}
+```
+
+Known Phase 2D stage names are `runtime_start`, `session_write`,
+`source_frame`, `adapter_cache_write`, `adapter_cache_frame`, `tsdf_replay`,
+`tsdf_replay_frame`, `tsdf_output_write`, and `runtime_complete`.
+`timestamp_ns` and `latency_ns` are deterministic placeholders, not wall-clock
+measurements. `memory_counters` are scheduler-owned bounded-memory counters for
+this fixture skeleton; they are used to verify the runtime plumbing does not
+retain all fixture frame array payloads in scheduler state. They are not a
+process memory profile.
+
+`runtime_summary.json` contains:
+
+```text
+{
+  "format_name": "atlas3r_runtime_fixture_smoke_summary",
+  "format_version": 1,
+  "runtime": { ... adapter/cache/DepthObservation path summary ... },
+  "frame_ids": [0, 1, 2],
+  "event_log": { ... event-log format and path ... },
+  "bounded_memory": {
+    "configured_frame_array_bound": 1,
+    "peak_frame_arrays_in_memory": 1,
+    "all_frame_arrays_accumulated": false,
+    "bounded_memory_check_passed": true,
+    ...
+  },
+  "artifacts": { ... relative output paths ... },
+  "truth_boundary": {
+    "accuracy_report": false,
+    "note": "Runtime fixture smoke uses synthetic analytic cube-room data and is not an accuracy report."
+  }
+}
+```
+
+The runtime fixture output is a deterministic plumbing smoke artifact only. It
+must not be presented as real-time performance, a geometric accuracy report, or
+measured real-capture geometry.
+
 ## ObjectInstance
 
 ```python

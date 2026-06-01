@@ -21,6 +21,7 @@ from atlas3r.mapping.tsdf_output_inspection import (
 from atlas3r.mapping.world_map_sidecar import format_world_map_sidecar_inspection
 from atlas3r.models.adapters import list_adapters
 from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
+from atlas3r.runtime.scheduler import write_runtime_fixture_smoke
 from atlas3r.visualization.session_preview import write_session_preview
 
 
@@ -55,6 +56,24 @@ def _run_teacher_cache_tsdf(args: argparse.Namespace) -> int:
         return 2
     print("Wrote teacher-cache TSDF replay outputs:")
     for path in written_paths:
+        print(f"  {path}")
+    return 0
+
+
+def _run_runtime_fixture(args: argparse.Namespace) -> int:
+    try:
+        result = write_runtime_fixture_smoke(args.output)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("Wrote runtime fixture smoke outputs:")
+    for path in [
+        result.event_log_path,
+        result.summary_path,
+        result.session_path,
+        result.teacher_cache_path,
+        result.tsdf_output_path,
+    ]:
         print(f"  {path}")
     return 0
 
@@ -198,6 +217,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     teacher_cache_tsdf_parser.set_defaults(handler=_run_teacher_cache_tsdf)
+    runtime_fixture_parser = smoke_subparsers.add_parser(
+        "runtime-fixture",
+        help="Run the deterministic runtime fixture scheduler smoke.",
+    )
+    runtime_fixture_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output folder for runtime event logs, fixture cache, and TSDF artifacts.",
+    )
+    runtime_fixture_parser.set_defaults(handler=_run_runtime_fixture)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect Atlas3R outputs.")
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", required=True)
     inspect_session_parser = inspect_subparsers.add_parser(

@@ -713,3 +713,58 @@ Known gaps:
 - The synthetic converter is exported lazily from atlas3r.data to avoid import
   cycles while keeping atlas3r.mapping.observations generic.
 ```
+
+```text
+2026-06-01 18:20 local
+Task: Phase 2D - deterministic streaming runtime scheduler skeleton.
+Changed files:
+- Added src/atlas3r/runtime/events.py with deterministic runtime event
+  dataclasses, stage names, placeholder timing fields, dropped-frame flags, and
+  bounded-memory counters.
+- Added src/atlas3r/runtime/scheduler.py with `write_runtime_fixture_smoke`,
+  which writes a synthetic cube-room session, runs fixture-cube-room into a
+  full-array teacher cache, replays that cache into CPU TSDF with WorldMap
+  sidecars, and writes runtime_events.jsonl plus runtime_summary.json.
+- Exported runtime scheduler/event contracts from src/atlas3r/runtime/__init__.py.
+- Added `atlas3r smoke runtime-fixture --output <folder>` and extended Makefile
+  smoke/inspect targets without renaming existing artifacts.
+- Added tests/synthetic/test_runtime_fixture_scheduler.py and updated the
+  status handoff test for Phase 2E.
+- Documented the runtime fixture event-log/output contract in
+  docs/08_API_CONTRACTS.md, recorded decision D-0015, rewrote
+  docs/status/active_task.md, and replaced docs/status/next_task.md with the
+  Phase 2E runtime fixture inspection prompt.
+Commands run:
+- python -m unittest tests.synthetic.test_runtime_fixture_scheduler
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m ruff check src/atlas3r/runtime --fix
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused runtime fixture unittest ran 3 tests and passed.
+- Initial Ruff check caught import ordering and a `typing.Mapping` import in
+  new runtime files; `python -m ruff check src/atlas3r/runtime --fix` fixed the
+  mechanical issues.
+- Final Ruff format left 64 files unchanged, format check passed, and Ruff
+  lint passed.
+- Final mypy passed with no issues in 46 source files.
+- Full unittest discovery ran 88 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2D intentionally does not implement threads, asyncio, GPU/CUDA/Metal,
+  neural inference, video decoding, external model dependencies, web servers,
+  notebooks, GLB/PLY export, marching cubes, object-aware mesh extraction, or
+  real-time performance measurement.
+- Runtime event timestamps and latencies are deterministic placeholders, and
+  bounded-memory counters describe scheduler-owned frame-array payload state
+  for the fixture skeleton, not process-wide memory profiling.
+```

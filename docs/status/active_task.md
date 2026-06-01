@@ -3,37 +3,42 @@
 Codex should keep the current task checklist here so context compaction does not lose state.
 
 ```text
-Goal: Phase 2C.1 - clean mapper boundaries before Phase 2D by keeping
-DepthObservation generic, moving synthetic conversion to the data side, and
-removing teacher-cache replay imports of private TSDF helpers.
-Relevant docs read: AGENTS.md, docs/08_API_CONTRACTS.md,
+Goal: Phase 2D - deterministic streaming runtime scheduler skeleton.
+Relevant docs read: AGENTS.md, PLANS.md, docs/08_API_CONTRACTS.md,
 docs/status/active_task.md, docs/status/progress.md,
 docs/status/decisions.md, docs/status/next_task.md.
 Relevant source/tests read: src/atlas3r/mapping/observations.py,
 src/atlas3r/mapping/cpu_tsdf.py,
 src/atlas3r/mapping/teacher_cache_replay.py,
-tests/unit/test_mapping_observations.py, tests/synthetic/test_cpu_tsdf.py,
-tests/synthetic/test_teacher_cache_replay.py, and the Phase 2D handoff test.
+src/atlas3r/models/adapters/fixture_teacher_adapter.py,
+src/atlas3r/models/adapters/runner.py, src/atlas3r/cli.py,
+Makefile, and focused unit/synthetic tests for adapters, teacher cache,
+DepthObservation, CPU TSDF, teacher-cache replay, TSDF output inspection, and
+CLI smoke wiring.
 Plan:
-1. Move depth_observation_from_synthetic_frame out of mapping.observations and
-   into a synthetic/data module exported by atlas3r.data.
-2. Update CPU TSDF, tests, and package exports so DepthObservation remains
-   public from atlas3r.mapping while synthetic conversion lives under data.
-3. Add public TSDF grid helper functions and use them from CPU TSDF and
-   teacher-cache replay instead of private cpu_tsdf helpers.
-4. Add source guard tests for the boundary rules and update API contracts plus
-   decisions if public module/helper names change.
-5. Run the requested Ruff, mypy, unittest, and available make verification
-   commands, then record results in docs/status/progress.md.
+1. Add runtime event dataclasses/enums with deterministic timestamp/latency
+   placeholders, dropped-frame flags, bounded-memory counters, and path
+   metadata.
+2. Add a single-threaded runtime fixture scheduler that writes a tiny synthetic
+   session, runs fixture-cube-room with store_arrays=True, replays the cache
+   into CPU TSDF through DepthObservation, and writes event logs plus existing
+   TSDF artifacts.
+3. Wire atlas3r smoke runtime-fixture --output <folder> and update Makefile
+   smoke/inspect without renaming existing artifact paths.
+4. Add focused runtime tests for deterministic event logs, bounded-memory
+   counters, CLI output, and path-named failures.
+5. Update API contracts, decisions, progress, and replace next_task.md with
+   the Phase 2E prompt after verification.
 Checklist:
-- [x] Read required docs and focused mapping/test files.
-- [x] Rewrite active task for Phase 2C.1.
-- [x] Move synthetic observation conversion to atlas3r.data.
-- [x] Add public TSDF grid helper module and update imports.
-- [x] Add/update focused architecture guard tests.
-- [x] Update contracts, decisions, progress, and preserve Phase 2D next task.
-- [x] Run verification commands and record results.
-Known exclusions: Do not implement runtime scheduling, threads, CUDA, Metal,
-neural models, video decoding, marching cubes, GLB/PLY export, web servers,
-notebooks, or new heavy dependencies.
+- [x] Read required docs and focused source/tests.
+- [x] Rewrite active task for Phase 2D.
+- [x] Add runtime event contracts.
+- [x] Add deterministic fixture scheduler.
+- [x] Wire runtime fixture CLI and Makefile.
+- [x] Add/update focused runtime tests.
+- [x] Update contracts, decisions, progress, and Phase 2E next task.
+- [x] Run requested Ruff, mypy, unittest, and available make commands.
+Known exclusions: Do not add threads, asyncio, GPU/CUDA/Metal, neural inference,
+video decoding, external model dependencies, web servers, notebooks, GLB/PLY
+export, marching cubes, object-aware mesh extraction, or accuracy claims.
 ```
