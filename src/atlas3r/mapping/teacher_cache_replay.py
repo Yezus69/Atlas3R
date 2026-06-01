@@ -105,6 +105,7 @@ def write_teacher_cache_tsdf_replay(
     output_folder: str | Path,
     *,
     write_mesh_sidecar: bool = False,
+    write_world_map_sidecar: bool = False,
 ) -> tuple[Path, ...]:
     """Write deterministic TSDF replay artifacts from a teacher cache."""
     output_path = Path(output_folder)
@@ -115,7 +116,7 @@ def write_teacher_cache_tsdf_replay(
         output_path / "metadata.json",
         output_path / "metrics.json",
     )
-    if write_mesh_sidecar:
+    if write_mesh_sidecar or write_world_map_sidecar:
         from atlas3r.mapping.mesh_sidecar import write_tsdf_surface_mesh_sidecar_from_artifacts
 
         sidecar_path = write_tsdf_surface_mesh_sidecar_from_artifacts(
@@ -123,6 +124,11 @@ def write_teacher_cache_tsdf_replay(
             chunk_id="phase_1d_teacher_cache_tsdf_surface_reference",
         )
         written_paths = (*written_paths, sidecar_path)
+    if write_world_map_sidecar:
+        from atlas3r.mapping.world_map_sidecar import write_tsdf_world_map_sidecar_from_artifacts
+
+        map_sidecar_path = write_tsdf_world_map_sidecar_from_artifacts(output_path)
+        written_paths = (*written_paths, map_sidecar_path)
     return written_paths
 
 

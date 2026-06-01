@@ -3,36 +3,38 @@
 Codex should keep the current task checklist here so context compaction does not lose state.
 
 ```text
-Goal: Phase 1E - add a dependency-free MeshChunk sidecar writer for CPU TSDF
-replay outputs, preserving observed-only confidence/uncertainty metadata and
-explicit low-fidelity/reference-only flags.
+Goal: Phase 2A - add a dependency-free WorldMap sidecar path for CPU TSDF
+MeshChunk sidecars, preserving observed-only truth boundaries and
+confidence/uncertainty metadata.
 Relevant docs read: AGENTS.md, README.md, PLANS.md, docs/08_API_CONTRACTS.md,
 docs/status/active_task.md, docs/status/progress.md,
 docs/status/decisions.md, docs/status/next_task.md.
 Plan:
-1. Inspect only the MeshChunk contract/validation code, CPU TSDF smoke and
-   teacher-cache TSDF replay writers, CLI smoke commands, and focused tests.
-2. Add a deterministic TSDF surface-to-MeshChunk helper that consumes
-   TSDFSurface artifacts and emits an observed, low-fidelity triangle sidecar
-   with source frame IDs, coordinate frame, voxel size, scale source, observed
-   coverage, confidence, and mean/p95 uncertainty metadata.
-3. Wire the CPU TSDF smoke commands to optionally write the sidecar under the
-   requested output directory without removing or renaming existing artifacts.
-4. Add focused tests for contract validation, deterministic fixture replay
-   sidecars, metadata preservation, and path-named failures for missing or
-   malformed surface artifacts.
-5. Update docs/08_API_CONTRACTS.md and status logs, append a decision only if
-   the public sidecar format changes an interface, replace next_task.md with
-   the Phase 2A prompt, and run the requested verification commands.
+1. Inspect only the WorldMap/MeshChunk contracts, Phase 1E MeshChunk sidecar
+   helper, CPU TSDF smoke/replay writers, CLI smoke/inspect wiring, and focused
+   synthetic tests.
+2. Add a deterministic WorldMap sidecar helper that consumes
+   mesh_chunk_sidecar.json, validates the MeshChunk contract, wraps it in a
+   contract-valid WorldMap with no object meshes, and preserves coordinate
+   frame, source frames, voxel size, scale source, coverage, confidence, and
+   mean/p95 uncertainty metadata.
+3. Wire optional CPU TSDF smoke/replay output and a validation-oriented inspect
+   command without removing or renaming existing Phase 0D/1D/1E artifacts.
+4. Add focused tests for contract validation, deterministic fixture replay map
+   sidecars, metadata preservation, and path-named missing/malformed MeshChunk
+   sidecar errors.
+5. Update docs/08_API_CONTRACTS.md and status logs, append a decision for the
+   public sidecar format, replace next_task.md with the Phase 2B prompt, and
+   run the requested verification commands.
 Checklist:
 - [x] Read required docs and status files.
 - [x] Inspect focused source/tests.
-- [x] Add TSDF surface MeshChunk sidecar helper.
-- [x] Wire optional CLI smoke output.
+- [x] Add TSDF MeshChunk WorldMap sidecar helper.
+- [x] Wire optional CLI smoke/inspect output.
 - [x] Add/update focused tests.
-- [x] Update API/status docs and Phase 2A handoff.
+- [x] Update API/status docs and Phase 2B handoff.
 - [x] Run verification commands and record results.
 Known exclusions: No GLB/PLY/trimesh/marching-cubes dependencies, model
 downloads, vendored third-party code, cloud APIs, neural inference, CUDA, or
-real-world accuracy claims in Phase 1E.
+real-world accuracy claims in Phase 2A.
 ```

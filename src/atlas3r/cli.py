@@ -14,6 +14,7 @@ from atlas3r.io.session import validate_session
 from atlas3r.io.teacher_cache_inspection import format_teacher_cache_inspection
 from atlas3r.mapping.cpu_tsdf import write_tsdf_cube_room_smoke
 from atlas3r.mapping.teacher_cache_replay import write_teacher_cache_tsdf_replay
+from atlas3r.mapping.world_map_sidecar import format_world_map_sidecar_inspection
 from atlas3r.models.adapters import list_adapters
 from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
 from atlas3r.visualization.session_preview import write_session_preview
@@ -29,6 +30,7 @@ def _run_tsdf_cube_room(args: argparse.Namespace) -> int:
     written_paths = write_tsdf_cube_room_smoke(
         args.output,
         write_mesh_sidecar=args.write_mesh_sidecar,
+        write_world_map_sidecar=args.write_world_map_sidecar,
     )
     print("Wrote TSDF cube-room smoke outputs:")
     for path in written_paths:
@@ -42,6 +44,7 @@ def _run_teacher_cache_tsdf(args: argparse.Namespace) -> int:
             args.input,
             args.output,
             write_mesh_sidecar=args.write_mesh_sidecar,
+            write_world_map_sidecar=args.write_world_map_sidecar,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -64,6 +67,15 @@ def _run_inspect_session(args: argparse.Namespace) -> int:
 def _run_inspect_teacher_cache(args: argparse.Namespace) -> int:
     try:
         print(format_teacher_cache_inspection(args.input), end="")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+def _run_inspect_world_map(args: argparse.Namespace) -> int:
+    try:
+        print(format_world_map_sidecar_inspection(args.input), end="")
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -134,6 +146,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also write mesh_chunk_sidecar.json from observed TSDF surface samples.",
     )
+    tsdf_parser.add_argument(
+        "--write-world-map-sidecar",
+        action="store_true",
+        help=(
+            "Also write world_map_sidecar.json by validating and wrapping the observed "
+            "MeshChunk sidecar."
+        ),
+    )
     tsdf_parser.set_defaults(handler=_run_tsdf_cube_room)
     teacher_cache_tsdf_parser = smoke_subparsers.add_parser(
         "teacher-cache-tsdf",
@@ -155,6 +175,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--write-mesh-sidecar",
         action="store_true",
         help="Also write mesh_chunk_sidecar.json from observed TSDF surface samples.",
+    )
+    teacher_cache_tsdf_parser.add_argument(
+        "--write-world-map-sidecar",
+        action="store_true",
+        help=(
+            "Also write world_map_sidecar.json by validating and wrapping the observed "
+            "MeshChunk sidecar."
+        ),
     )
     teacher_cache_tsdf_parser.set_defaults(handler=_run_teacher_cache_tsdf)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect Atlas3R outputs.")
@@ -187,6 +215,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Input teacher prediction cache folder.",
     )
     inspect_teacher_cache_parser.set_defaults(handler=_run_inspect_teacher_cache)
+    inspect_world_map_parser = inspect_subparsers.add_parser(
+        "world-map",
+        help="Validate a WorldMap sidecar and print deterministic metadata.",
+    )
+    inspect_world_map_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input world_map_sidecar.json file.",
+    )
+    inspect_world_map_parser.set_defaults(handler=_run_inspect_world_map)
     adapters_parser = subparsers.add_parser(
         "adapters",
         help="Inspect dependency-safe teacher adapter stubs.",

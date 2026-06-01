@@ -347,6 +347,66 @@ MeshChunk flags must include `low_fidelity_reference_only`,
 measured geometry. Missing or malformed `surface_points.npz` or `metadata.json`
 inputs must raise path-named errors.
 
+### Phase 2A CPU TSDF WorldMap sidecar
+
+CPU TSDF smoke commands can optionally assemble a dependency-free WorldMap JSON
+sidecar from the observed Phase 1E MeshChunk sidecar:
+
+```bash
+atlas3r smoke tsdf-cube-room --output <folder> --write-world-map-sidecar
+atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-world-map-sidecar
+```
+
+The flag preserves all Phase 0D/1D/1E artifacts. If the MeshChunk sidecar has
+not also been requested, the command writes and validates
+`mesh_chunk_sidecar.json` first, then adds:
+
+```text
+<folder>/
+  world_map_sidecar.json
+```
+
+`world_map_sidecar.json` is deterministic JSON:
+
+```text
+{
+  "format_name": "atlas3r_tsdf_world_map_sidecar",
+  "format_version": 1,
+  "world_map": { ... WorldMap fields ... },
+  "metadata": { ... sidecar/source MeshChunk metadata ... }
+}
+```
+
+The `world_map` object validates against the existing `WorldMap` contract and
+contains exactly one validated observed `MeshChunk`. `objects` and `keyframes`
+are empty in Phase 2A, `created_at_ns` is deterministically `0`, and no object
+meshes or completed hidden surfaces are invented.
+
+The sidecar metadata preserves:
+
+- source MeshChunk sidecar format and full source MeshChunk metadata;
+- coordinate frame/world frame name, unit scale, metric scale source, and source
+  frame IDs;
+- voxel size, observed coverage estimate, and surface coverage estimate when
+  present;
+- mesh chunk IDs/count, object count `0`, and keyframe count `0`;
+- confidence summary, global confidence, mean uncertainty, and p95 uncertainty;
+- `accuracy_report_path: null` and an explicit not-an-accuracy-report note.
+
+WorldMap sidecar flags include `low_fidelity_reference_only`,
+`observed_surface_samples`, `not_completed_surface`, and
+`not_accuracy_report`. Missing or malformed MeshChunk sidecars must raise
+path-named errors.
+
+```bash
+atlas3r inspect world-map --input <folder>/world_map_sidecar.json
+```
+
+The inspect command validates the WorldMap sidecar and prints deterministic JSON
+summarizing the map ID, frame name, mesh chunk IDs, source frame IDs, coordinate
+frame, scale source, confidence, uncertainty, truth-boundary flags, and the fact
+that the sidecar is not an accuracy report.
+
 ## ObjectInstance
 
 ```python

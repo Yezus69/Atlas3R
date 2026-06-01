@@ -1,57 +1,55 @@
-# Codex Prompt - Atlas3R Phase 2A: CPU TSDF MeshChunk WorldMap Assembly
+# Codex Prompt - Atlas3R Phase 2B: CPU TSDF Output Folder Map Inspection
 
-You are working in the existing public repo `Yezus69/Atlas3R` after Phase 1E.
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 2A.
 Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
 the current `docs/status/*` files before coding. Then read only the source and
-tests needed for CPU TSDF replay outputs, MeshChunk sidecars, WorldMap
-contracts, and CLI smoke/inspect artifacts.
+tests needed for CPU TSDF output artifacts, MeshChunk sidecars, WorldMap
+sidecars, and CLI inspect behavior.
 
 ## Task goal
 
-Add a dependency-free WorldMap assembly path for CPU TSDF replay outputs. The
-path should load the Phase 1E MeshChunk sidecar, validate it against the
-existing `MeshChunk` contract, wrap it in a contract-valid `WorldMap`, and write
-a deterministic map sidecar suitable for early mapper pipeline tests. Do not add
-GLB/PLY/trimesh/marching-cubes dependencies, download model weights, vendor
-third-party repositories, call cloud APIs, run neural inference, or claim
-real-world accuracy.
+Add a dependency-free inspection path for complete CPU TSDF output folders. The
+path should validate Phase 0D/1D surface artifacts, the Phase 1E MeshChunk
+sidecar, and the Phase 2A WorldMap sidecar together, then emit deterministic
+inspection JSON for early mapper pipeline checks. Do not add GLB/PLY/trimesh/
+marching-cubes dependencies, download model weights, vendor third-party
+repositories, call cloud APIs, run neural inference, or claim real-world
+accuracy.
 
 ## Required implementation
 
-1. Add a CPU TSDF WorldMap sidecar helper.
-   - Consume Phase 1E `mesh_chunk_sidecar.json` outputs.
-   - Emit a deterministic `world_map_sidecar.json` containing a contract-valid
-     `WorldMap` with the observed MeshChunk and no invented object meshes.
-   - Preserve coordinate frame, source frame IDs, voxel size, metric scale
-     source, observed coverage estimate, and mean/p95 uncertainty in map
-     metadata.
-   - Keep all truth-boundary flags: low-fidelity/reference-only, observed-only,
-     not completed, and not an accuracy report.
+1. Add a CPU TSDF output folder inspector.
+   - Validate `metadata.json`, `surface_points.npz`, optional `metrics.json`,
+     `mesh_chunk_sidecar.json`, and `world_map_sidecar.json` when present.
+   - Cross-check coordinate frame, source frame IDs, voxel size, metric scale
+     source, observed coverage estimate, confidence summary, and mean/p95
+     uncertainty across surface, MeshChunk, and WorldMap metadata.
+   - Keep truth-boundary flags explicit: low-fidelity/reference-only,
+     observed-only, not completed, and not an accuracy report.
+   - Report missing required artifacts with path-named errors.
 
-2. Wire CLI smoke/inspect output.
-   - Extend the relevant CPU TSDF smoke or inspect command(s) to optionally
-     write/validate the WorldMap sidecar under an output directory.
-   - Keep the command dependency-free and deterministic.
-   - Do not remove or rename existing Phase 0D/1D/1E artifacts.
+2. Wire CLI inspect output.
+   - Add or extend an `atlas3r inspect ...` command that reads a CPU TSDF output
+     directory and prints deterministic JSON.
+   - The command must be dependency-free and deterministic.
+   - Do not remove or rename existing Phase 0D/1D/1E/2A artifacts.
 
 3. Add validation and tests.
-   - The WorldMap sidecar validates against the existing `WorldMap` and
-     `MeshChunk` contracts.
-   - Fixture replay writes deterministic map sidecars.
-   - Mesh confidence and uncertainty metadata survive into map metadata.
-   - Path-named failures are explicit when required MeshChunk sidecars are
-     missing or malformed.
-   - Existing Phase 0A-1E tests keep passing.
+   - Fixture TSDF smoke and teacher-cache replay outputs inspect deterministically.
+   - Cross-artifact metadata mismatches are rejected with path-named errors.
+   - Missing MeshChunk or WorldMap sidecars are explicit when required by the
+     selected inspect mode.
+   - Existing Phase 0A-2A tests keep passing.
 
 4. Update docs/status.
-   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 2A
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 2B
      plan and checklist.
-   - Update `docs/08_API_CONTRACTS.md` for any public map sidecar or CLI
+   - Update `docs/08_API_CONTRACTS.md` for any public inspect output or CLI
      behavior.
    - Append results to `docs/status/progress.md` after verification.
    - Append to `docs/status/decisions.md` only if an interface or format
      decision changed.
-   - Replace this file with the Phase 2B prompt before declaring done.
+   - Replace this file with the Phase 2C prompt before declaring done.
 
 ## Verification commands
 

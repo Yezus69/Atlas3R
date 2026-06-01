@@ -191,3 +191,24 @@ future MeshChunk schema revision deliberately promotes them into the contract.
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/synthetic/test_tsdf_mesh_sidecar.py.
 ```
+
+```text
+Decision ID: D-0011
+Date: 2026-06-01
+Context: Phase 2A needs CPU TSDF replay outputs to exercise the public WorldMap
+contract before object-aware mapping, keyframe map storage, GLB/PLY export, or
+heavyweight mesh dependencies exist.
+Decision: Add an opt-in `world_map_sidecar.json` wrapper that validates the
+Phase 1E `mesh_chunk_sidecar.json`, wraps the observed MeshChunk in a
+contract-valid `WorldMap`, leaves `objects` and `keyframes` empty, uses
+deterministic `created_at_ns=0`, and preserves coordinate frame, source frames,
+coverage, confidence, scale source, and mean/p95 uncertainty metadata.
+Alternatives considered: Add object/keyframe records now; write a session-level
+map export; make WorldMap sidecars infer completed object meshes from the
+surface samples.
+Consequences: Early mapper pipeline tests can validate WorldMap plumbing without
+inventing hidden geometry or adding export dependencies. The sidecar remains
+reference-only, observed-only, not completed, and not an accuracy report.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/synthetic/test_world_map_sidecar.py.
+```

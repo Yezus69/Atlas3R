@@ -508,3 +508,56 @@ Known gaps:
   pipeline testing only; it is not an accuracy report and does not claim hidden
   or completed geometry as measured.
 ```
+
+```text
+2026-06-01 12:55 local
+Task: Phase 2A - dependency-free WorldMap sidecar assembly for CPU TSDF
+MeshChunk sidecars.
+Changed files:
+- Added src/atlas3r/mapping/world_map_sidecar.py with MeshChunk sidecar loading,
+  WorldMap construction, deterministic sidecar JSON writing, sidecar loading,
+  metadata validation, and deterministic inspect JSON.
+- Exported WorldMap sidecar helpers from src/atlas3r/mapping/__init__.py.
+- Extended CPU TSDF smoke and teacher-cache TSDF replay writers with
+  `write_world_map_sidecar` while preserving existing Phase 0D/1D/1E artifacts.
+- Added `--write-world-map-sidecar` to both CPU TSDF smoke commands and
+  `atlas3r inspect world-map --input <world_map_sidecar.json>`.
+- Updated Makefile smoke/inspect targets to exercise WorldMap sidecar output
+  when make is available.
+- Documented `world_map_sidecar.json` and inspect behavior in
+  docs/08_API_CONTRACTS.md and recorded decision D-0011.
+- Added tests/synthetic/test_world_map_sidecar.py and updated the status
+  handoff test for Phase 2B.
+- Rewrote docs/status/active_task.md and replaced docs/status/next_task.md with
+  the Phase 2B prompt.
+Commands run:
+- python -m unittest tests.synthetic.test_world_map_sidecar
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused WorldMap sidecar unittest ran 5 tests and passed.
+- Ruff format left 54 files unchanged on the final run.
+- Ruff format check passed with 54 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 39 source files.
+- Full unittest discovery ran 72 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2A intentionally does not implement GLB/PLY export, trimesh,
+  marching-cubes extraction, object-aware meshing, keyframe map storage, neural
+  inference, external model execution, cloud APIs, CUDA, model downloads, or
+  vendored third-party code/weights.
+- The WorldMap sidecar wraps one observed low-fidelity MeshChunk for pipeline
+  testing only; it is not an accuracy report and does not claim hidden or
+  completed geometry as measured.
+```

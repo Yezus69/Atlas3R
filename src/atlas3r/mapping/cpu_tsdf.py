@@ -232,6 +232,7 @@ def write_tsdf_cube_room_smoke(
     output_folder: str | Path,
     *,
     write_mesh_sidecar: bool = False,
+    write_world_map_sidecar: bool = False,
 ) -> tuple[Path, ...]:
     """Write TSDF smoke artifacts and return the deterministic top-level paths."""
     output_path = Path(output_folder)
@@ -243,7 +244,7 @@ def write_tsdf_cube_room_smoke(
         output_path / "metadata.json",
         output_path / "metrics.json",
     )
-    if write_mesh_sidecar:
+    if write_mesh_sidecar or write_world_map_sidecar:
         from atlas3r.mapping.mesh_sidecar import write_tsdf_surface_mesh_sidecar_from_artifacts
 
         sidecar_path = write_tsdf_surface_mesh_sidecar_from_artifacts(
@@ -251,6 +252,11 @@ def write_tsdf_cube_room_smoke(
             chunk_id="phase_0d_cpu_tsdf_surface_reference",
         )
         written_paths = (*written_paths, sidecar_path)
+    if write_world_map_sidecar:
+        from atlas3r.mapping.world_map_sidecar import write_tsdf_world_map_sidecar_from_artifacts
+
+        map_sidecar_path = write_tsdf_world_map_sidecar_from_artifacts(output_path)
+        written_paths = (*written_paths, map_sidecar_path)
     return written_paths
 
 
