@@ -99,6 +99,68 @@ class FramePrediction:
     dense_matches: DenseMatchSet | None
 ```
 
+## Teacher adapter contracts
+
+Phase 0E introduces dependency-safe teacher adapter contracts under
+`atlas3r.models.adapters`. Third-party model code and weights remain external to
+Atlas3R; adapter modules must import without optional teacher packages installed.
+
+```python
+class GeometryTeacherAdapter(Protocol):
+    def predict(self, frames: FrameBatch) -> TeacherPrediction: ...
+```
+
+```python
+@dataclass(frozen=True)
+class FrameBatch:
+    frames: tuple[FramePacket, ...]         # non-empty, unique frame_id values
+    batch_id: str
+    metadata: Mapping[str, Any]
+```
+
+```python
+@dataclass(frozen=True)
+class TeacherPrediction:
+    adapter_name: str
+    frame_predictions: tuple[FramePrediction, ...]
+    capabilities: AdapterCapabilities
+    metadata: Mapping[str, Any]
+```
+
+`TeacherPrediction.frame_predictions` reuses `FramePrediction`, so every teacher
+output keeps the same `CameraModel`, `PoseEstimate`, dense geometry,
+confidence, and uncertainty conventions as Atlas3R runtime outputs.
+
+Adapter discovery reports:
+
+```python
+@dataclass(frozen=True)
+class AdapterCapabilities:
+    predicts_camera: bool
+    predicts_pose: bool
+    predicts_depth: bool
+    predicts_normals: bool
+    predicts_points: bool
+    predicts_dense_matches: bool
+    predicts_objects: bool
+    supports_batch: bool
+    supports_streaming: bool
+    notes: tuple[str, ...]
+
+@dataclass(frozen=True)
+class AdapterStatus:
+    name: str
+    display_name: str
+    availability: str    # available|unavailable|stub-only
+    capabilities: AdapterCapabilities
+    install_hint: str | None
+    reason: str | None
+```
+
+Known Phase 0E stubs are `VGGTAdapter` and `DepthProAdapter`. Missing optional
+dependencies must raise `AdapterDependencyError` from adapter construction or
+prediction with the adapter name and installation hint in the message.
+
 ## ObjectInstance
 
 ```python

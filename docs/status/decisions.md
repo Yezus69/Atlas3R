@@ -70,3 +70,22 @@ voxel-scale outputs while preserving explicit confidence/uncertainty metadata
 and avoiding premature accuracy claims.
 Docs/tests updated: docs/08_API_CONTRACTS.md and tests/synthetic/test_cpu_tsdf.py.
 ```
+
+```text
+Decision ID: D-0005
+Date: 2026-06-01
+Context: Phase 0E needs Phase 1 teacher integrations to share one dependency-safe
+contract without importing optional third-party model packages or creating
+parallel geometry schemas.
+Decision: Define `FrameBatch`, `TeacherPrediction`, `GeometryTeacherAdapter`,
+adapter capability metadata, and adapter availability status under
+`atlas3r.models.adapters`, with `TeacherPrediction` containing existing
+`FramePrediction` records and runtime-only dependency errors for stubs.
+Alternatives considered: Put teacher outputs in `atlas3r.api`; let each adapter
+define its own prediction schema; import third-party packages at module import
+time.
+Consequences: Phase 1 adapters can be discovered and tested before dependencies
+or weights are installed while preserving the existing pose, camera,
+confidence, and uncertainty conventions.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_adapters.py.
+```

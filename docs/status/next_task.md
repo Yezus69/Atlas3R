@@ -1,61 +1,53 @@
-# Codex Prompt - Atlas3R Phase 0E: Geometry Teacher Adapter Contracts
+# Codex Prompt - Atlas3R Phase 1A: Teacher Prediction Cache and Runner Skeleton
 
-You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0D.
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0E.
 Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
 the current `docs/status/*` files before coding. Then read only the source and
-tests needed for model adapter contracts and CLI discovery.
+tests needed for teacher adapter discovery, prediction contracts, and file IO.
 
 ## Task goal
 
-Create the dependency-safe teacher-adapter contract layer that Phase 1 model
-integrations will use. This is still a skeleton/contract task: do not download
-model weights, vendor third-party repositories, call cloud APIs, run neural
-inference, add CUDA, or add heavyweight visualization/export dependencies.
+Create the first dependency-light Phase 1 teacher prediction cache and runner
+surface. This task must not download model weights, vendor third-party
+repositories, call cloud APIs, run neural inference, add CUDA, or add
+heavyweight visualization/export dependencies.
 
 ## Required implementation
 
-1. Add the shared adapter protocol under `src/atlas3r/models/adapters/`.
-   - Define `GeometryTeacherAdapter` with:
+1. Add a serialized `TeacherPrediction` cache format.
+   - Store metadata and per-frame contract summaries in a deterministic folder
+     or JSON/JSONL layout.
+   - Preserve adapter name, adapter availability/capability metadata, frame IDs,
+     coordinate frame, scale source, confidence, and uncertainty summaries.
+   - Do not silently drop uncertainty or confidence fields.
 
-```python
-class GeometryTeacherAdapter(Protocol):
-    def predict(self, frames: FrameBatch) -> TeacherPrediction: ...
-```
+2. Add read/write validation helpers.
+   - Validate cache metadata and frame prediction summaries with explicit errors.
+   - Keep full tensor serialization narrow and dependency-light; if arrays are
+     stored, prefer NumPy `.npz` with documented keys.
 
-   - Add minimal typed contracts for `FrameBatch`, `TeacherPrediction`, and
-     adapter capability/status metadata.
-   - Reuse existing `CameraModel`, `PoseEstimate`, `FramePrediction`, and
-     uncertainty/confidence conventions instead of creating parallel schemas.
-
-2. Add dependency-safe adapter stubs.
-   - Create at least two named stubs for future external teachers, such as
-     `VGGTAdapter` and `DepthProAdapter`.
-   - Missing optional dependencies must raise clear runtime installation errors
-     from adapter construction or `predict`, not import-time crashes.
-   - Keep adapter modules small and do not import unavailable third-party
-     packages at module import time.
-
-3. Add a small discovery surface.
-   - Provide a pure-Python registry/list function for known adapters and their
-     availability status.
-   - Add a CLI command such as `atlas3r adapters list` that prints the known
-     adapters and whether they are available, unavailable, or stub-only.
+3. Add a tiny runner skeleton.
+   - Add a CLI command such as `atlas3r adapters run --adapter <name> --input
+     <session.atlas3r> --output <cache_dir>`.
+   - The command may fail gracefully for unavailable/stub-only external adapters,
+     but the error must include adapter name, status, and installation or
+     implementation guidance.
+   - Do not add real external model inference yet.
 
 4. Add tests.
-   - The protocol/status contracts validate expected shapes and metadata.
-   - Stub adapters import without third-party dependencies installed.
-   - Missing dependency errors include the adapter name and installation hint.
-   - CLI adapter listing succeeds.
-   - Existing Phase 0A-0D tests keep passing.
+   - Cache writer output is deterministic.
+   - Cache reader validates required metadata and summaries.
+   - CLI runner reports clear unavailable/stub-only adapter errors.
+   - Existing Phase 0A-0E tests keep passing.
 
 5. Update docs/status.
-   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 0E
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 1A
      plan and checklist.
-   - Update `docs/08_API_CONTRACTS.md` if new public schemas are introduced.
+   - Update `docs/08_API_CONTRACTS.md` if a public cache format is introduced.
    - Append results to `docs/status/progress.md` after verification.
    - Append to `docs/status/decisions.md` only if an interface or format
      decision changed.
-   - Replace this file with the Phase 1A prompt before declaring done.
+   - Replace this file with the Phase 1B prompt before declaring done.
 
 ## Verification commands
 

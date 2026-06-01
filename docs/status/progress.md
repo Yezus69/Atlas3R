@@ -193,3 +193,45 @@ Known gaps:
   voxel-scale synthetic fixture metrics; it is not an accuracy report and makes
   no millimeter-level claim.
 ```
+
+```text
+2026-05-31 21:58 local
+Task: Phase 0E - dependency-safe geometry teacher adapter contracts and
+discovery stubs.
+Changed files:
+- Added adapter contracts, capability/status metadata, dependency errors, and
+  registry helpers under src/atlas3r/models/adapters/.
+- Added dependency-safe VGGT and Depth Pro stubs that avoid optional imports at
+  module import time.
+- Added `atlas3r adapters list` for known adapter availability discovery.
+- Documented the teacher adapter public contracts in docs/08_API_CONTRACTS.md
+  and recorded decision D-0005.
+- Added tests/unit/test_adapters.py for contracts, stub imports, dependency
+  errors, registry status, and CLI listing.
+- Updated the status handoff test and replaced docs/status/next_task.md with
+  the Phase 1A teacher prediction cache prompt.
+Commands run:
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- python -m atlas3r adapters list
+- Get-Command make
+- make --version
+Results:
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 30 source files.
+- unittest discovery ran 43 tests and passed.
+- Direct adapter listing printed known adapter statuses.
+- `Get-Command make` / `make --version` reported: `make` is not recognized as
+  the name of a cmdlet, function, script file, or operable program. Therefore
+  `make test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect`
+  were not run.
+Known gaps:
+- Phase 0E intentionally does not implement neural inference, cloud APIs, model
+  downloads, CUDA, or vendored third-party model code/weights.
+- VGGT and Depth Pro are discovery/contract stubs only; with dependencies
+  installed they still report `stub-only` until Phase 1 wiring adds inference.
+```

@@ -11,6 +11,7 @@ from atlas3r import __version__
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.session import validate_session
 from atlas3r.mapping.cpu_tsdf import write_tsdf_cube_room_smoke
+from atlas3r.models.adapters import list_adapters
 from atlas3r.visualization.session_preview import write_session_preview
 
 
@@ -34,6 +35,14 @@ def _run_inspect_session(args: argparse.Namespace) -> int:
     print("Wrote session preview:")
     for path in written_paths:
         print(f"  {path}")
+    return 0
+
+
+def _run_adapters_list(_args: argparse.Namespace) -> int:
+    print("name\tstatus\tdetails")
+    for status in list_adapters():
+        detail = status.reason or status.install_hint or ""
+        print(f"{status.name}\t{status.availability}\t{detail}")
     return 0
 
 
@@ -93,6 +102,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output preview folder.",
     )
     inspect_session_parser.set_defaults(handler=_run_inspect_session)
+    adapters_parser = subparsers.add_parser(
+        "adapters",
+        help="Inspect dependency-safe teacher adapter stubs.",
+    )
+    adapters_subparsers = adapters_parser.add_subparsers(dest="adapters_command", required=True)
+    adapters_list_parser = adapters_subparsers.add_parser(
+        "list",
+        help="List known teacher adapters and availability.",
+    )
+    adapters_list_parser.set_defaults(handler=_run_adapters_list)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser
 
