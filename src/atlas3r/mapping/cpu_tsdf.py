@@ -12,11 +12,11 @@ import numpy.typing as npt
 
 from atlas3r.data.synthetic_cube_room import (
     AxisAlignedBox,
-    SyntheticCubeRoomFrame,
     SyntheticCubeRoomScene,
     create_synthetic_cube_room_scene,
     write_synthetic_cube_room_session,
 )
+from atlas3r.mapping.observations import DepthObservation, depth_observation_from_synthetic_frame
 from atlas3r.pose.transforms import invert_transform, transform_points
 
 FLOAT32 = np.float32
@@ -90,8 +90,8 @@ def integrate_synthetic_cube_room_scene(
     truncation_distance_m = voxel_size_m * truncation_voxels
 
     for frame in scene.frames:
-        _integrate_frame(
-            frame=frame,
+        integrate_depth_observation(
+            observation=depth_observation_from_synthetic_frame(frame),
             centers_world_m=centers_world,
             voxel_size_m=voxel_size_m,
             truncation_distance_m=truncation_distance_m,
@@ -285,16 +285,17 @@ def _voxel_centers(
     return np.column_stack([xx.reshape(-1), yy.reshape(-1), zz.reshape(-1)])
 
 
-def _integrate_frame(
+def integrate_depth_observation(
     *,
-    frame: SyntheticCubeRoomFrame,
+    observation: DepthObservation,
     centers_world_m: npt.NDArray[np.float64],
     voxel_size_m: float,
     truncation_distance_m: float,
     tsdf_flat: npt.NDArray[np.float64],
     weight_flat: npt.NDArray[np.float64],
 ) -> None:
-    T_camera_world = invert_transform(frame.pose.T_world_camera)
+    """Fuse one validated depth observation into flattened TSDF state arrays."""
+    T_camera_world = invert_transform(observation.pose.T_world_camera)
     centers_camera_m = transform_points(T_camera_world, centers_world_m)
     z_camera_m = centers_camera_m[:, 2]
     valid_z = z_camera_m > 0.0
@@ -304,20 +305,20 @@ def _integrate_frame(
     valid_indices = np.flatnonzero(valid_z)
     valid_points_camera = centers_camera_m[valid_indices]
     projected_u = (
-        frame.camera.K[0, 0] * valid_points_camera[:, 0] / valid_points_camera[:, 2]
-        + frame.camera.K[0, 2]
+        observation.camera.K[0, 0] * valid_points_camera[:, 0] / valid_points_camera[:, 2]
+        + observation.camera.K[0, 2]
     )
     projected_v = (
-        frame.camera.K[1, 1] * valid_points_camera[:, 1] / valid_points_camera[:, 2]
-        + frame.camera.K[1, 2]
+        observation.camera.K[1, 1] * valid_points_camera[:, 1] / valid_points_camera[:, 2]
+        + observation.camera.K[1, 2]
     )
     pixel_u = np.rint(projected_u).astype(np.int64)
     pixel_v = np.rint(projected_v).astype(np.int64)
     inside_image = (
         (pixel_u >= 0)
-        & (pixel_u < frame.camera.width)
+        & (pixel_u < observation.camera.width)
         & (pixel_v >= 0)
-        & (pixel_v < frame.camera.height)
+        & (pixel_v < observation.camera.height)
     )
     if not np.any(inside_image):
         return
@@ -326,7 +327,7 @@ def _integrate_frame(
     pixel_u = pixel_u[inside_image]
     pixel_v = pixel_v[inside_image]
     z_camera_m = valid_points_camera[inside_image, 2]
-    measured_depth_m = frame.depth_m[pixel_v, pixel_u].astype(FLOAT64, copy=False)
+    measured_depth_m = observation.depth_m[pixel_v, pixel_u].astype(FLOAT64, copy=False)
     signed_distance_m = measured_depth_m - z_camera_m
     in_truncation_band = np.abs(signed_distance_m) <= truncation_distance_m
     if not np.any(in_truncation_band):
@@ -337,8 +338,8 @@ def _integrate_frame(
     pixel_v = pixel_v[in_truncation_band]
     signed_distance_m = signed_distance_m[in_truncation_band]
     normalized_tsdf = np.clip(signed_distance_m / truncation_distance_m, -1.0, 1.0)
-    depth_sigma_m = frame.depth_sigma_m[pixel_v, pixel_u].astype(FLOAT64, copy=False)
-    frame_confidence = frame.confidence[pixel_v, pixel_u].astype(FLOAT64, copy=False)
+    depth_sigma_m = observation.depth_sigma_m[pixel_v, pixel_u].astype(FLOAT64, copy=False)
+    frame_confidence = observation.confidence[pixel_v, pixel_u].astype(FLOAT64, copy=False)
     measurement_weight = frame_confidence / (1.0 + depth_sigma_m / voxel_size_m)
     positive_weight = measurement_weight > 0.0
     if not np.any(positive_weight):
@@ -444,6 +445,7 @@ __all__ = [
     "TSDFVolume",
     "evaluate_surface_against_synthetic_cube_room",
     "extract_tsdf_surface",
+    "integrate_depth_observation",
     "integrate_synthetic_cube_room_scene",
     "run_tsdf_cube_room_smoke",
     "write_tsdf_cube_room_smoke",

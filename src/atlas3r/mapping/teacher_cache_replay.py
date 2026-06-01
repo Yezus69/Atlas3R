@@ -21,11 +21,12 @@ from atlas3r.mapping.cpu_tsdf import (
     TSDFSurface,
     TSDFVolume,
     _grid_shape_xyz,
-    _integrate_frame,
     _voxel_centers,
     evaluate_surface_against_synthetic_cube_room,
     extract_tsdf_surface,
+    integrate_depth_observation,
 )
+from atlas3r.mapping.observations import DepthObservation
 
 
 @dataclass(frozen=True)
@@ -130,6 +131,21 @@ def write_teacher_cache_tsdf_replay(
         map_sidecar_path = write_tsdf_world_map_sidecar_from_artifacts(output_path)
         written_paths = (*written_paths, map_sidecar_path)
     return written_paths
+
+
+def depth_observation_from_teacher_cache_frame(
+    frame: TeacherCacheTSDFReplayFrame,
+) -> DepthObservation:
+    """Convert a replay frame into the public mapper observation contract."""
+    return DepthObservation(
+        frame_id=frame.frame_id,
+        camera=frame.camera,
+        pose=frame.pose,
+        depth_m=frame.depth_m,
+        depth_sigma_m=frame.depth_sigma_m,
+        confidence=frame.confidence,
+        source="teacher_cache_tsdf_replay",
+    )
 
 
 def _require_array_payload_cache(cache: LoadedTeacherPredictionCache) -> None:
@@ -246,8 +262,8 @@ def _integrate_replay_frames(
     tsdf_flat = np.ones(centers_world.shape[0], dtype=FLOAT64)
     weight_flat = np.zeros(centers_world.shape[0], dtype=FLOAT64)
     for frame in frames:
-        _integrate_frame(
-            frame=frame,  # type: ignore[arg-type]
+        integrate_depth_observation(
+            observation=depth_observation_from_teacher_cache_frame(frame),
             centers_world_m=centers_world,
             voxel_size_m=voxel_size_m,
             truncation_distance_m=truncation_distance_m,
@@ -413,6 +429,7 @@ def _optional_float(record: dict[str, Any], field_name: str, path: Path) -> floa
 __all__ = [
     "TeacherCacheTSDFReplayFrame",
     "TeacherCacheTSDFReplayResult",
+    "depth_observation_from_teacher_cache_frame",
     "load_teacher_cache_tsdf_replay_frames",
     "run_teacher_cache_tsdf_replay",
     "write_teacher_cache_tsdf_replay",

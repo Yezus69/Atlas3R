@@ -232,3 +232,26 @@ Partial surface-only outputs remain inspectable when explicitly requested.
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/synthetic/test_tsdf_output_inspection.py.
 ```
+
+```text
+Decision ID: D-0013
+Date: 2026-06-01
+Context: Phase 2C revised needs the mapper to consume a public observation
+contract instead of accepting synthetic fixture frames by accident or requiring
+teacher-cache replay to import private TSDF helpers with a type suppression.
+Decision: Add `atlas3r.mapping.observations.DepthObservation` as the validated
+depth/confidence/uncertainty mapper input contract. Synthetic cube-room fusion
+and teacher-cache TSDF replay now convert their source frames to
+DepthObservation before CPU TSDF integration.
+Alternatives considered: Keep `_integrate_frame` typed to the synthetic fixture
+and suppress replay type errors; create separate mapper paths for fixture and
+teacher-cache replay; move the observation contract into the broad public API
+package before runtime requirements are known.
+Consequences: Mapper fusion has a stable public boundary that can later be fed
+by video adapters, neural teachers, or streaming runtime code without changing
+TSDF integration internals. Optional object/rgb/static-mask fields are validated
+now but object-aware fusion remains future work.
+Docs/tests updated: docs/08_API_CONTRACTS.md,
+tests/unit/test_mapping_observations.py, and
+tests/synthetic/test_teacher_cache_replay.py.
+```

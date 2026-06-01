@@ -18,7 +18,7 @@ Acceptance:
 
 - `make test` passes;
 - synthetic projection/unprojection round trip error < 1e-5 m in float64 tests;
-- generated cube-room mesh exports and reloads.
+- generated cube-room contract-valid mesh sidecar exports and reloads.
 
 ## Phase 1 — Teacher-baseline inference path
 
@@ -148,4 +148,3 @@ Acceptance:
 
 - `atlas3r eval` produces a self-contained HTML/Markdown report;
 - README claims match measured reports.
-

@@ -611,3 +611,54 @@ Known gaps:
   is not an accuracy report and does not claim hidden or completed geometry as
   measured.
 ```
+
+```text
+2026-06-01 17:35 local
+Task: Phase 2C revised - public DepthObservation mapper input contract and
+teacher-cache replay refactor.
+Changed files:
+- Added src/atlas3r/mapping/observations.py with the validated
+  DepthObservation contract and synthetic-frame conversion helper.
+- Refactored src/atlas3r/mapping/cpu_tsdf.py so TSDF integration consumes
+  DepthObservation while preserving existing synthetic smoke outputs.
+- Refactored src/atlas3r/mapping/teacher_cache_replay.py to convert replay
+  frames into DepthObservation and removed the replay `type: ignore[arg-type]`
+  path.
+- Exported DepthObservation and observation conversion helpers from
+  src/atlas3r/mapping/__init__.py.
+- Added tests/unit/test_mapping_observations.py and updated focused replay and
+  status handoff tests.
+- Updated docs/08_API_CONTRACTS.md, docs/status/active_task.md,
+  docs/status/decisions.md, docs/status/next_task.md, and PLANS.md.
+Commands run:
+- python -m unittest tests.unit.test_mapping_observations
+- python -m unittest tests.synthetic.test_teacher_cache_replay
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused DepthObservation unittest ran 6 tests and passed.
+- Focused teacher-cache replay unittest ran 7 tests and passed.
+- Ruff format left 59 files unchanged on the final run.
+- Ruff format check passed with 59 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 42 source files.
+- Full unittest discovery ran 84 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2C revised intentionally does not implement neural inference, external
+  model downloads, CUDA, GLB/PLY export, marching cubes, object-aware mesh
+  extraction, video decoding, web servers, notebooks, or regression bundles.
+- Optional DepthObservation object/rgb/static-mask fields are validated at the
+  boundary, but CPU TSDF fusion still uses depth, confidence, uncertainty,
+  camera, and pose only.
+```

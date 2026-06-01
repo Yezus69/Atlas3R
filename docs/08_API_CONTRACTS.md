@@ -99,6 +99,46 @@ class FramePrediction:
     dense_matches: DenseMatchSet | None
 ```
 
+## Mapping observations
+
+Phase 2C makes mapper inputs explicit through `DepthObservation` under
+`atlas3r.mapping.observations`. CPU TSDF fusion and teacher-cache TSDF replay
+must convert their source frames to this public contract before integration;
+mapping code should not rely on synthetic fixture frame classes or private
+helper type suppressions.
+
+```python
+@dataclass(frozen=True)
+class DepthObservation:
+    frame_id: int
+    camera: CameraModel
+    pose: PoseEstimate
+    depth_m: NDArray[np.float32]          # H,W finite, non-negative meters
+    depth_sigma_m: NDArray[np.float32]    # H,W finite, non-negative meters
+    confidence: NDArray[np.float32]       # H,W finite values in [0, 1]
+    static_mask: NDArray[np.bool_] | NDArray[np.float32] | None = None
+    object_id: NDArray[np.int32] | None = None
+    rgb_u8: NDArray[np.uint8] | None = None
+    source: str = "unknown"
+```
+
+Validation requirements:
+
+- `frame_id` is non-negative;
+- `camera` is a `CameraModel` and `pose` is a `PoseEstimate`;
+- `depth_m`, `depth_sigma_m`, and `confidence` match
+  `camera.height x camera.width`;
+- depth and sigma arrays are floating point, finite, and non-negative;
+- confidence arrays are floating point, finite, and in `[0, 1]`;
+- `static_mask`, when present, is HxW bool or numeric values in `[0, 1]`;
+- `object_id`, when present, is an HxW integer array;
+- `rgb_u8`, when present, is HxWx3 `uint8`;
+- `source` is non-empty.
+
+`depth_observation_from_synthetic_frame(frame)` converts Phase 0B synthetic
+cube-room frames. Teacher-cache replay performs its replay-frame conversion in
+`atlas3r.mapping.teacher_cache_replay` to avoid circular imports.
+
 ## Teacher adapter contracts
 
 Phase 0E introduces dependency-safe teacher adapter contracts under

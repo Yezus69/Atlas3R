@@ -18,6 +18,13 @@ SRC = ROOT / "src"
 
 
 class TeacherCacheTSDFReplayTest(unittest.TestCase):
+    def test_replay_source_does_not_suppress_observation_type_errors(self) -> None:
+        replay_source = (SRC / "atlas3r" / "mapping" / "teacher_cache_replay.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("type: ignore[arg-type]", replay_source)
+
     def test_fixture_array_cache_replays_into_cpu_tsdf_deterministically(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
