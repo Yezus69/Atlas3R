@@ -1,53 +1,57 @@
-# Codex Prompt - Atlas3R Phase 1B: Dependency-Free Fixture Teacher Adapter
+# Codex Prompt - Atlas3R Phase 2A: CPU TSDF MeshChunk WorldMap Assembly
 
-You are working in the existing public repo `Yezus69/Atlas3R` after Phase 1A.
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 1E.
 Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
 the current `docs/status/*` files before coding. Then read only the source and
-tests needed for teacher adapter discovery, `.atlas3r` session IO, frame
-contracts, and the Phase 1A teacher prediction cache.
+tests needed for CPU TSDF replay outputs, MeshChunk sidecars, WorldMap
+contracts, and CLI smoke/inspect artifacts.
 
 ## Task goal
 
-Add the first cache-producing teacher runner path without downloading model
-weights, vendoring third-party repositories, calling cloud APIs, running neural
-inference, adding CUDA, or adding heavyweight visualization/export dependencies.
-This should be a deterministic fixture teacher used only to exercise contracts,
-cache writing, and runner plumbing.
+Add a dependency-free WorldMap assembly path for CPU TSDF replay outputs. The
+path should load the Phase 1E MeshChunk sidecar, validate it against the
+existing `MeshChunk` contract, wrap it in a contract-valid `WorldMap`, and write
+a deterministic map sidecar suitable for early mapper pipeline tests. Do not add
+GLB/PLY/trimesh/marching-cubes dependencies, download model weights, vendor
+third-party repositories, call cloud APIs, run neural inference, or claim
+real-world accuracy.
 
 ## Required implementation
 
-1. Add a dependency-free fixture teacher adapter.
-   - It may consume the existing synthetic cube-room `.atlas3r` session outputs
-     and reconstruct `TeacherPrediction` records from analytic depth/session
-     sidecars.
-   - It must be clearly named as a fixture/test adapter, not a real external
-     model teacher.
-   - Every output frame must carry confidence and uncertainty fields.
-   - Do not claim measured geometry beyond the synthetic fixture.
+1. Add a CPU TSDF WorldMap sidecar helper.
+   - Consume Phase 1E `mesh_chunk_sidecar.json` outputs.
+   - Emit a deterministic `world_map_sidecar.json` containing a contract-valid
+     `WorldMap` with the observed MeshChunk and no invented object meshes.
+   - Preserve coordinate frame, source frame IDs, voxel size, metric scale
+     source, observed coverage estimate, and mean/p95 uncertainty in map
+     metadata.
+   - Keep all truth-boundary flags: low-fidelity/reference-only, observed-only,
+     not completed, and not an accuracy report.
 
-2. Wire the runner to produce a Phase 1A cache for the fixture adapter.
-   - `atlas3r adapters run --adapter <fixture-name> --input <session.atlas3r>
-     --output <cache_dir>` should write a validated teacher cache.
-   - External stubs such as VGGT and Depth Pro should continue to fail
-     gracefully with adapter name, status, reason, and guidance.
+2. Wire CLI smoke/inspect output.
+   - Extend the relevant CPU TSDF smoke or inspect command(s) to optionally
+     write/validate the WorldMap sidecar under an output directory.
+   - Keep the command dependency-free and deterministic.
+   - Do not remove or rename existing Phase 0D/1D/1E artifacts.
 
 3. Add validation and tests.
-   - Fixture adapter status is `available`.
-   - Fixture runner writes deterministic cache output.
-   - Cache summaries preserve frame IDs, coordinate frame, scale source,
-     confidence summaries, and uncertainty summaries.
-   - Runner rejects non-synthetic or malformed sessions with explicit errors.
-   - Existing Phase 0A-1A tests keep passing.
+   - The WorldMap sidecar validates against the existing `WorldMap` and
+     `MeshChunk` contracts.
+   - Fixture replay writes deterministic map sidecars.
+   - Mesh confidence and uncertainty metadata survive into map metadata.
+   - Path-named failures are explicit when required MeshChunk sidecars are
+     missing or malformed.
+   - Existing Phase 0A-1E tests keep passing.
 
 4. Update docs/status.
-   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 1B
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 2A
      plan and checklist.
-   - Update `docs/08_API_CONTRACTS.md` if the fixture adapter or runner cache
-     behavior changes public contracts.
+   - Update `docs/08_API_CONTRACTS.md` for any public map sidecar or CLI
+     behavior.
    - Append results to `docs/status/progress.md` after verification.
    - Append to `docs/status/decisions.md` only if an interface or format
      decision changed.
-   - Replace this file with the Phase 1C prompt before declaring done.
+   - Replace this file with the Phase 2B prompt before declaring done.
 
 ## Verification commands
 

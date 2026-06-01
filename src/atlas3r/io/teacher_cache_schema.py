@@ -3,6 +3,15 @@
 CACHE_FORMAT_NAME = "atlas3r_teacher_prediction_cache"
 CACHE_FORMAT_VERSION = 1
 FRAME_SUMMARIES_PATH = "frame_summaries.jsonl"
+ARRAYS_DIRECTORY = "arrays"
+REQUIRED_ARRAY_KEYS = (
+    "depth_m",
+    "depth_sigma_m",
+    "normal_camera",
+    "point_world",
+    "confidence",
+    "static_mask",
+)
 OPTIONAL_ARRAY_KEYS = (
     "depth_m",
     "depth_sigma_m",
@@ -15,8 +24,10 @@ OPTIONAL_ARRAY_KEYS = (
 )
 
 __all__ = [
+    "ARRAYS_DIRECTORY",
     "CACHE_FORMAT_NAME",
     "CACHE_FORMAT_VERSION",
     "FRAME_SUMMARIES_PATH",
     "OPTIONAL_ARRAY_KEYS",
+    "REQUIRED_ARRAY_KEYS",
 ]

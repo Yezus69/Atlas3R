@@ -228,17 +228,30 @@ def run_tsdf_cube_room_smoke(output_folder: str | Path) -> TSDFCubeRoomSmokeResu
     )
 
 
-def write_tsdf_cube_room_smoke(output_folder: str | Path) -> tuple[Path, ...]:
+def write_tsdf_cube_room_smoke(
+    output_folder: str | Path,
+    *,
+    write_mesh_sidecar: bool = False,
+) -> tuple[Path, ...]:
     """Write TSDF smoke artifacts and return the deterministic top-level paths."""
     output_path = Path(output_folder)
     result = run_tsdf_cube_room_smoke(output_path)
-    return (
+    written_paths: tuple[Path, ...] = (
         result.session_path,
         output_path / "tsdf_grid.npz",
         output_path / "surface_points.npz",
         output_path / "metadata.json",
         output_path / "metrics.json",
     )
+    if write_mesh_sidecar:
+        from atlas3r.mapping.mesh_sidecar import write_tsdf_surface_mesh_sidecar_from_artifacts
+
+        sidecar_path = write_tsdf_surface_mesh_sidecar_from_artifacts(
+            output_path,
+            chunk_id="phase_0d_cpu_tsdf_surface_reference",
+        )
+        written_paths = (*written_paths, sidecar_path)
+    return written_paths
 
 
 def _grid_shape_xyz(

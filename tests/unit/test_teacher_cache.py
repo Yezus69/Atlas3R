@@ -18,6 +18,7 @@ from atlas3r.api import (
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.teacher_cache import (
     CACHE_FORMAT_NAME,
+    load_teacher_prediction_array_payload,
     load_teacher_prediction_cache,
     validate_teacher_prediction_cache,
     write_teacher_prediction_cache,
@@ -25,8 +26,11 @@ from atlas3r.io.teacher_cache import (
 from atlas3r.models.adapters import (
     AdapterAvailability,
     AdapterCapabilities,
+    AdapterRunError,
     AdapterStatus,
+    FixtureCubeRoomTeacherAdapter,
     TeacherPrediction,
+    run_adapter_to_cache,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -153,12 +157,79 @@ class TeacherPredictionCacheTest(unittest.TestCase):
             cache = load_teacher_prediction_cache(first)
             self.assertEqual(cache.metadata["format_name"], CACHE_FORMAT_NAME)
             self.assertEqual(cache.metadata["frame_ids"], [0, 1])
+            self.assertFalse(cache.metadata["arrays"]["stored"])
+            self.assertIsNone(cache.metadata["arrays"]["directory"])
             self.assertEqual(cache.adapter_status.name, "unit-teacher")
             self.assertEqual(cache.frame_summaries[0]["coordinate_frame"], "world")
             self.assertEqual(cache.frame_summaries[0]["scale_source"], "calibrated_rgb")
+            self.assertIsNone(cache.frame_summaries[0]["arrays_path"])
+            self.assertEqual(cache.frame_summaries[0]["camera"]["K"], _K().tolist())
+            self.assertEqual(
+                cache.frame_summaries[0]["pose"]["T_world_camera"],
+                _pose(0).T_world_camera.tolist(),
+            )
             self.assertIn("confidence_summary", cache.frame_summaries[0])
             self.assertIn("uncertainty_summary", cache.frame_summaries[0])
             self.assertGreater(cache.frame_summaries[0]["uncertainty_summary"]["mean"], 0.0)
+
+    def test_cache_writer_stores_and_round_trips_array_payloads_when_requested(self) -> None:
+        prediction, status = _prediction()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_dir = Path(temp_dir) / "cache"
+
+            written = write_teacher_prediction_cache(
+                prediction,
+                cache_dir,
+                status,
+                store_arrays=True,
+            )
+
+            self.assertIn(cache_dir / "arrays" / "frame_000000.npz", written)
+            cache = load_teacher_prediction_cache(cache_dir)
+            self.assertTrue(cache.metadata["arrays"]["stored"])
+            self.assertEqual(cache.metadata["arrays"]["directory"], "arrays")
+            self.assertEqual(cache.frame_summaries[0]["arrays_path"], "arrays/frame_000000.npz")
+
+            payload = load_teacher_prediction_array_payload(cache_dir, 0)
+            self.assertEqual(
+                set(payload),
+                {
+                    "depth_m",
+                    "depth_sigma_m",
+                    "normal_camera",
+                    "point_world",
+                    "confidence",
+                    "static_mask",
+                },
+            )
+            np.testing.assert_array_equal(payload["depth_m"], _frame_prediction(0).depth_m)
+            np.testing.assert_array_equal(payload["confidence"], _frame_prediction(0).confidence)
+
+    def test_cache_reader_reports_missing_and_corrupt_array_payload_paths(self) -> None:
+        prediction, status = _prediction()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_dir = Path(temp_dir) / "cache"
+            write_teacher_prediction_cache(
+                prediction,
+                cache_dir,
+                status,
+                store_arrays=True,
+            )
+
+            payload_path = cache_dir / "arrays" / "frame_000000.npz"
+            payload_path.unlink()
+            with self.assertRaisesRegex(ValueError, r"frame_000000\.npz.*missing array payload"):
+                validate_teacher_prediction_cache(cache_dir)
+
+            write_teacher_prediction_cache(
+                prediction,
+                cache_dir,
+                status,
+                store_arrays=True,
+            )
+            payload_path.write_bytes(b"not a valid npz payload")
+            with self.assertRaisesRegex(ValueError, r"frame_000000\.npz.*invalid NumPy"):
+                validate_teacher_prediction_cache(cache_dir)
 
     def test_cache_reader_validates_required_metadata_and_frame_summaries(self) -> None:
         prediction, status = _prediction()
@@ -189,6 +260,251 @@ class TeacherPredictionCacheTest(unittest.TestCase):
 
 
 class AdapterRunnerCliTest(unittest.TestCase):
+    def test_fixture_adapter_reconstructs_prediction_from_synthetic_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session = Path(temp_dir) / "session.atlas3r"
+            write_synthetic_cube_room_session(session)
+
+            prediction = FixtureCubeRoomTeacherAdapter().predict_from_session(session)
+
+            self.assertEqual(prediction.adapter_name, "fixture-cube-room")
+            self.assertEqual(len(prediction.frame_predictions), 3)
+            self.assertEqual(prediction.metadata["coordinate_frame"], "synthetic_world")
+            first = prediction.frame_predictions[0]
+            self.assertEqual(first.pose.frame_id, 0)
+            self.assertEqual(first.pose.scale_source, "known_anchor")
+            self.assertEqual(first.camera.source, "synthetic_calibrated")
+            self.assertEqual(first.depth_m.shape, (24, 32))
+            self.assertEqual(first.depth_sigma_m.shape, first.depth_m.shape)
+            self.assertEqual(first.confidence.shape, first.depth_m.shape)
+            self.assertTrue(np.all(first.depth_sigma_m >= 0.0))
+            self.assertTrue(np.all((first.confidence >= 0.0) & (first.confidence <= 1.0)))
+            self.assertEqual(first.normal_camera.shape, (24, 32, 3))
+            self.assertEqual(first.point_world.shape, (24, 32, 3))
+            self.assertIsNotNone(first.object_mask_logits)
+            self.assertIn(
+                "Synthetic analytic fixture", prediction.metadata["geometry_truth_boundary"]
+            )
+
+    def test_fixture_runner_writes_deterministic_validated_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "session.atlas3r"
+            first_cache = root / "cache_a"
+            second_cache = root / "cache_b"
+            write_synthetic_cube_room_session(session)
+
+            first_result = run_adapter_to_cache(
+                adapter_name="fixture-cube-room",
+                input_session=session,
+                output_cache=first_cache,
+            )
+            second_result = run_adapter_to_cache(
+                adapter_name="fixture-cube-room",
+                input_session=session,
+                output_cache=second_cache,
+            )
+
+            self.assertEqual(first_result.adapter_status.availability, "available")
+            self.assertEqual(second_result.output_cache, second_cache)
+            self.assertEqual(
+                (first_cache / "metadata.json").read_text(encoding="utf-8"),
+                (second_cache / "metadata.json").read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                (first_cache / "frame_summaries.jsonl").read_text(encoding="utf-8"),
+                (second_cache / "frame_summaries.jsonl").read_text(encoding="utf-8"),
+            )
+
+            cache = load_teacher_prediction_cache(first_cache)
+            self.assertEqual(cache.adapter_status.name, "fixture-cube-room")
+            self.assertEqual(cache.adapter_status.availability, "available")
+            self.assertEqual(cache.metadata["frame_ids"], [0, 1, 2])
+            self.assertEqual(cache.metadata["coordinate_frame"], "synthetic_world")
+            self.assertEqual(cache.metadata["scale_sources"], ["known_anchor"])
+            self.assertFalse(cache.metadata["arrays"]["stored"])
+            self.assertEqual(cache.frame_summaries[0]["frame_id"], 0)
+            self.assertEqual(cache.frame_summaries[0]["coordinate_frame"], "synthetic_world")
+            self.assertEqual(cache.frame_summaries[0]["scale_source"], "known_anchor")
+            self.assertIsNone(cache.frame_summaries[0]["arrays_path"])
+            self.assertEqual(cache.frame_summaries[0]["camera"]["source"], "synthetic_calibrated")
+            self.assertIn("confidence_summary", cache.frame_summaries[0])
+            self.assertIn("uncertainty_summary", cache.frame_summaries[0])
+            self.assertGreater(cache.frame_summaries[0]["confidence_summary"]["mean"], 0.0)
+            self.assertGreater(cache.frame_summaries[0]["uncertainty_summary"]["mean"], 0.0)
+
+    def test_fixture_runner_can_store_validated_array_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "session.atlas3r"
+            cache_dir = root / "cache"
+            write_synthetic_cube_room_session(session)
+
+            run_adapter_to_cache(
+                adapter_name="fixture-cube-room",
+                input_session=session,
+                output_cache=cache_dir,
+                store_arrays=True,
+            )
+
+            cache = load_teacher_prediction_cache(cache_dir)
+            self.assertTrue(cache.metadata["arrays"]["stored"])
+            self.assertEqual(cache.frame_summaries[0]["arrays_path"], "arrays/frame_000000.npz")
+            payload = load_teacher_prediction_array_payload(cache_dir, 0)
+            self.assertIn("object_mask_logits", payload)
+            self.assertEqual(payload["depth_m"].shape, (24, 32))
+            self.assertEqual(payload["depth_sigma_m"].dtype, np.float32)
+            self.assertEqual(payload["static_mask"].dtype, np.bool_)
+            self.assertTrue(np.all(payload["depth_sigma_m"] >= 0.0))
+            self.assertTrue(np.all((payload["confidence"] >= 0.0) & (payload["confidence"] <= 1.0)))
+
+    def test_cli_fixture_runner_writes_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "session.atlas3r"
+            cache = root / "teacher_cache"
+            write_synthetic_cube_room_session(session)
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(SRC)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "adapters",
+                    "run",
+                    "--adapter",
+                    "fixture-cube-room",
+                    "--input",
+                    str(session),
+                    "--output",
+                    str(cache),
+                ],
+                check=False,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Wrote teacher prediction cache", result.stdout)
+            self.assertTrue((cache / "metadata.json").is_file())
+            self.assertTrue((cache / "frame_summaries.jsonl").is_file())
+            loaded_cache = load_teacher_prediction_cache(cache)
+            self.assertEqual(loaded_cache.metadata["frame_ids"], [0, 1, 2])
+            self.assertFalse(loaded_cache.metadata["arrays"]["stored"])
+            self.assertFalse((cache / "arrays").exists())
+
+    def test_cli_fixture_runner_arrays_and_cache_inspection_are_deterministic(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "session.atlas3r"
+            cache = root / "teacher_cache"
+            write_synthetic_cube_room_session(session)
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(SRC)
+
+            run_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "adapters",
+                    "run",
+                    "--adapter",
+                    "fixture-cube-room",
+                    "--input",
+                    str(session),
+                    "--output",
+                    str(cache),
+                    "--store-arrays",
+                ],
+                check=False,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(run_result.returncode, 0, run_result.stderr)
+            self.assertTrue((cache / "arrays" / "frame_000000.npz").is_file())
+
+            inspect_args = [
+                sys.executable,
+                "-m",
+                "atlas3r",
+                "inspect",
+                "teacher-cache",
+                "--input",
+                str(cache),
+            ]
+            first = subprocess.run(
+                inspect_args,
+                check=False,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            second = subprocess.run(
+                inspect_args,
+                check=False,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            inspection = json.loads(first.stdout)
+            self.assertEqual(inspection["adapter"]["name"], "fixture-cube-room")
+            self.assertEqual(inspection["adapter"]["status"], "available")
+            self.assertEqual(inspection["frames"]["frame_ids"], [0, 1, 2])
+            self.assertEqual(inspection["coordinate_frame"], "synthetic_world")
+            self.assertEqual(inspection["scale_sources"], ["known_anchor"])
+            self.assertTrue(inspection["arrays"]["stored"])
+            self.assertFalse(inspection["cache"]["accuracy_report"])
+            self.assertIn("not an accuracy report", inspection["cache"]["accuracy_note"])
+            self.assertIn("confidence_summaries", inspection)
+            self.assertIn("uncertainty_summaries", inspection)
+
+    def test_fixture_runner_rejects_non_synthetic_and_malformed_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "not_synthetic.atlas3r"
+            write_synthetic_cube_room_session(session)
+            metadata_path = session / "metadata.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["session_type"] = "captured_rgb"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            with self.assertRaisesRegex(AdapterRunError, "session_type.*synthetic_cube_room"):
+                run_adapter_to_cache(
+                    adapter_name="fixture-cube-room",
+                    input_session=session,
+                    output_cache=root / "cache",
+                )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            session = root / "malformed.atlas3r"
+            write_synthetic_cube_room_session(session)
+            depth_path = session / "depth" / "frame_000000.npz"
+            with np.load(depth_path) as depth_file:
+                depth_arrays = {name: depth_file[name] for name in depth_file.files}
+            del depth_arrays["depth_sigma_m"]
+            np.savez(depth_path, **depth_arrays)
+
+            with self.assertRaisesRegex(AdapterRunError, "missing depth sidecar fields"):
+                run_adapter_to_cache(
+                    adapter_name="fixture-cube-room",
+                    input_session=session,
+                    output_cache=root / "cache",
+                )
+
     def test_cli_runner_reports_clear_known_adapter_error(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

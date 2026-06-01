@@ -161,17 +161,26 @@ Known Phase 0E stubs are `VGGTAdapter` and `DepthProAdapter`. Missing optional
 dependencies must raise `AdapterDependencyError` from adapter construction or
 prediction with the adapter name and installation hint in the message.
 
+Phase 1B adds `fixture-cube-room`, an `available` dependency-free fixture
+adapter for exercising runner plumbing and cache writing only. It accepts Phase
+0B synthetic cube-room `.atlas3r` sessions, reconstructs `TeacherPrediction`
+records from analytic depth/session sidecars, and marks prediction metadata with
+`coordinate_frame: synthetic_world`, `fixture: true`, and a synthetic-only truth
+boundary. It is not an external teacher model, does not run neural inference, and
+must not be treated as measured geometry for real captures.
+
 ## TeacherPrediction cache
 
 Phase 1A introduces a dependency-light cache for serialized teacher prediction
-metadata and per-frame contract summaries. The default cache stores summaries,
-not full model tensors:
+metadata and per-frame contract summaries. Phase 1C adds an explicit opt-in full
+array payload path. The default cache still stores summaries, not full model
+tensors:
 
 ```text
 teacher_cache/
   metadata.json
   frame_summaries.jsonl
-  arrays/ optional future tensor payloads
+  arrays/ optional tensor payloads
 ```
 
 `metadata.json` is deterministic JSON with:
@@ -184,7 +193,8 @@ teacher_cache/
 - `coordinate_frame` and coordinate convention;
 - `frame_count`, sorted `frame_ids`, and observed `scale_sources`;
 - `frame_summaries_path`;
-- `arrays`: whether arrays are stored and the optional `.npz` keys.
+- `arrays`: whether arrays are stored, the array directory when enabled, and
+  the documented `.npz` keys.
 
 `frame_summaries.jsonl` contains one deterministic JSON object per frame, sorted
 by `frame_id`. Each summary must preserve:
@@ -192,15 +202,20 @@ by `frame_id`. Each summary must preserve:
 - `frame_id` and `timestamp_ns`;
 - `coordinate_frame` and `scale_source`;
 - camera confidence/source and pose confidence/tracking state/scale source;
+- replay-needed camera fields: `K`, `distortion_model`, `distortion_params`,
+  and `rolling_shutter_row_time_s`;
+- replay-needed pose fields: `T_world_camera`, `q_world_camera_xyzw`,
+  `camera_center_world_m`, `covariance_6x6`, and `diagnostics`;
 - pose covariance presence plus a small covariance-derived uncertainty summary;
 - dense confidence summary from `FramePrediction.confidence`;
 - depth uncertainty summary from `FramePrediction.depth_sigma_m`;
 - depth value summary and tensor shape/dtype summaries;
 - dense-match count and confidence summary when present;
-- `arrays_path`, currently `null` unless a future writer stores tensor payloads.
+- `arrays_path`, `null` for summaries-only caches or a relative payload path
+  when full arrays are explicitly stored.
 
-If full arrays are stored later, they must use NumPy `.npz` files under
-`arrays/` with documented keys:
+When full arrays are explicitly requested, the cache writer stores NumPy `.npz`
+payloads under `arrays/frame_<frame_id:06d>.npz`. Required payload keys are:
 
 ```text
 depth_m
@@ -209,15 +224,128 @@ normal_camera
 point_world
 confidence
 static_mask
+```
+
+Optional payload keys are stored only when the corresponding `FramePrediction`
+field is not `None`:
+
+```text
 object_embeddings
 object_mask_logits
 ```
 
+Payload validation must check shapes against frame tensor summaries, dtype
+matches, finite numeric values, confidence/probability ranges in `[0, 1]`, and
+non-negative depth/uncertainty arrays. Missing or corrupt `.npz` payloads must
+raise explicit path-named errors.
+
 Cache readers must validate metadata, adapter capabilities/status, frame
-summaries, confidence ranges, non-negative uncertainty summaries, frame counts,
-frame IDs, and coordinate-frame consistency with explicit path-named errors.
-The cache is not an accuracy report and must not present predicted or completed
-geometry as measured geometry.
+summaries, payload references when declared, confidence ranges, non-negative
+uncertainty summaries, frame counts, frame IDs, and coordinate-frame consistency
+with explicit path-named errors. The cache is not an accuracy report and must
+not present predicted or completed geometry as measured geometry.
+
+`atlas3r adapters run --adapter fixture-cube-room --input <session.atlas3r>
+--output <cache_dir>` writes this cache for valid synthetic cube-room sessions.
+The default runner behavior is summaries-only. `--store-arrays` explicitly opts
+in to full tensor payloads under `arrays/`. The runner must reject non-synthetic
+or malformed sessions with explicit errors. External adapter stubs such as
+`vggt` and `depth-pro` must continue to fail gracefully with adapter name,
+availability status, reason, and guidance until future phases implement real
+adapter prediction paths.
+
+`atlas3r inspect teacher-cache --input <cache_dir>` validates a teacher cache and
+prints deterministic JSON with adapter name/status, frame IDs, coordinate frame,
+scale sources, array storage state, confidence summaries, and uncertainty
+summaries. It must state that the cache inspection is not an accuracy report.
+
+### Phase 1D teacher-cache TSDF replay output
+
+`atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder>` replays
+a validated teacher cache with full array payloads into the dependency-free CPU
+TSDF reference path. Replay requires `metadata.json` to declare
+`arrays.stored=true`; summaries-only caches are rejected with a path-named error.
+Each frame payload is loaded through the Phase 1C `.npz` validation path, and
+replay reconstructs only the fields needed by CPU TSDF integration:
+
+- `CameraModel` width, height, intrinsics, distortion fields, confidence, and source;
+- `PoseEstimate` `T_world_camera`, quaternion, camera center, covariance,
+  confidence, tracking state, scale source, and diagnostics;
+- payload `depth_m`, `depth_sigma_m`, `confidence`, and `point_world` arrays.
+
+Replay writes deterministic artifacts:
+
+```text
+<folder>/
+  tsdf_grid.npz        tsdf, weight, grid_min_corner_world_m, voxel_size_m
+  surface_points.npz   points_world_m, confidence, uncertainty_m, voxel_indices_xyz
+  metadata.json        replay/source metadata and confidence/uncertainty summaries
+  metrics.json         synthetic fixture metrics or an explicit not-evaluated record
+```
+
+`metadata.json` preserves source frame IDs, coordinate frame, metric scale
+source(s), voxel size, observed coverage estimate, adapter name, cache array
+state, and input confidence/uncertainty summaries. The output is a deterministic
+smoke artifact and not an accuracy report.
+
+`metrics.json` contains synthetic cube-room fixture metrics only when cache
+metadata proves the source is the `fixture-cube-room` synthetic fixture with
+`fixture=true`, `fixture_session_type=synthetic_cube_room`, and
+`coordinate_frame=synthetic_world`. All other caches write
+`metric_family: not_evaluated` and must not report geometric accuracy.
+
+### Phase 1E TSDF MeshChunk sidecar
+
+CPU TSDF smoke commands can optionally write a dependency-free MeshChunk JSON
+sidecar from observed TSDF surface samples:
+
+```bash
+atlas3r smoke tsdf-cube-room --output <folder> --write-mesh-sidecar
+atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-mesh-sidecar
+```
+
+The flag preserves all Phase 0D/1D artifacts and adds:
+
+```text
+<folder>/
+  mesh_chunk_sidecar.json
+```
+
+`mesh_chunk_sidecar.json` is deterministic JSON:
+
+```text
+{
+  "format_name": "atlas3r_tsdf_surface_mesh_chunk_sidecar",
+  "format_version": 1,
+  "mesh_chunk": { ... MeshChunk fields ... },
+  "metadata": { ... sidecar/source TSDF metadata ... },
+  "sample_attributes": { ... emitted confidence/uncertainty arrays ... }
+}
+```
+
+The `mesh_chunk` object validates against the existing `MeshChunk` contract.
+It uses `T_world_chunk=identity` and world-frame vertices because the TSDF
+surface samples are already in the output coordinate frame. Faces are
+low-fidelity marker triangles around observed voxel-center surface samples; they
+are reference geometry for early pipeline testing, not marching-cubes output and
+not a GLB/PLY/game-engine final asset. `surface_source_per_face` is always
+`0 observed_surface`; `object_id_per_face` is `-1` until object-aware fusion
+exists.
+
+The sidecar metadata preserves:
+
+- source surface artifact type and full source surface metadata;
+- coordinate frame, unit scale, metric scale source, and source frame IDs;
+- voxel size, observed coverage estimate, and surface coverage estimate;
+- source and emitted sample counts plus the deterministic max-sample cap;
+- confidence summary and mean/p95 uncertainty;
+- `accuracy_report_path: null` and an explicit not-an-accuracy-report note.
+
+MeshChunk flags must include `low_fidelity_reference_only`,
+`observed_surface_samples`, `not_completed_surface`, and
+`not_accuracy_report`. The sidecar must not claim hidden/completed geometry as
+measured geometry. Missing or malformed `surface_points.npz` or `metadata.json`
+inputs must raise path-named errors.
 
 ## ObjectInstance
 

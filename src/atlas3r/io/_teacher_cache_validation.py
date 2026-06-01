@@ -6,6 +6,10 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
+from zipfile import BadZipFile
+
+import numpy as np
+import numpy.typing as npt
 
 from atlas3r.api.contracts import SCALE_SOURCE_VALUES
 from atlas3r.api.validation import (
@@ -17,9 +21,11 @@ from atlas3r.api.validation import (
     validate_positive_int,
 )
 from atlas3r.io.teacher_cache_schema import (
+    ARRAYS_DIRECTORY,
     CACHE_FORMAT_NAME,
     CACHE_FORMAT_VERSION,
     OPTIONAL_ARRAY_KEYS,
+    REQUIRED_ARRAY_KEYS,
 )
 from atlas3r.models.adapters.contracts import AdapterCapabilities, AdapterStatus
 
@@ -39,7 +45,7 @@ def validate_cache_directory(
         _validate_frame_summary(record, frame_summaries_path, line_number)
         for line_number, record in enumerate(frame_summaries, start=1)
     )
-    _validate_cache_cross_refs(metadata, validated_summaries, metadata_path)
+    _validate_cache_cross_refs(root, metadata, validated_summaries, metadata_path)
     return root, metadata, validated_summaries, adapter_status
 
 
@@ -61,13 +67,24 @@ def _validate_metadata(metadata: dict[str, Any], path: Path) -> AdapterStatus:
 
 
 def _validate_arrays_metadata(record: Mapping[str, Any], path: Path) -> None:
-    _bool_field(record, "stored", path)
-    if _required(record, "directory", path) is not None:
-        validate_nonempty_str("arrays.directory", str(_required(record, "directory", path)))
+    stored = _bool_field(record, "stored", path)
+    directory = _required(record, "directory", path)
+    if stored:
+        if directory is None:
+            raise ValueError(f"{path}: arrays.directory must be set when arrays.stored is true")
+        if validate_nonempty_str("arrays.directory", str(directory)) != ARRAYS_DIRECTORY:
+            raise ValueError(f"{path}: arrays.directory must be {ARRAYS_DIRECTORY!r}")
+    elif directory is not None:
+        raise ValueError(f"{path}: arrays.directory must be null when arrays.stored is false")
     keys = _str_list(record, "optional_npz_keys", path)
     missing = set(OPTIONAL_ARRAY_KEYS) - set(keys)
     if missing:
         raise ValueError(f"{path}: arrays.optional_npz_keys missing {sorted(missing)}")
+    unknown = set(keys) - set(OPTIONAL_ARRAY_KEYS)
+    if unknown:
+        raise ValueError(
+            f"{path}: arrays.optional_npz_keys contains unknown keys {sorted(unknown)}"
+        )
 
 
 def _validate_frame_summary(
@@ -102,7 +119,7 @@ def _validate_frame_summary(
         field_name="depth_summary",
         non_negative=True,
     )
-    _dict_field(record, "tensor_shapes", location)
+    _validate_tensor_shapes(_dict_field(record, "tensor_shapes", location), location)
     dense_matches = _required(record, "dense_matches", location)
     if dense_matches is not None and not isinstance(dense_matches, dict):
         raise ValueError(f"{location}: dense_matches must be an object or null")
@@ -150,7 +167,35 @@ def _validate_numeric_summary(
             validate_non_negative_scalar(f"{field_name}.{key}", scalar)
 
 
+def _validate_tensor_shapes(record: Mapping[str, Any], path: Path) -> None:
+    for key in REQUIRED_ARRAY_KEYS:
+        _validate_tensor_shape_record(_dict_field(record, key, path), path, key)
+    for key in ("object_embeddings", "object_mask_logits"):
+        value = _required(record, key, path)
+        if value is None:
+            continue
+        if not isinstance(value, dict):
+            raise ValueError(f"{path}: tensor_shapes.{key} must be an object or null")
+        _validate_tensor_shape_record(value, path, key)
+
+
+def _validate_tensor_shape_record(
+    record: Mapping[str, Any],
+    path: Path,
+    field_name: str,
+) -> tuple[list[int], str]:
+    shape = _int_list(record, "shape", path)
+    if any(dimension < 0 for dimension in shape):
+        raise ValueError(f"{path}: tensor_shapes.{field_name}.shape must be non-negative")
+    dtype = validate_nonempty_str(
+        f"tensor_shapes.{field_name}.dtype",
+        str(_required(record, "dtype", path)),
+    )
+    return shape, dtype
+
+
 def _validate_cache_cross_refs(
+    root: Path,
     metadata: dict[str, Any],
     frame_summaries: Sequence[dict[str, Any]],
     metadata_path: Path,
@@ -169,6 +214,131 @@ def _validate_cache_cross_refs(
     for summary in frame_summaries:
         if summary["coordinate_frame"] != coordinate_frame:
             raise ValueError(f"{metadata_path}: frame summary coordinate_frame mismatch")
+    _validate_array_payload_cross_refs(root, metadata, frame_summaries, metadata_path)
+
+
+def _validate_array_payload_cross_refs(
+    root: Path,
+    metadata: Mapping[str, Any],
+    frame_summaries: Sequence[dict[str, Any]],
+    metadata_path: Path,
+) -> None:
+    arrays = _dict_field(metadata, "arrays", metadata_path)
+    arrays_stored = _bool_field(arrays, "stored", metadata_path)
+    for summary in frame_summaries:
+        arrays_path = _required(summary, "arrays_path", metadata_path)
+        frame_id = int(summary["frame_id"])
+        if not arrays_stored:
+            if arrays_path is not None:
+                raise ValueError(
+                    f"{metadata_path}: frame {frame_id} arrays_path must be null "
+                    "when arrays.stored is false"
+                )
+            continue
+        if arrays_path is None:
+            raise ValueError(
+                f"{metadata_path}: frame {frame_id} arrays_path is required "
+                "when arrays.stored is true"
+            )
+        load_validated_array_payload(root, summary)
+
+
+def load_validated_array_payload(
+    root: Path,
+    frame_summary: Mapping[str, Any],
+) -> dict[str, npt.NDArray[Any]]:
+    """Load one validated `.npz` payload referenced by a frame summary."""
+    location = root / "metadata.json"
+    arrays_path = _required(frame_summary, "arrays_path", location)
+    if arrays_path is None:
+        frame_id = int(_required(frame_summary, "frame_id", location))
+        raise ValueError(f"{location}: frame {frame_id} does not store an array payload")
+    payload_path = _resolve_array_payload_path(root, str(arrays_path), location)
+    payload = _read_npz_payload(payload_path)
+    _validate_array_payload(payload, frame_summary, payload_path)
+    return payload
+
+
+def _resolve_array_payload_path(root: Path, arrays_path: str, location: Path) -> Path:
+    relative = Path(validate_nonempty_str("arrays_path", arrays_path))
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"{location}: arrays_path must be relative to the cache directory")
+    if not relative.parts or relative.parts[0] != ARRAYS_DIRECTORY:
+        raise ValueError(f"{location}: arrays_path must be under {ARRAYS_DIRECTORY}/")
+    return root / relative
+
+
+def _read_npz_payload(path: Path) -> dict[str, npt.NDArray[Any]]:
+    if not path.is_file():
+        raise ValueError(f"{path}: missing array payload")
+    try:
+        with np.load(path, allow_pickle=False) as payload:
+            return {str(key): np.asarray(payload[key]) for key in payload.files}
+    except (OSError, ValueError, BadZipFile) as exc:
+        raise ValueError(f"{path}: invalid NumPy .npz payload: {exc}") from exc
+
+
+def _validate_array_payload(
+    payload: Mapping[str, npt.NDArray[Any]],
+    frame_summary: Mapping[str, Any],
+    path: Path,
+) -> None:
+    keys = set(payload.keys())
+    unknown = keys - set(OPTIONAL_ARRAY_KEYS)
+    if unknown:
+        raise ValueError(f"{path}: unknown array payload keys {sorted(unknown)}")
+    tensor_shapes = _dict_field(frame_summary, "tensor_shapes", path)
+    for key in REQUIRED_ARRAY_KEYS:
+        _validate_array_payload_key(payload, tensor_shapes, path, key, required=True)
+    for key in ("object_embeddings", "object_mask_logits"):
+        _validate_array_payload_key(payload, tensor_shapes, path, key, required=False)
+
+
+def _validate_array_payload_key(
+    payload: Mapping[str, npt.NDArray[Any]],
+    tensor_shapes: Mapping[str, Any],
+    path: Path,
+    key: str,
+    *,
+    required: bool,
+) -> None:
+    shape_record = _required(tensor_shapes, key, path)
+    if shape_record is None:
+        if key in payload:
+            raise ValueError(f"{path}: {key} payload is present but summary shape is null")
+        return
+    if not isinstance(shape_record, dict):
+        raise ValueError(f"{path}: tensor_shapes.{key} must be an object or null")
+    expected_shape, expected_dtype = _validate_tensor_shape_record(shape_record, path, key)
+    if key not in payload:
+        if required:
+            raise ValueError(f"{path}: missing required array payload key {key}")
+        raise ValueError(f"{path}: missing array payload key {key} for non-null tensor summary")
+    array = np.asarray(payload[key])
+    if [int(dimension) for dimension in array.shape] != expected_shape:
+        raise ValueError(
+            f"{path}: {key} shape {list(array.shape)} does not match summary {expected_shape}"
+        )
+    if str(array.dtype) != expected_dtype:
+        raise ValueError(
+            f"{path}: {key} dtype {array.dtype} does not match summary {expected_dtype}"
+        )
+    _validate_payload_values(path, key, array)
+
+
+def _validate_payload_values(path: Path, key: str, array: npt.NDArray[Any]) -> None:
+    if array.dtype == np.bool_:
+        if key == "static_mask":
+            return
+        raise ValueError(f"{path}: {key} dtype must be numeric")
+    if not np.issubdtype(array.dtype, np.number):
+        raise ValueError(f"{path}: {key} dtype must be numeric or bool")
+    if not np.all(np.isfinite(array)):
+        raise ValueError(f"{path}: {key} values must be finite")
+    if key in {"depth_m", "depth_sigma_m"} and np.any(array < 0.0):
+        raise ValueError(f"{path}: {key} values must be non-negative")
+    if key in {"confidence", "static_mask"} and np.any((array < 0.0) | (array > 1.0)):
+        raise ValueError(f"{path}: {key} values must be in [0, 1]")
 
 
 def _adapter_status_from_record(record: Mapping[str, Any], path: Path) -> AdapterStatus:
@@ -272,4 +442,4 @@ def _int_list(record: Mapping[str, Any], field_name: str, path: Path) -> list[in
     return [int(item) for item in value]
 
 
-__all__ = ["validate_cache_directory"]
+__all__ = ["load_validated_array_payload", "validate_cache_directory"]

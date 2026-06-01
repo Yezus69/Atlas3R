@@ -6,11 +6,15 @@ from collections.abc import Callable
 
 from atlas3r.models.adapters.contracts import AdapterStatus
 from atlas3r.models.adapters.depth_pro_adapter import get_adapter_status as get_depth_pro_status
+from atlas3r.models.adapters.fixture_teacher_adapter import (
+    get_adapter_status as get_fixture_teacher_status,
+)
 from atlas3r.models.adapters.vggt_adapter import get_adapter_status as get_vggt_status
 
 StatusFactory = Callable[[], AdapterStatus]
 
 _STATUS_FACTORIES: tuple[StatusFactory, ...] = (
+    get_fixture_teacher_status,
     get_vggt_status,
     get_depth_pro_status,
 )

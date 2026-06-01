@@ -285,3 +285,226 @@ Known gaps:
   status/guidance, but known external adapters still do not write caches until
   future adapter implementations produce `TeacherPrediction` records.
 ```
+
+```text
+2026-05-31 23:02 local
+Task: Phase 1B - dependency-free synthetic fixture teacher adapter and first
+cache-producing adapter runner path.
+Changed files:
+- Added src/atlas3r/models/adapters/fixture_teacher_adapter.py with the
+  available `fixture-cube-room` adapter, synthetic-session validation, analytic
+  depth sidecar loading, deterministic point/normal reconstruction, object mask
+  logits, confidence, and depth uncertainty outputs.
+- Wired fixture discovery/export through src/atlas3r/models/adapters/registry.py
+  and src/atlas3r/models/adapters/__init__.py.
+- Updated src/atlas3r/models/adapters/runner.py so
+  `atlas3r adapters run --adapter fixture-cube-room --input <session.atlas3r>
+  --output <cache_dir>` writes a validated Phase 1A cache while VGGT/Depth Pro
+  continue to fail gracefully as unavailable or stub-only adapters.
+- Documented the fixture adapter and runner cache behavior in
+  docs/08_API_CONTRACTS.md and recorded decision D-0007.
+- Updated tests/unit/test_adapters.py, tests/unit/test_teacher_cache.py, and
+  tests/synthetic/test_session_inspect.py for fixture availability,
+  deterministic cache output, summary preservation, malformed-session errors,
+  CLI cache writing, and the Phase 1C handoff.
+- Rewrote docs/status/active_task.md and replaced docs/status/next_task.md with
+  the Phase 1C prompt.
+Commands run:
+- python -m ruff format src tests
+- python -m unittest tests.unit.test_adapters
+- python -m unittest tests.unit.test_teacher_cache
+- python -m ruff check src/atlas3r/models/adapters/runner.py --fix
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Ruff format left 47 files unchanged after the import cleanup.
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 35 source files.
+- Full unittest discovery ran 52 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 1B intentionally does not implement neural inference, external model
+  execution, cloud APIs, model downloads, CUDA, heavyweight visualization/export
+  dependencies, or real capture geometry claims.
+- The fixture adapter only accepts Phase 0B synthetic cube-room sessions and
+  writes summaries-only teacher caches; optional full tensor payloads are left
+  for Phase 1C.
+```
+
+```text
+2026-06-01 08:48 local
+Task: Phase 1C - optional teacher cache tensor payloads and deterministic cache
+inspection.
+Changed files:
+- Extended src/atlas3r/io/teacher_cache.py,
+  src/atlas3r/io/_teacher_cache_validation.py, and
+  src/atlas3r/io/teacher_cache_schema.py with opt-in `.npz` payload writing,
+  loading, and validation for shapes, dtypes, confidence ranges, and
+  non-negative depth/uncertainty arrays.
+- Added src/atlas3r/io/teacher_cache_inspection.py and
+  `atlas3r inspect teacher-cache --input <cache_dir>` deterministic JSON
+  inspection output.
+- Added `--store-arrays` to `atlas3r adapters run` and propagated
+  `store_arrays=True` through the fixture adapter runner path while preserving
+  summaries-only defaults and graceful external adapter stub failures.
+- Updated Makefile `inspect` to exercise teacher-cache inspection when make is
+  available.
+- Updated docs/08_API_CONTRACTS.md, docs/status/active_task.md,
+  docs/status/decisions.md, and docs/status/next_task.md with the Phase 1C
+  contract and Phase 1D handoff.
+- Updated tests/unit/test_teacher_cache.py and
+  tests/synthetic/test_session_inspect.py for payload round-trip, missing/corrupt
+  payload errors, deterministic CLI inspection, summaries-only compatibility,
+  and Phase 1D handoff.
+Commands run:
+- python -m unittest tests.unit.test_teacher_cache
+- python -m unittest tests.unit.test_adapters
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused teacher cache unittest ran 12 tests and passed.
+- Focused adapter unittest ran 7 tests and passed.
+- Ruff format left 48 files unchanged on the final run.
+- Ruff format check passed with 48 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 36 source files.
+- Full unittest discovery ran 56 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 1C intentionally does not implement neural inference, external model
+  execution, cloud APIs, model downloads, CUDA, heavyweight visualization/export
+  dependencies, cache replay into mapping, or real capture geometry claims.
+- Teacher cache inspection validates metadata and payload state only; it is not
+  an accuracy report.
+```
+
+```text
+2026-06-01 12:18 local
+Task: Phase 1D - teacher cache full-array replay into the dependency-free CPU
+TSDF reference path.
+Changed files:
+- Extended new teacher cache frame summaries with replay-needed camera intrinsics
+  and T_world_camera pose metadata while keeping Phase 1C `.npz` payload keys
+  stable.
+- Added src/atlas3r/mapping/teacher_cache_replay.py with summaries-only cache
+  rejection, validated payload loading, TSDF replay, deterministic artifacts,
+  and synthetic-only fixture metrics.
+- Added `atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder>`
+  and wired Makefile smoke/inspect to exercise fixture cache replay when make is
+  available.
+- Updated docs/08_API_CONTRACTS.md, docs/status/active_task.md,
+  docs/status/decisions.md, and docs/status/next_task.md with the Phase 1D
+  contract and Phase 1E handoff.
+- Added tests/synthetic/test_teacher_cache_replay.py and updated focused cache
+  and handoff tests.
+Commands run:
+- python -m unittest tests.unit.test_teacher_cache
+- python -m unittest tests.synthetic.test_teacher_cache_replay
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused teacher cache unittest ran 12 tests and passed.
+- Focused teacher cache replay unittest ran 6 tests and passed.
+- Ruff format reformatted 1 file on the first run and left 50 files unchanged
+  on the final run.
+- Ruff format check passed with 50 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 37 source files.
+- Full unittest discovery ran 62 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 1D intentionally does not implement neural inference, external model
+  execution, cloud APIs, model downloads, CUDA, heavyweight visualization/export
+  dependencies, GLB/PLY export, marching cubes, or real capture geometry claims.
+- Teacher-cache TSDF replay writes observed voxel-center surface points and
+  conservative synthetic fixture metrics only when cache metadata proves the
+  synthetic cube-room fixture source. Other caches get an explicit
+  `not_evaluated` metrics record, not an accuracy report.
+```
+
+```text
+2026-06-01 12:37 local
+Task: Phase 1E - dependency-free MeshChunk sidecar writer for CPU TSDF replay
+outputs.
+Changed files:
+- Added src/atlas3r/mapping/mesh_sidecar.py with TSDF surface artifact loading,
+  contract-valid MeshChunk construction, deterministic sidecar JSON writing,
+  sidecar loading/validation, and path-named missing/malformed artifact errors.
+- Exported MeshChunk sidecar helpers from src/atlas3r/mapping/__init__.py.
+- Extended `write_tsdf_cube_room_smoke` and `write_teacher_cache_tsdf_replay`
+  with opt-in MeshChunk sidecar writing while preserving existing artifacts.
+- Added `--write-mesh-sidecar` to `atlas3r smoke tsdf-cube-room` and
+  `atlas3r smoke teacher-cache-tsdf`; updated Makefile smoke/inspect to use it
+  when make is available.
+- Documented `mesh_chunk_sidecar.json` in docs/08_API_CONTRACTS.md and recorded
+  decision D-0010.
+- Added tests/synthetic/test_tsdf_mesh_sidecar.py and updated
+  tests/synthetic/test_teacher_cache_replay.py and
+  tests/synthetic/test_session_inspect.py for sidecar behavior and Phase 2A
+  handoff.
+- Rewrote docs/status/active_task.md for Phase 1E and replaced
+  docs/status/next_task.md with the Phase 2A prompt.
+Commands run:
+- python -m unittest tests.synthetic.test_tsdf_mesh_sidecar
+- python -m unittest tests.synthetic.test_teacher_cache_replay
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused TSDF MeshChunk sidecar unittest ran 5 tests and passed.
+- Focused teacher-cache replay unittest ran 6 tests and passed.
+- Ruff format left 52 files unchanged on the final run.
+- Ruff format check passed with 52 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 38 source files.
+- Full unittest discovery ran 67 tests and passed on the final run.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 1E intentionally does not implement GLB/PLY export, trimesh,
+  marching-cubes extraction, object-aware meshing, neural inference, external
+  model execution, cloud APIs, CUDA, model downloads, or vendored third-party
+  code/weights.
+- The sidecar mesh is a low-fidelity observed-sample reference artifact for
+  pipeline testing only; it is not an accuracy report and does not claim hidden
+  or completed geometry as measured.
+```

@@ -22,6 +22,7 @@ from atlas3r.models.adapters import (
     AdapterDependencyError,
     AdapterStatus,
     DepthProAdapter,
+    FixtureCubeRoomTeacherAdapter,
     FrameBatch,
     GeometryTeacherAdapter,
     TeacherPrediction,
@@ -167,6 +168,7 @@ class AdapterContractsTest(unittest.TestCase):
         modules = [
             "atlas3r.models.adapters.vggt_adapter",
             "atlas3r.models.adapters.depth_pro_adapter",
+            "atlas3r.models.adapters.fixture_teacher_adapter",
             "atlas3r.models.adapters.registry",
         ]
         for module_name in modules:
@@ -192,7 +194,20 @@ class AdapterContractsTest(unittest.TestCase):
             by_name["depth-pro"].availability,
             AdapterAvailability.UNAVAILABLE.value,
         )
+        self.assertEqual(
+            by_name["fixture-cube-room"].availability,
+            AdapterAvailability.AVAILABLE.value,
+        )
         self.assertIn("missing optional dependency", by_name["vggt"].reason or "")
+
+    def test_fixture_adapter_status_is_available_without_optional_dependencies(self) -> None:
+        adapter = FixtureCubeRoomTeacherAdapter()
+
+        self.assertEqual(adapter.name, "fixture-cube-room")
+        self.assertEqual(adapter.status.availability, AdapterAvailability.AVAILABLE.value)
+        self.assertTrue(adapter.status.capabilities.predicts_depth)
+        self.assertTrue(adapter.status.capabilities.predicts_points)
+        self.assertTrue(adapter.status.capabilities.predicts_objects)
 
     def test_cli_adapter_listing_succeeds(self) -> None:
         env = os.environ.copy()
@@ -209,6 +224,7 @@ class AdapterContractsTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("name\tstatus\tdetails", result.stdout)
+        self.assertIn("fixture-cube-room", result.stdout)
         self.assertIn("vggt", result.stdout)
         self.assertIn("depth-pro", result.stdout)
         self.assertRegex(result.stdout, r"(available|unavailable|stub-only)")

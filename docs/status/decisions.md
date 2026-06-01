@@ -107,3 +107,87 @@ artifact to validate while avoiding large tensor files and premature inference
 claims.
 Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_teacher_cache.py.
 ```
+
+```text
+Decision ID: D-0007
+Date: 2026-06-01
+Context: Phase 1B needs the adapter runner to produce a real TeacherPrediction
+cache without downloading model weights, vendoring third-party repositories,
+calling cloud APIs, running neural inference, or claiming real capture
+measurements.
+Decision: Add `fixture-cube-room` as an available dependency-free fixture
+adapter that only accepts Phase 0B synthetic cube-room `.atlas3r` sessions and
+reconstructs teacher predictions from analytic depth/session sidecars.
+Alternatives considered: Make VGGT or Depth Pro produce fake outputs; add a
+generic session-to-cache converter outside the adapter registry; serialize
+synthetic fixture predictions as prebuilt files.
+Consequences: Runner/cache plumbing can be tested end to end while real external
+adapters remain honest stubs until model-specific integration exists. The
+fixture name and metadata make the synthetic-only truth boundary explicit.
+Docs/tests updated: docs/08_API_CONTRACTS.md, tests/unit/test_adapters.py, and
+tests/unit/test_teacher_cache.py.
+```
+
+```text
+Decision ID: D-0008
+Date: 2026-06-01
+Context: Phase 1C needs teacher caches to optionally preserve full tensor arrays
+for synthetic fixture data while keeping summaries-only caches as the default
+and avoiding heavyweight serialization dependencies.
+Decision: Keep `metadata.json` and `frame_summaries.jsonl` as the deterministic
+cache source of truth, and add an explicit `--store-arrays` / `store_arrays=True`
+path that writes per-frame NumPy payloads under `arrays/frame_<frame_id:06d>.npz`.
+Cache inspection emits deterministic JSON and explicitly states that cache
+inspection is not an accuracy report.
+Alternatives considered: Always write arrays; put every tensor into JSON; add a
+binary archive or visualization/export dependency now.
+Consequences: Existing summaries-only caches remain backward compatible, while
+fixture payloads can round-trip and validate shapes, dtypes, confidence ranges,
+and uncertainty values with path-named errors for missing or corrupt payloads.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_teacher_cache.py.
+```
+
+```text
+Decision ID: D-0009
+Date: 2026-06-01
+Context: Phase 1D needs full-array teacher caches to replay into the CPU TSDF
+reference path, but Phase 1C summaries did not include camera intrinsics or the
+full T_world_camera pose needed for projection-based TSDF integration.
+Decision: Keep the Phase 1C `.npz` tensor payload keys stable and add
+replay-needed camera/pose fields to newly written `frame_summaries.jsonl`
+records. Add `atlas3r smoke teacher-cache-tsdf` to require `arrays.stored=true`,
+load payloads through the cache validation path, and compute synthetic fixture
+metrics only when cache metadata proves the synthetic cube-room source.
+Alternatives considered: Put camera/pose matrices into every `.npz` payload;
+derive TSDF directly from cached point_world without depth/pose projection;
+force summaries-only caches to become replayable.
+Consequences: Existing summaries-only caches remain inspectable but are
+explicitly rejected for TSDF replay. New payload caches carry enough deterministic
+metadata for dependency-free replay without adding model or visualization
+dependencies.
+Docs/tests updated: docs/08_API_CONTRACTS.md,
+tests/unit/test_teacher_cache.py, and
+tests/synthetic/test_teacher_cache_replay.py.
+```
+
+```text
+Decision ID: D-0010
+Date: 2026-06-01
+Context: Phase 1E needs CPU TSDF replay outputs to exercise the public
+MeshChunk contract before marching cubes, GLB/PLY export, object-aware fusion,
+or heavyweight mesh dependencies exist.
+Decision: Add an opt-in `mesh_chunk_sidecar.json` wrapper with a
+contract-valid `MeshChunk`, source TSDF surface metadata, and emitted
+confidence/uncertainty arrays. The mesh uses deterministic low-fidelity marker
+triangles around observed voxel-center samples and flags the artifact as
+reference-only, observed-only, not completed, and not an accuracy report.
+Alternatives considered: Add GLB/PLY/trimesh/marching-cubes dependencies now;
+connect neighboring surface points into larger inferred surfaces; add new fields
+to the MeshChunk dataclass for coordinate frame and coverage.
+Consequences: Smoke runs can validate MeshChunk plumbing without presenting
+completed or hidden geometry as measured. Coordinate frame, coverage, and
+per-sample confidence/uncertainty stay in the sidecar wrapper metadata until a
+future MeshChunk schema revision deliberately promotes them into the contract.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/synthetic/test_tsdf_mesh_sidecar.py.
+```
