@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
@@ -12,6 +13,7 @@ from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.session import validate_session
 from atlas3r.mapping.cpu_tsdf import write_tsdf_cube_room_smoke
 from atlas3r.models.adapters import list_adapters
+from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
 from atlas3r.visualization.session_preview import write_session_preview
 
 
@@ -43,6 +45,20 @@ def _run_adapters_list(_args: argparse.Namespace) -> int:
     for status in list_adapters():
         detail = status.reason or status.install_hint or ""
         print(f"{status.name}\t{status.availability}\t{detail}")
+    return 0
+
+
+def _run_adapters_run(args: argparse.Namespace) -> int:
+    try:
+        result = run_adapter_to_cache(
+            adapter_name=args.adapter,
+            input_session=args.input,
+            output_cache=args.output,
+        )
+    except AdapterRunError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(f"Wrote teacher prediction cache to {result.output_cache}")
     return 0
 
 
@@ -112,6 +128,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="List known teacher adapters and availability.",
     )
     adapters_list_parser.set_defaults(handler=_run_adapters_list)
+    adapters_run_parser = adapters_subparsers.add_parser(
+        "run",
+        help="Run a teacher adapter into a dependency-light prediction cache.",
+    )
+    adapters_run_parser.add_argument(
+        "--adapter",
+        required=True,
+        help="Adapter name from `atlas3r adapters list`.",
+    )
+    adapters_run_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input `.atlas3r` session folder.",
+    )
+    adapters_run_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output teacher prediction cache folder.",
+    )
+    adapters_run_parser.set_defaults(handler=_run_adapters_run)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser
 

@@ -161,6 +161,64 @@ Known Phase 0E stubs are `VGGTAdapter` and `DepthProAdapter`. Missing optional
 dependencies must raise `AdapterDependencyError` from adapter construction or
 prediction with the adapter name and installation hint in the message.
 
+## TeacherPrediction cache
+
+Phase 1A introduces a dependency-light cache for serialized teacher prediction
+metadata and per-frame contract summaries. The default cache stores summaries,
+not full model tensors:
+
+```text
+teacher_cache/
+  metadata.json
+  frame_summaries.jsonl
+  arrays/ optional future tensor payloads
+```
+
+`metadata.json` is deterministic JSON with:
+
+- `format_name`: `atlas3r_teacher_prediction_cache`;
+- `format_version`: `1`;
+- `adapter`: adapter name, display name, availability, install hint, reason,
+  and full `AdapterCapabilities`;
+- `prediction_metadata`: JSON-serializable `TeacherPrediction.metadata`;
+- `coordinate_frame` and coordinate convention;
+- `frame_count`, sorted `frame_ids`, and observed `scale_sources`;
+- `frame_summaries_path`;
+- `arrays`: whether arrays are stored and the optional `.npz` keys.
+
+`frame_summaries.jsonl` contains one deterministic JSON object per frame, sorted
+by `frame_id`. Each summary must preserve:
+
+- `frame_id` and `timestamp_ns`;
+- `coordinate_frame` and `scale_source`;
+- camera confidence/source and pose confidence/tracking state/scale source;
+- pose covariance presence plus a small covariance-derived uncertainty summary;
+- dense confidence summary from `FramePrediction.confidence`;
+- depth uncertainty summary from `FramePrediction.depth_sigma_m`;
+- depth value summary and tensor shape/dtype summaries;
+- dense-match count and confidence summary when present;
+- `arrays_path`, currently `null` unless a future writer stores tensor payloads.
+
+If full arrays are stored later, they must use NumPy `.npz` files under
+`arrays/` with documented keys:
+
+```text
+depth_m
+depth_sigma_m
+normal_camera
+point_world
+confidence
+static_mask
+object_embeddings
+object_mask_logits
+```
+
+Cache readers must validate metadata, adapter capabilities/status, frame
+summaries, confidence ranges, non-negative uncertainty summaries, frame counts,
+frame IDs, and coordinate-frame consistency with explicit path-named errors.
+The cache is not an accuracy report and must not present predicted or completed
+geometry as measured geometry.
+
 ## ObjectInstance
 
 ```python

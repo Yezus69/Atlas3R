@@ -89,3 +89,21 @@ or weights are installed while preserving the existing pose, camera,
 confidence, and uncertainty conventions.
 Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_adapters.py.
 ```
+
+```text
+Decision ID: D-0006
+Date: 2026-06-01
+Context: Phase 1A needs a persistent teacher prediction artifact before any
+external teacher model inference is wired, and the format must keep adapter
+status, capabilities, confidence, uncertainty, coordinate frame, and scale
+source metadata without introducing heavyweight dependencies.
+Decision: Add a deterministic summaries-first `TeacherPrediction` cache under
+`teacher_cache/metadata.json` and `teacher_cache/frame_summaries.jsonl`.
+Full tensor payloads are optional future `.npz` files with documented keys.
+Alternatives considered: Serialize every tensor immediately; reuse `.atlas3r`
+sessions for teacher outputs; leave cache format private to tests.
+Consequences: Phase 1 runner and future adapters have a stable, dependency-light
+artifact to validate while avoiding large tensor files and premature inference
+claims.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_teacher_cache.py.
+```

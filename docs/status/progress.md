@@ -235,3 +235,53 @@ Known gaps:
 - VGGT and Depth Pro are discovery/contract stubs only; with dependencies
   installed they still report `stub-only` until Phase 1 wiring adds inference.
 ```
+
+```text
+2026-05-31 22:16 local
+Task: Phase 1A - dependency-light TeacherPrediction cache format and adapter
+runner skeleton.
+Changed files:
+- Added src/atlas3r/io/teacher_cache.py with deterministic metadata/frame
+  summary cache writing and public loading helpers.
+- Added src/atlas3r/io/_teacher_cache_validation.py and
+  src/atlas3r/io/teacher_cache_schema.py for on-disk validation and shared
+  cache constants.
+- Exported teacher cache helpers from src/atlas3r/io/__init__.py.
+- Added src/atlas3r/models/adapters/runner.py with session validation and
+  clear unavailable/stub-only adapter run errors.
+- Added `atlas3r adapters run --adapter <name> --input <session.atlas3r>
+  --output <cache_dir>`.
+- Documented the Phase 1A teacher cache format in docs/08_API_CONTRACTS.md and
+  recorded decision D-0006.
+- Added tests/unit/test_teacher_cache.py for deterministic cache output,
+  reader validation, and CLI runner errors.
+- Updated the status handoff test and replaced docs/status/next_task.md with
+  the Phase 1B fixture teacher adapter prompt.
+Commands run:
+- python -m unittest tests.unit.test_teacher_cache
+- python -m unittest tests.unit.test_adapters
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+Results:
+- Focused teacher cache unittest ran 4 tests and passed.
+- Focused adapter unittest ran 6 tests and passed.
+- Ruff format left 46 files unchanged after earlier formatting passes.
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 34 source files.
+- Full unittest discovery ran 47 tests and passed.
+- `Get-Command make` reported: `make` is not recognized as the name of a
+  cmdlet, function, script file, or operable program. Therefore `make test`,
+  `make lint`, `make typecheck`, `make smoke`, and `make inspect` were not run.
+Known gaps:
+- Phase 1A intentionally does not implement neural inference, external model
+  execution, cloud APIs, model downloads, CUDA, or vendored third-party code or
+  weights.
+- `atlas3r adapters run` validates input sessions and reports clear adapter
+  status/guidance, but known external adapters still do not write caches until
+  future adapter implementations produce `TeacherPrediction` records.
+```

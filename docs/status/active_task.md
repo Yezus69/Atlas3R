@@ -3,48 +3,43 @@
 Codex should keep the current task checklist here so context compaction does not lose state.
 
 ```text
-Goal: Phase 0E - add dependency-safe teacher-adapter contracts, named stubs,
-registry discovery, CLI listing, docs, and tests without downloading models or
-adding heavyweight dependencies.
+Goal: Phase 1A - add the first dependency-light teacher prediction cache and
+runner skeleton without downloading weights, vendoring third-party code, cloud
+APIs, neural inference, CUDA, or heavyweight visualization/export dependencies.
 Relevant docs read: AGENTS.md, README.md, PLANS.md, docs/08_API_CONTRACTS.md,
 docs/status/active_task.md, docs/status/progress.md,
 docs/status/decisions.md, docs/status/next_task.md, src/atlas3r/api/contracts.py,
-src/atlas3r/api/validation.py, src/atlas3r/cli.py,
-src/atlas3r/models/adapters/__init__.py, tests/unit/test_contracts.py, and
-tests/unit/test_cli.py.
+src/atlas3r/api/validation.py, src/atlas3r/cli.py, src/atlas3r/io/session.py,
+src/atlas3r/models/adapters/contracts.py,
+src/atlas3r/models/adapters/registry.py,
+src/atlas3r/models/adapters/vggt_adapter.py,
+src/atlas3r/models/adapters/depth_pro_adapter.py, tests/unit/test_adapters.py,
+tests/unit/test_cli.py, and tests/synthetic/test_session_inspect.py.
 Plan:
-1. Add `atlas3r.models.adapters.contracts` with `FrameBatch`,
-   `TeacherPrediction`, `GeometryTeacherAdapter`, adapter capabilities,
-   availability status, and clear adapter runtime errors.
-2. Add small `VGGTAdapter` and `DepthProAdapter` stubs that never import
-   optional teacher packages at module import time and raise installation errors
-   from construction when dependencies are missing.
-3. Add a pure-Python adapter registry and `atlas3r adapters list`.
-4. Document the public adapter contract in docs/08_API_CONTRACTS.md and add a
-   decision entry because a new public interface is introduced.
-5. Add focused tests for contract validation, stub import/dependency errors,
-   registry status, and CLI listing while preserving Phase 0A-0D tests.
+1. Add `atlas3r.io.teacher_cache` with deterministic JSON/JSONL metadata and
+   frame-summary read/write validation for `TeacherPrediction`.
+2. Preserve adapter name, adapter status/capability metadata, frame IDs,
+   coordinate frame, scale source, confidence summaries, and uncertainty
+   summaries without serializing large tensors by default.
+3. Add `atlas3r adapters run --adapter <name> --input <session.atlas3r>
+   --output <cache_dir>` as a tiny runner surface that validates the input
+   session and fails clearly for unavailable or stub-only adapters.
+4. Document the public cache layout in docs/08_API_CONTRACTS.md and record a
+   decision because this introduces a persistent format.
+5. Add focused tests for deterministic cache output, reader validation, and CLI
+   runner errors while preserving Phase 0A-0E tests.
 6. Run requested verification commands, record results, and replace
-   docs/status/next_task.md with the Phase 1A prompt.
+   docs/status/next_task.md with the Phase 1B prompt.
 Checklist:
-- [x] Add adapter contract dataclasses/protocol/errors.
-- [x] Add VGGT and Depth Pro dependency-safe stubs.
-- [x] Add registry and CLI listing.
+- [x] Add teacher cache dataclasses/helpers.
+- [x] Add cache writer deterministic output.
+- [x] Add cache reader validation errors.
+- [x] Add adapter runner skeleton and CLI command.
 - [x] Update API docs and decisions.
 - [x] Add/update tests.
-- [x] Advance `docs/status/next_task.md` to Phase 1A.
+- [x] Advance `docs/status/next_task.md` to Phase 1B.
 - [x] Run verification commands and record results.
 Known exclusions: No model downloads, vendored third-party code, cloud APIs,
-neural inference, CUDA, heavyweight visualization/export dependencies, or
-model-weight assumptions in Phase 0E.
-Verification results:
-- `python -m ruff format src tests` formatted/checked files.
-- `python -m ruff format --check src tests` passed.
-- `python -m ruff check src tests` passed.
-- `python -m mypy src` passed with no issues in 30 source files.
-- `python -m unittest discover -s tests -p 'test_*.py'` ran 43 tests and passed.
-- `python -m atlas3r adapters list` printed known adapter statuses.
-- `make test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect`
-  could not run because PowerShell reported: `make` is not recognized as the
-  name of a cmdlet, function, script file, or operable program.
+neural inference, CUDA, heavyweight visualization/export dependencies, or model
+weight assumptions in Phase 1A.
 ```

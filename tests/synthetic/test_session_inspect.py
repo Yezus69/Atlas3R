@@ -171,11 +171,11 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_1a(self) -> None:
+    def test_status_handoff_points_to_phase_1b(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Codex Prompt - Atlas3R Phase 1A", next_task)
-        self.assertIn("Teacher Prediction Cache", next_task)
+        self.assertIn("Codex Prompt - Atlas3R Phase 1B", next_task)
+        self.assertIn("Fixture Teacher Adapter", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

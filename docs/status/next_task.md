@@ -1,53 +1,53 @@
-# Codex Prompt - Atlas3R Phase 1A: Teacher Prediction Cache and Runner Skeleton
+# Codex Prompt - Atlas3R Phase 1B: Dependency-Free Fixture Teacher Adapter
 
-You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0E.
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 1A.
 Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
 the current `docs/status/*` files before coding. Then read only the source and
-tests needed for teacher adapter discovery, prediction contracts, and file IO.
+tests needed for teacher adapter discovery, `.atlas3r` session IO, frame
+contracts, and the Phase 1A teacher prediction cache.
 
 ## Task goal
 
-Create the first dependency-light Phase 1 teacher prediction cache and runner
-surface. This task must not download model weights, vendor third-party
-repositories, call cloud APIs, run neural inference, add CUDA, or add
-heavyweight visualization/export dependencies.
+Add the first cache-producing teacher runner path without downloading model
+weights, vendoring third-party repositories, calling cloud APIs, running neural
+inference, adding CUDA, or adding heavyweight visualization/export dependencies.
+This should be a deterministic fixture teacher used only to exercise contracts,
+cache writing, and runner plumbing.
 
 ## Required implementation
 
-1. Add a serialized `TeacherPrediction` cache format.
-   - Store metadata and per-frame contract summaries in a deterministic folder
-     or JSON/JSONL layout.
-   - Preserve adapter name, adapter availability/capability metadata, frame IDs,
-     coordinate frame, scale source, confidence, and uncertainty summaries.
-   - Do not silently drop uncertainty or confidence fields.
+1. Add a dependency-free fixture teacher adapter.
+   - It may consume the existing synthetic cube-room `.atlas3r` session outputs
+     and reconstruct `TeacherPrediction` records from analytic depth/session
+     sidecars.
+   - It must be clearly named as a fixture/test adapter, not a real external
+     model teacher.
+   - Every output frame must carry confidence and uncertainty fields.
+   - Do not claim measured geometry beyond the synthetic fixture.
 
-2. Add read/write validation helpers.
-   - Validate cache metadata and frame prediction summaries with explicit errors.
-   - Keep full tensor serialization narrow and dependency-light; if arrays are
-     stored, prefer NumPy `.npz` with documented keys.
+2. Wire the runner to produce a Phase 1A cache for the fixture adapter.
+   - `atlas3r adapters run --adapter <fixture-name> --input <session.atlas3r>
+     --output <cache_dir>` should write a validated teacher cache.
+   - External stubs such as VGGT and Depth Pro should continue to fail
+     gracefully with adapter name, status, reason, and guidance.
 
-3. Add a tiny runner skeleton.
-   - Add a CLI command such as `atlas3r adapters run --adapter <name> --input
-     <session.atlas3r> --output <cache_dir>`.
-   - The command may fail gracefully for unavailable/stub-only external adapters,
-     but the error must include adapter name, status, and installation or
-     implementation guidance.
-   - Do not add real external model inference yet.
+3. Add validation and tests.
+   - Fixture adapter status is `available`.
+   - Fixture runner writes deterministic cache output.
+   - Cache summaries preserve frame IDs, coordinate frame, scale source,
+     confidence summaries, and uncertainty summaries.
+   - Runner rejects non-synthetic or malformed sessions with explicit errors.
+   - Existing Phase 0A-1A tests keep passing.
 
-4. Add tests.
-   - Cache writer output is deterministic.
-   - Cache reader validates required metadata and summaries.
-   - CLI runner reports clear unavailable/stub-only adapter errors.
-   - Existing Phase 0A-0E tests keep passing.
-
-5. Update docs/status.
-   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 1A
+4. Update docs/status.
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 1B
      plan and checklist.
-   - Update `docs/08_API_CONTRACTS.md` if a public cache format is introduced.
+   - Update `docs/08_API_CONTRACTS.md` if the fixture adapter or runner cache
+     behavior changes public contracts.
    - Append results to `docs/status/progress.md` after verification.
    - Append to `docs/status/decisions.md` only if an interface or format
      decision changed.
-   - Replace this file with the Phase 1B prompt before declaring done.
+   - Replace this file with the Phase 1C prompt before declaring done.
 
 ## Verification commands
 
