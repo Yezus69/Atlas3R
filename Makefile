@@ -16,7 +16,7 @@ test:
 	$(PYTHON) -m unittest discover -s tests -p "test_*.py"
 
 smoke:
-	$(PYTHON) -m atlas3r smoke --help
+	$(PYTHON) -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r
 
 profile:
 	$(PYTHON) -m atlas3r profile --help

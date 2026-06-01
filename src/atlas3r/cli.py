@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import cast
 
 from atlas3r import __version__
+from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
+
+
+def _run_synthetic_cube_room(args: argparse.Namespace) -> int:
+    output = write_synthetic_cube_room_session(args.output)
+    print(f"Wrote synthetic cube-room session to {output}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -21,7 +30,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("smoke", help="Show the skeleton smoke-test command surface.")
+    smoke_parser = subparsers.add_parser("smoke", help="Run smoke-test commands.")
+    smoke_subparsers = smoke_parser.add_subparsers(dest="smoke_command", required=True)
+    synthetic_parser = smoke_subparsers.add_parser(
+        "synthetic-cube-room",
+        help="Write a deterministic synthetic cube-room .atlas3r session.",
+    )
+    synthetic_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output session folder to create or update.",
+    )
+    synthetic_parser.set_defaults(handler=_run_synthetic_cube_room)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser
 
@@ -31,7 +52,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.command is not None:
-        parser.error(f"`{args.command}` is not implemented in the skeleton yet")
-
-    return 0
+    handler = getattr(args, "handler", None)
+    if handler is None:
+        return 0
+    return cast(Callable[[argparse.Namespace], int], handler)(args)

@@ -196,6 +196,7 @@ session.atlas3r/
   objects.jsonl
   mesh_chunks/
     chunk_<id>_v<version>.glb
+    chunk_<id>_v<version>.json Phase 0B metadata/full synthetic mesh sidecar
   depth/
     frame_<id>.npz optional
   logs/

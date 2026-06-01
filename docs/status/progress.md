@@ -64,3 +64,42 @@ Results:
 Known gaps:
 - Phase 0A intentionally does not implement neural models, teacher adapters, TSDF fusion, mesh extraction, runtime video capture, or the synthetic cube-room generator.
 ```
+
+```text
+2026-05-31 20:44 local
+Task: Phase 0B - deterministic synthetic cube-room generator and smoke command.
+Changed files:
+- Added src/atlas3r/data/synthetic_cube_room.py with fixed intrinsics, three
+  known poses, analytic ray-box depth, object masks, object records, and a
+  contract-valid ground-truth MeshChunk/WorldMap.
+- Exported the synthetic fixture from src/atlas3r/data/__init__.py.
+- Implemented `atlas3r smoke synthetic-cube-room --output <folder>`.
+- Updated Makefile smoke to run the synthetic cube-room writer.
+- Documented the Phase 0B mesh chunk JSON sidecar in docs/08_API_CONTRACTS.md
+  and recorded decision D-0002.
+- Added tests/synthetic/test_synthetic_cube_room.py for contracts,
+  projection/unprojection agreement, object mask alignment, mesh/world
+  validation, session writing, and CLI smoke output.
+Commands run:
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p test_*.py
+- make test
+- make lint
+- make typecheck
+- make smoke
+Results:
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 20 source files.
+- unittest discovery ran 24 tests and passed.
+- make commands could not run because `make` is not available on PATH in this
+  environment.
+Known gaps:
+- Phase 0B intentionally does not implement neural models, teacher adapters,
+  TSDF fusion, learned mesh extraction, runtime video capture, or GLB export.
+- The smoke session writes a JSON mesh sidecar for the ground-truth synthetic
+  mesh; GLB export remains future mapper/exporter work.
+```
