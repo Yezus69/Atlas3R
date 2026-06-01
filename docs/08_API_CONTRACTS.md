@@ -135,9 +135,18 @@ Validation requirements:
 - `rgb_u8`, when present, is HxWx3 `uint8`;
 - `source` is non-empty.
 
-`depth_observation_from_synthetic_frame(frame)` converts Phase 0B synthetic
-cube-room frames. Teacher-cache replay performs its replay-frame conversion in
-`atlas3r.mapping.teacher_cache_replay` to avoid circular imports.
+`atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`
+converts Phase 0B synthetic cube-room frames and is exported from
+`atlas3r.data`. `atlas3r.mapping.observations` remains the generic mapper
+observation contract and must not import synthetic fixture classes.
+Teacher-cache replay performs its replay-frame conversion in
+`atlas3r.mapping.teacher_cache_replay`.
+
+Shared TSDF grid geometry helpers live in `atlas3r.mapping.tsdf_grid`:
+`compute_tsdf_grid_shape(...)` computes deterministic XYZ voxel grid shape from
+world bounds and voxel size, and `voxel_centers_world(...)` returns Nx3
+world-frame voxel centers. TSDF replay paths should use these public helpers
+instead of importing private implementation details from `cpu_tsdf.py`.
 
 ## Teacher adapter contracts
 

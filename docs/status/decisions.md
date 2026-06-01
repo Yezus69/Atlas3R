@@ -255,3 +255,24 @@ Docs/tests updated: docs/08_API_CONTRACTS.md,
 tests/unit/test_mapping_observations.py, and
 tests/synthetic/test_teacher_cache_replay.py.
 ```
+
+```text
+Decision ID: D-0014
+Date: 2026-06-01
+Context: Phase 2C.1 found two mapper boundary leaks before Phase 2D: the
+generic observation module imported the synthetic cube-room fixture, and
+teacher-cache replay imported private TSDF grid helpers from cpu_tsdf.py.
+Decision: Keep DepthObservation in atlas3r.mapping.observations, move the
+synthetic frame converter to atlas3r.data.synthetic_observations and export it
+from atlas3r.data, and add public TSDF grid helpers in
+atlas3r.mapping.tsdf_grid for grid shape and voxel-center computation.
+Alternatives considered: Keep deprecated mapper re-exports for the synthetic
+converter; leave private helper wrappers in cpu_tsdf.py; duplicate grid math in
+teacher-cache replay.
+Consequences: Mapper observations remain generic and synthetic-free, TSDF
+replay uses public mapper helpers, and Phase 2D can build runtime scheduling on
+explicit public boundaries without changing TSDF numerical behavior.
+Docs/tests updated: docs/08_API_CONTRACTS.md,
+tests/unit/test_mapping_observations.py, and
+tests/synthetic/test_teacher_cache_replay.py.
+```

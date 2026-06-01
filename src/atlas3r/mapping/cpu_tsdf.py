@@ -16,7 +16,8 @@ from atlas3r.data.synthetic_cube_room import (
     create_synthetic_cube_room_scene,
     write_synthetic_cube_room_session,
 )
-from atlas3r.mapping.observations import DepthObservation, depth_observation_from_synthetic_frame
+from atlas3r.mapping.observations import DepthObservation
+from atlas3r.mapping.tsdf_grid import compute_tsdf_grid_shape, voxel_centers_world
 from atlas3r.pose.transforms import invert_transform, transform_points
 
 FLOAT32 = np.float32
@@ -38,13 +39,12 @@ class TSDFVolume:
 
     def centers_world_m(self) -> npt.NDArray[np.float64]:
         """Return voxel centers as an Nx3 world-space array."""
-        nx, ny, nz = self.tsdf.shape
-        origin = self.grid_min_corner_world_m.astype(FLOAT64, copy=False)
-        x = origin[0] + (np.arange(nx, dtype=FLOAT64) + 0.5) * self.voxel_size_m
-        y = origin[1] + (np.arange(ny, dtype=FLOAT64) + 0.5) * self.voxel_size_m
-        z = origin[2] + (np.arange(nz, dtype=FLOAT64) + 0.5) * self.voxel_size_m
-        xx, yy, zz = np.meshgrid(x, y, z, indexing="ij")
-        return np.column_stack([xx.reshape(-1), yy.reshape(-1), zz.reshape(-1)])
+        shape_xyz = (int(self.tsdf.shape[0]), int(self.tsdf.shape[1]), int(self.tsdf.shape[2]))
+        return voxel_centers_world(
+            self.grid_min_corner_world_m,
+            shape_xyz,
+            self.voxel_size_m,
+        )
 
 
 @dataclass(frozen=True)
@@ -75,6 +75,8 @@ def integrate_synthetic_cube_room_scene(
     truncation_voxels: float = 3.0,
 ) -> TSDFVolume:
     """Fuse the Phase 0B analytic depth frames into a tiny CPU TSDF volume."""
+    from atlas3r.data.synthetic_observations import depth_observation_from_synthetic_frame
+
     if voxel_size_m <= 0.0:
         raise ValueError("voxel_size_m: must be positive")
     if truncation_voxels <= 0.0:
@@ -82,8 +84,8 @@ def integrate_synthetic_cube_room_scene(
 
     grid_min = scene.room_bounds_m.min_corner_m.astype(FLOAT64, copy=True)
     grid_max = scene.room_bounds_m.max_corner_m.astype(FLOAT64, copy=False)
-    shape_xyz = _grid_shape_xyz(grid_min, grid_max, voxel_size_m)
-    centers_world = _voxel_centers(grid_min, shape_xyz, voxel_size_m)
+    shape_xyz = compute_tsdf_grid_shape(grid_min, grid_max, voxel_size_m)
+    centers_world = voxel_centers_world(grid_min, shape_xyz, voxel_size_m)
     voxel_count = centers_world.shape[0]
     tsdf_flat = np.ones(voxel_count, dtype=FLOAT64)
     weight_flat = np.zeros(voxel_count, dtype=FLOAT64)
@@ -258,31 +260,6 @@ def write_tsdf_cube_room_smoke(
         map_sidecar_path = write_tsdf_world_map_sidecar_from_artifacts(output_path)
         written_paths = (*written_paths, map_sidecar_path)
     return written_paths
-
-
-def _grid_shape_xyz(
-    grid_min_world_m: npt.NDArray[np.float64],
-    grid_max_world_m: npt.NDArray[np.float64],
-    voxel_size_m: float,
-) -> tuple[int, int, int]:
-    extent = grid_max_world_m - grid_min_world_m
-    if np.any(extent <= 0.0):
-        raise ValueError("grid bounds: max corner must be greater than min corner")
-    shape = np.ceil((extent / voxel_size_m) - 1e-9).astype(np.int64)
-    return (int(shape[0]), int(shape[1]), int(shape[2]))
-
-
-def _voxel_centers(
-    grid_min_world_m: npt.NDArray[np.float64],
-    shape_xyz: tuple[int, int, int],
-    voxel_size_m: float,
-) -> npt.NDArray[np.float64]:
-    nx, ny, nz = shape_xyz
-    x = grid_min_world_m[0] + (np.arange(nx, dtype=FLOAT64) + 0.5) * voxel_size_m
-    y = grid_min_world_m[1] + (np.arange(ny, dtype=FLOAT64) + 0.5) * voxel_size_m
-    z = grid_min_world_m[2] + (np.arange(nz, dtype=FLOAT64) + 0.5) * voxel_size_m
-    xx, yy, zz = np.meshgrid(x, y, z, indexing="ij")
-    return np.column_stack([xx.reshape(-1), yy.reshape(-1), zz.reshape(-1)])
 
 
 def integrate_depth_observation(

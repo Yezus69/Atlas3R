@@ -23,10 +23,7 @@ from atlas3r.mapping.mesh_sidecar import (
     write_tsdf_surface_mesh_sidecar,
     write_tsdf_surface_mesh_sidecar_from_artifacts,
 )
-from atlas3r.mapping.observations import (
-    DepthObservation,
-    depth_observation_from_synthetic_frame,
-)
+from atlas3r.mapping.observations import DepthObservation
 from atlas3r.mapping.teacher_cache_replay import (
     TeacherCacheTSDFReplayFrame,
     TeacherCacheTSDFReplayResult,
@@ -35,6 +32,7 @@ from atlas3r.mapping.teacher_cache_replay import (
     run_teacher_cache_tsdf_replay,
     write_teacher_cache_tsdf_replay,
 )
+from atlas3r.mapping.tsdf_grid import compute_tsdf_grid_shape, voxel_centers_world
 from atlas3r.mapping.tsdf_output_inspection import (
     TSDF_OUTPUT_INSPECTION_FORMAT_NAME,
     TSDF_OUTPUT_INSPECTION_FORMAT_VERSION,
@@ -77,7 +75,7 @@ __all__ = [
     "WORLD_MAP_SIDECAR_FILENAME",
     "WORLD_MAP_SIDECAR_FORMAT_NAME",
     "WORLD_MAP_SIDECAR_FORMAT_VERSION",
-    "depth_observation_from_synthetic_frame",
+    "compute_tsdf_grid_shape",
     "depth_observation_from_teacher_cache_frame",
     "evaluate_surface_against_synthetic_cube_room",
     "extract_tsdf_surface",
@@ -96,6 +94,7 @@ __all__ = [
     "tsdf_output_folder_inspection_record",
     "tsdf_world_map_sidecar_record",
     "world_map_from_mesh_sidecar",
+    "voxel_centers_world",
     "write_teacher_cache_tsdf_replay",
     "write_tsdf_surface_mesh_sidecar",
     "write_tsdf_surface_mesh_sidecar_from_artifacts",

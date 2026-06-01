@@ -3,41 +3,37 @@
 Codex should keep the current task checklist here so context compaction does not lose state.
 
 ```text
-Goal: Phase 2C revised - replace synthetic-shaped private TSDF frame plumbing
-with a public validated DepthObservation contract used by both synthetic TSDF
-fusion and teacher-cache TSDF replay.
-Relevant docs read: AGENTS.md, PLANS.md, docs/08_API_CONTRACTS.md,
+Goal: Phase 2C.1 - clean mapper boundaries before Phase 2D by keeping
+DepthObservation generic, moving synthetic conversion to the data side, and
+removing teacher-cache replay imports of private TSDF helpers.
+Relevant docs read: AGENTS.md, docs/08_API_CONTRACTS.md,
 docs/status/active_task.md, docs/status/progress.md,
 docs/status/decisions.md, docs/status/next_task.md.
-Relevant source/tests read: src/atlas3r/mapping/cpu_tsdf.py,
+Relevant source/tests read: src/atlas3r/mapping/observations.py,
+src/atlas3r/mapping/cpu_tsdf.py,
 src/atlas3r/mapping/teacher_cache_replay.py,
-src/atlas3r/data/synthetic_cube_room.py, tests/synthetic/test_cpu_tsdf.py,
-tests/synthetic/test_teacher_cache_replay.py.
+tests/unit/test_mapping_observations.py, tests/synthetic/test_cpu_tsdf.py,
+tests/synthetic/test_teacher_cache_replay.py, and the Phase 2D handoff test.
 Plan:
-1. Add src/atlas3r/mapping/observations.py with a validated DepthObservation
-   dataclass and a synthetic-frame constructor.
-2. Refactor CPU TSDF integration so the integration function consumes
-   DepthObservation while preserving synthetic smoke artifacts and numerical
-   behavior.
-3. Refactor teacher-cache replay to convert replay frames into DepthObservation
-   before TSDF fusion and remove the type ignore smell.
-4. Export the new contract, document it in docs/08_API_CONTRACTS.md, and record
-   the architecture decision.
-5. Replace docs/status/next_task.md with the Phase 2D deterministic streaming
-   runtime scheduler skeleton prompt and fix the stale PLANS.md Phase 0 wording.
-6. Add focused tests for DepthObservation validation and the removed replay type
-   ignore, then run formatting, lint, typecheck, unittest, and available make
-   commands.
+1. Move depth_observation_from_synthetic_frame out of mapping.observations and
+   into a synthetic/data module exported by atlas3r.data.
+2. Update CPU TSDF, tests, and package exports so DepthObservation remains
+   public from atlas3r.mapping while synthetic conversion lives under data.
+3. Add public TSDF grid helper functions and use them from CPU TSDF and
+   teacher-cache replay instead of private cpu_tsdf helpers.
+4. Add source guard tests for the boundary rules and update API contracts plus
+   decisions if public module/helper names change.
+5. Run the requested Ruff, mypy, unittest, and available make verification
+   commands, then record results in docs/status/progress.md.
 Checklist:
 - [x] Read required docs and focused mapping/test files.
-- [x] Rewrite active task for revised Phase 2C.
-- [x] Add DepthObservation contract and constructors.
-- [x] Refactor CPU TSDF synthetic integration path.
-- [x] Refactor teacher-cache replay observation path.
-- [x] Add/update focused tests.
-- [x] Update contracts, decisions, progress, next task, and PLANS.md.
+- [x] Rewrite active task for Phase 2C.1.
+- [x] Move synthetic observation conversion to atlas3r.data.
+- [x] Add public TSDF grid helper module and update imports.
+- [x] Add/update focused architecture guard tests.
+- [x] Update contracts, decisions, progress, and preserve Phase 2D next task.
 - [x] Run verification commands and record results.
-Known exclusions: No neural inference, external model downloads, CUDA,
-GLB/PLY export, marching cubes, object-aware mesh extraction, video decoding,
-web servers, notebooks, or regression bundles in this revised Phase 2C.
+Known exclusions: Do not implement runtime scheduling, threads, CUDA, Metal,
+neural models, video decoding, marching cubes, GLB/PLY export, web servers,
+notebooks, or new heavy dependencies.
 ```

@@ -662,3 +662,54 @@ Known gaps:
   boundary, but CPU TSDF fusion still uses depth, confidence, uncertainty,
   camera, and pose only.
 ```
+
+```text
+2026-06-01 18:05 local
+Task: Phase 2C.1 - mapper boundary cleanup before Phase 2D.
+Changed files:
+- Added src/atlas3r/data/synthetic_observations.py with the synthetic
+  cube-room to DepthObservation converter.
+- Added src/atlas3r/mapping/tsdf_grid.py with public TSDF grid shape and voxel
+  center helpers.
+- Updated src/atlas3r/mapping/observations.py so DepthObservation remains
+  generic and synthetic-free.
+- Updated src/atlas3r/data/__init__.py, src/atlas3r/mapping/__init__.py,
+  src/atlas3r/mapping/cpu_tsdf.py, and
+  src/atlas3r/mapping/teacher_cache_replay.py for the new public boundaries.
+- Added focused architecture guard assertions in
+  tests/unit/test_mapping_observations.py and
+  tests/synthetic/test_teacher_cache_replay.py.
+- Updated docs/08_API_CONTRACTS.md, docs/status/active_task.md, and
+  docs/status/decisions.md; docs/status/next_task.md remains the Phase 2D
+  deterministic streaming runtime scheduler prompt.
+Commands run:
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Initial mypy caught a tuple typing issue for TSDFVolume.centers_world_m; it
+  was fixed and the final mypy run passed with no issues in 44 source files.
+- Initial unittest discovery caught a circular import through the eager data
+  converter export; it was fixed with a lazy data export and local synthetic
+  converter import in CPU TSDF.
+- Final Ruff format left 61 files formatted after one file was reformatted.
+- Final Ruff format check passed with 61 files already formatted.
+- Final Ruff lint passed.
+- Final mypy passed with no issues in 44 source files.
+- Final unittest discovery ran 85 tests and passed.
+- Get-Command make reported: The term 'make' is not recognized as the name of
+  a cmdlet, function, script file, or operable program. Therefore make test,
+  make lint, make typecheck, make smoke, and make inspect were not run.
+- git diff --check reported no whitespace errors; Git warned that files will be
+  converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2C.1 intentionally does not implement runtime scheduling, threads,
+  CUDA, Metal, neural models, video decoding, marching cubes, GLB/PLY export,
+  web servers, notebooks, or new heavy dependencies.
+- The synthetic converter is exported lazily from atlas3r.data to avoid import
+  cycles while keeping atlas3r.mapping.observations generic.
+```

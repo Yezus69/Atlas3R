@@ -20,13 +20,12 @@ from atlas3r.mapping.cpu_tsdf import (
     FLOAT64,
     TSDFSurface,
     TSDFVolume,
-    _grid_shape_xyz,
-    _voxel_centers,
     evaluate_surface_against_synthetic_cube_room,
     extract_tsdf_surface,
     integrate_depth_observation,
 )
 from atlas3r.mapping.observations import DepthObservation
+from atlas3r.mapping.tsdf_grid import compute_tsdf_grid_shape, voxel_centers_world
 
 
 @dataclass(frozen=True)
@@ -257,8 +256,8 @@ def _integrate_replay_frames(
     voxel_size_m: float,
     truncation_distance_m: float,
 ) -> TSDFVolume:
-    shape_xyz = _grid_shape_xyz(grid_min_world_m, grid_max_world_m, voxel_size_m)
-    centers_world = _voxel_centers(grid_min_world_m, shape_xyz, voxel_size_m)
+    shape_xyz = compute_tsdf_grid_shape(grid_min_world_m, grid_max_world_m, voxel_size_m)
+    centers_world = voxel_centers_world(grid_min_world_m, shape_xyz, voxel_size_m)
     tsdf_flat = np.ones(centers_world.shape[0], dtype=FLOAT64)
     weight_flat = np.zeros(centers_world.shape[0], dtype=FLOAT64)
     for frame in frames:

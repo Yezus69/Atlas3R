@@ -16,7 +16,6 @@ from atlas3r.api.validation import (
     validate_nonempty_str,
     validate_same_shape,
 )
-from atlas3r.data.synthetic_cube_room import SyntheticCubeRoomFrame
 
 
 def _set(instance: object, field_name: str, value: object) -> None:
@@ -105,22 +104,6 @@ class DepthObservation:
         _set(self, "confidence", confidence)
 
 
-def depth_observation_from_synthetic_frame(frame: SyntheticCubeRoomFrame) -> DepthObservation:
-    """Convert a deterministic synthetic frame into the public mapper contract."""
-    return DepthObservation(
-        frame_id=frame.frame_id,
-        camera=frame.camera,
-        pose=frame.pose,
-        depth_m=frame.depth_m,
-        depth_sigma_m=frame.depth_sigma_m,
-        confidence=frame.confidence,
-        static_mask=np.ones(frame.depth_m.shape, dtype=np.bool_),
-        object_id=frame.object_id,
-        source="synthetic_cube_room",
-    )
-
-
 __all__ = [
     "DepthObservation",
-    "depth_observation_from_synthetic_frame",
 ]

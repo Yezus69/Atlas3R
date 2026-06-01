@@ -24,6 +24,8 @@ class TeacherCacheTSDFReplayTest(unittest.TestCase):
         )
 
         self.assertNotIn("type: ignore[arg-type]", replay_source)
+        self.assertNotIn("_grid_shape_xyz", replay_source)
+        self.assertNotIn("_voxel_centers", replay_source)
 
     def test_fixture_array_cache_replays_into_cpu_tsdf_deterministically(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

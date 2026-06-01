@@ -1,15 +1,24 @@
 import unittest
+from pathlib import Path
 
 import numpy as np
 
-from atlas3r.data.synthetic_cube_room import create_synthetic_cube_room_scene
-from atlas3r.mapping.observations import (
-    DepthObservation,
-    depth_observation_from_synthetic_frame,
-)
+from atlas3r.data import create_synthetic_cube_room_scene, depth_observation_from_synthetic_frame
+from atlas3r.mapping.observations import DepthObservation
+
+ROOT = Path(__file__).resolve().parents[2]
+SRC = ROOT / "src"
 
 
 class DepthObservationTest(unittest.TestCase):
+    def test_observation_contract_source_is_synthetic_fixture_free(self) -> None:
+        observations_source = (SRC / "atlas3r" / "mapping" / "observations.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn("atlas3r.data.synthetic_cube_room", observations_source)
+        self.assertNotIn("SyntheticCubeRoomFrame", observations_source)
+
     def _valid_observation(self) -> DepthObservation:
         scene = create_synthetic_cube_room_scene()
         return depth_observation_from_synthetic_frame(scene.frames[0])
