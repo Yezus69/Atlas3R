@@ -147,3 +147,49 @@ Known gaps:
 - SVG/HTML previews are diagnostic inspection artifacts only, not accuracy
   reports.
 ```
+
+```text
+2026-05-31 21:37 local
+Task: Phase 0D - deterministic pure-NumPy CPU TSDF reference smoke for the
+synthetic cube-room fixture.
+Changed files:
+- Added src/atlas3r/mapping/cpu_tsdf.py with a small TSDF grid integrator,
+  voxel-center surface extraction, uncertainty/confidence metadata, synthetic
+  box-mesh metrics, and deterministic smoke artifact writing.
+- Exported the TSDF reference helpers from src/atlas3r/mapping/__init__.py.
+- Added `atlas3r smoke tsdf-cube-room --output <folder>` and updated `make
+  smoke` to exercise the TSDF smoke path.
+- Documented the Phase 0D TSDF smoke output format in docs/08_API_CONTRACTS.md
+  and recorded decision D-0004.
+- Added tests/synthetic/test_cpu_tsdf.py for determinism, metadata, voxel-scale
+  synthetic bounds overlap, metrics, and CLI smoke output.
+- Updated tests/synthetic/test_session_inspect.py for the Phase 0E handoff.
+- Replaced docs/status/next_task.md with the Phase 0E teacher-adapter contract
+  prompt and updated docs/status/active_task.md.
+Commands run:
+- python -m unittest tests.synthetic.test_cpu_tsdf
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- make --version
+- Get-Command make
+Results:
+- Focused TSDF unittest ran 4 tests and passed.
+- Ruff format check passed.
+- Ruff lint passed.
+- mypy passed with no issues in 25 source files.
+- Full unittest discovery ran 37 tests and passed.
+- `make --version` / `Get-Command make` reported: `make` is not recognized as
+  the name of a cmdlet, function, script file, or operable program. Therefore
+  `make test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect`
+  were not run.
+Known gaps:
+- Phase 0D intentionally does not implement CUDA, neural models, teacher
+  adapters, nvblox integration, OpenGL, web servers, notebooks, trimesh, or GLB
+  export.
+- The TSDF smoke output is an observed voxel-center point cloud with
+  voxel-scale synthetic fixture metrics; it is not an accuracy report and makes
+  no millimeter-level claim.
+```

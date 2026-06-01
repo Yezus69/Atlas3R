@@ -224,6 +224,28 @@ preview_dir/
 The preview is diagnostic only. It must not be used as an accuracy report, and
 hidden or completed geometry must not be presented as measured geometry.
 
+### Phase 0D CPU TSDF smoke output
+
+`atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic
+pure-NumPy reference artifacts:
+
+```text
+<folder>/
+  synthetic_cube_room.atlas3r/  Phase 0B analytic input session
+  tsdf_grid.npz                 tsdf, weight, grid_min_corner_world_m, voxel_size_m
+  surface_points.npz            points_world_m, confidence, uncertainty_m, voxel_indices_xyz
+  metadata.json                 surface metadata and uncertainty summary
+  metrics.json                  conservative synthetic fixture metrics
+```
+
+The Phase 0D surface is a voxel-center point cloud extracted from observed
+near-zero TSDF voxels, not a game-engine mesh. `metadata.json` must include
+source frame IDs, voxel size, coordinate frame, metric scale source, observed
+coverage estimate, and mean/p50/p95/max uncertainty. `metrics.json` compares
+the points to the synthetic cube-room ground-truth box mesh with voxel-scale
+fixture checks and must include known limitations. It is not an accuracy report
+and must not claim millimeter-level accuracy.
+
 ### Metadata requirements
 
 Every export must include:

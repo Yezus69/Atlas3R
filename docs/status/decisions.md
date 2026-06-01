@@ -53,3 +53,20 @@ dependencies stay unchanged. Future export/viewer work can add richer formats
 without changing the Phase 0B reader contract.
 Docs/tests updated: docs/08_API_CONTRACTS.md and tests/synthetic/test_session_inspect.py.
 ```
+
+```text
+Decision ID: D-0004
+Date: 2026-06-01
+Context: Phase 0D needs a deterministic CPU TSDF correctness reference and
+smoke artifacts before mapper/exporter dependencies or game-engine mesh export
+exist.
+Decision: Add `atlas3r smoke tsdf-cube-room --output <folder>` with a narrow
+artifact layout: the Phase 0B input session, `tsdf_grid.npz`,
+`surface_points.npz`, `metadata.json`, and `metrics.json`.
+Alternatives considered: Emit a GLB/PLY mesh now; hide artifacts behind tests
+only; add a generic map export format before a mapper API exists.
+Consequences: Synthetic fusion can be verified with dependency-light,
+voxel-scale outputs while preserving explicit confidence/uncertainty metadata
+and avoiding premature accuracy claims.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/synthetic/test_cpu_tsdf.py.
+```

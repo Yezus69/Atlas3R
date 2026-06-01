@@ -10,12 +10,21 @@ from typing import cast
 from atlas3r import __version__
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.session import validate_session
+from atlas3r.mapping.cpu_tsdf import write_tsdf_cube_room_smoke
 from atlas3r.visualization.session_preview import write_session_preview
 
 
 def _run_synthetic_cube_room(args: argparse.Namespace) -> int:
     output = write_synthetic_cube_room_session(args.output)
     print(f"Wrote synthetic cube-room session to {output}")
+    return 0
+
+
+def _run_tsdf_cube_room(args: argparse.Namespace) -> int:
+    written_paths = write_tsdf_cube_room_smoke(args.output)
+    print("Wrote TSDF cube-room smoke outputs:")
+    for path in written_paths:
+        print(f"  {path}")
     return 0
 
 
@@ -54,6 +63,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output session folder to create or update.",
     )
     synthetic_parser.set_defaults(handler=_run_synthetic_cube_room)
+    tsdf_parser = smoke_subparsers.add_parser(
+        "tsdf-cube-room",
+        help="Run the deterministic CPU TSDF reference smoke on the synthetic cube-room.",
+    )
+    tsdf_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output folder for TSDF smoke artifacts.",
+    )
+    tsdf_parser.set_defaults(handler=_run_tsdf_cube_room)
     inspect_parser = subparsers.add_parser("inspect", help="Inspect Atlas3R outputs.")
     inspect_subparsers = inspect_parser.add_subparsers(dest="inspect_command", required=True)
     inspect_session_parser = inspect_subparsers.add_parser(

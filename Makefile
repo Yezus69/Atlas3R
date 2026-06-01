@@ -16,7 +16,7 @@ test:
 	$(PYTHON) -m unittest discover -s tests -p "test_*.py"
 
 smoke:
-	$(PYTHON) -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r
+	$(PYTHON) -m atlas3r smoke tsdf-cube-room --output build/smoke/tsdf_cube_room
 
 inspect:
 	$(PYTHON) -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r

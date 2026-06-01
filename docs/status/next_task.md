@@ -1,67 +1,61 @@
-# Codex Prompt - Atlas3R Phase 0D: CPU TSDF Reference Integrator on Synthetic Cube-Room
+# Codex Prompt - Atlas3R Phase 0E: Geometry Teacher Adapter Contracts
 
-You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0C.
+You are working in the existing public repo `Yezus69/Atlas3R` after Phase 0D.
 Read `AGENTS.md`, `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
 the current `docs/status/*` files before coding. Then read only the source and
-tests needed for the TSDF smoke path.
+tests needed for model adapter contracts and CLI discovery.
 
 ## Task goal
 
-Implement a tiny deterministic CPU TSDF reference integrator for the Phase 0B
-synthetic cube-room session. This is a correctness reference only, not the
-real-time mapper.
-
-Do **not** implement CUDA, neural models, teacher adapters, nvblox integration,
-OpenGL, web servers, notebooks, trimesh, or GLB export in this task.
+Create the dependency-safe teacher-adapter contract layer that Phase 1 model
+integrations will use. This is still a skeleton/contract task: do not download
+model weights, vendor third-party repositories, call cloud APIs, run neural
+inference, add CUDA, or add heavyweight visualization/export dependencies.
 
 ## Required implementation
 
-1. Add a small CPU TSDF module under `src/atlas3r/mapping/`.
-   - Integrate the Phase 0B analytic depth arrays and Phase 0A/0B
-     `T_world_camera` poses into a voxel grid.
-   - Use meters, the documented camera convention, and explicit
-     `T_world_camera` naming.
-   - Store deterministic per-voxel weight/confidence or uncertainty values.
-   - Keep the implementation intentionally small and pure NumPy.
+1. Add the shared adapter protocol under `src/atlas3r/models/adapters/`.
+   - Define `GeometryTeacherAdapter` with:
 
-2. Extract a minimal deterministic surface result sufficient for tests.
-   - A simple occupied-surface point cloud or coarse triangle/face
-     approximation is acceptable for Phase 0D.
-   - Preserve metadata: source frame IDs, voxel size, coordinate frame,
-     metric scale source, observed coverage estimate, and uncertainty summary.
-
-3. Compare the fused result against the synthetic ground-truth mesh with simple
-   deterministic metrics.
-   - Keep metrics conservative and clearly named.
-   - Do not claim millimeter accuracy.
-   - Report known limitations such as voxel resolution and analytic fixture
-     assumptions.
-
-4. Add CLI smoke command:
-
-```bash
-atlas3r smoke tsdf-cube-room --output <folder>
+```python
+class GeometryTeacherAdapter(Protocol):
+    def predict(self, frames: FrameBatch) -> TeacherPrediction: ...
 ```
 
-The command should generate or reuse a synthetic cube-room session, run the CPU
-TSDF reference integration, write the minimal surface/metrics outputs under the
-requested folder, and print concise paths.
+   - Add minimal typed contracts for `FrameBatch`, `TeacherPrediction`, and
+     adapter capability/status metadata.
+   - Reuse existing `CameraModel`, `PoseEstimate`, `FramePrediction`, and
+     uncertainty/confidence conventions instead of creating parallel schemas.
 
-5. Add tests.
-   - TSDF integration is deterministic across runs.
-   - The output carries uncertainty/confidence metadata.
-   - The fused surface overlaps the synthetic room/object bounds within a
-     voxel-scale tolerance.
-   - The CLI smoke command succeeds.
-   - Existing Phase 0A-0C tests keep passing.
+2. Add dependency-safe adapter stubs.
+   - Create at least two named stubs for future external teachers, such as
+     `VGGTAdapter` and `DepthProAdapter`.
+   - Missing optional dependencies must raise clear runtime installation errors
+     from adapter construction or `predict`, not import-time crashes.
+   - Keep adapter modules small and do not import unavailable third-party
+     packages at module import time.
 
-6. Update docs/status.
-   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 0D
+3. Add a small discovery surface.
+   - Provide a pure-Python registry/list function for known adapters and their
+     availability status.
+   - Add a CLI command such as `atlas3r adapters list` that prints the known
+     adapters and whether they are available, unavailable, or stub-only.
+
+4. Add tests.
+   - The protocol/status contracts validate expected shapes and metadata.
+   - Stub adapters import without third-party dependencies installed.
+   - Missing dependency errors include the adapter name and installation hint.
+   - CLI adapter listing succeeds.
+   - Existing Phase 0A-0D tests keep passing.
+
+5. Update docs/status.
+   - Rewrite `docs/status/active_task.md` before coding with a concise Phase 0E
      plan and checklist.
+   - Update `docs/08_API_CONTRACTS.md` if new public schemas are introduced.
    - Append results to `docs/status/progress.md` after verification.
    - Append to `docs/status/decisions.md` only if an interface or format
      decision changed.
-   - Replace this file with the Phase 0E prompt before declaring done.
+   - Replace this file with the Phase 1A prompt before declaring done.
 
 ## Verification commands
 
