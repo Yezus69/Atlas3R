@@ -295,7 +295,6 @@ artifact paths, and a truth boundary. `atlas3r inspect runtime-fixture --input
 teacher cache, and nested complete TSDF output inspection.
 
 ## Student Model Boundary
-
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.
 
@@ -337,7 +336,6 @@ arrays with `learned_inference=false`, `usable_for_mapping=false`,
 `accuracy_report=false`, and `performance_report=false`.
 
 ### FramePacket -> StudentClipInput Bridge
-
 `atlas3r.data.student_clip_from_frame_packets(frames, batch_id=...)` converts a
 non-empty ordered `FramePacket` sequence into one `StudentClipInput` with
 `images_rgb` shaped `1,T,3,H,W`, `intrinsics` shaped `1,T,3,3`, preserved
@@ -345,8 +343,29 @@ non-empty ordered `FramePacket` sequence into one `StudentClipInput` with
 rejects non-packets, duplicate frame IDs, mismatched/non-`3,H,W` `rgb_model`
 shapes, and invalid intrinsics.
 
-## Map Object Contracts
+## Training MVP Contracts
+`atlas3r train synthetic-overfit --output <run_dir>` is an optional PyTorch MVP
+over deterministic procedural synthetic RGB/depth. Base imports,
+`atlas3r.training`, and dataset generation must not import Torch eagerly;
+missing Torch exits CLI training with code 2 and the train-extra install hint.
 
+`SyntheticDepthSample` fields: `sample_id`, `frame_id`, `rgb_u8 H,W,3`,
+`rgb_model 3,H,W`, `depth_m H,W`, `depth_sigma_m H,W`, `confidence H,W`,
+`object_mask H,W`, `K 3,3`, `T_world_camera 4,4`, `camera_center_world_m 3`,
+and metadata with `synthetic_only=true`, seed, and scene bounds.
+`sample_to_student_clip(sample)` returns shapes `1,1,3,H,W`, `1,1,3,3`, and
+`T_world_camera_prior 1,1,4,4`.
+
+`checkpoint_last.pt`: `format_name=atlas3r_tiny_depth_pose_checkpoint`,
+`format_version=1`, `step`, `model_state_dict`, `optimizer_state_dict`,
+`config`, `metrics`, and `truth_boundary`. Runs write `config.json`,
+`metrics.jsonl`, `summary.json`, `prediction_sample.npz`,
+`prediction_preview.html`, and `prediction_preview.svg`. Truth boundary fields:
+`training_mvp=true`, `synthetic_only=true`, `real_capture_model=false`,
+`usable_for_realtime_mapping=false`, `accuracy_report=false`,
+`performance_report=false`; synthetic-overfit only, not realtime or real-capture.
+
+## Map Object Contracts
 ```python
 @dataclass
 class ObjectInstance:
@@ -405,36 +424,17 @@ class WorldMap:
 ```
 
 ## Live API Events
-
-Runtime event names:
-
-- `PoseUpdate(frame_id, PoseEstimate)`
-- `DepthUpdate(frame_id, optional compressed depth/confidence)`
-- `ObjectUpdate(object_id, ObjectInstance)`
-- `MeshChunkAdded(chunk_id, version)`
-- `MeshChunkUpdated(chunk_id, version)`
-- `MeshChunkRemoved(chunk_id, version)`
-- `TrackingStateChanged(state)`
-- `BenchmarkMetric(name, value)`
+Runtime event names: `PoseUpdate(frame_id, PoseEstimate)`,
+`DepthUpdate(frame_id, optional compressed depth/confidence)`,
+`ObjectUpdate(object_id, ObjectInstance)`, `MeshChunkAdded(chunk_id, version)`,
+`MeshChunkUpdated(chunk_id, version)`, `MeshChunkRemoved(chunk_id, version)`,
+`TrackingStateChanged(state)`, and `BenchmarkMetric(name, value)`.
 
 ## File Formats
-
 ### `.atlas3r` Session Folder
-
-```text
-session.atlas3r/
-  metadata.json
-  poses.jsonl
-  cameras.jsonl
-  objects.jsonl
-  mesh_chunks/
-    chunk_<id>_v<version>.glb
-    chunk_<id>_v<version>.json
-  depth/
-    frame_<id>.npz optional
-  logs/
-    runtime_profile.json
-```
+Folder layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`,
+`objects.jsonl`, `mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files,
+optional `depth/frame_<id>.npz`, and `logs/runtime_profile.json`.
 
 The Phase 0C reader reconstructs `PoseEstimate`, `CameraModel`,
 `ObjectInstance`, and `MeshChunk` records from JSON/JSONL sidecars and records

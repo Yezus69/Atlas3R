@@ -1,17 +1,21 @@
 # Active task
 
-Goal: Phase 3D minimal FramePacket/RGBFrameSource to teacher FrameBatch bridge.
+Goal: Phase 4A training MVP on deterministic procedural RGB + metric-depth
+synthetic samples.
 
 Checklist:
 
-- [x] Read only `next_task.md`, API/status docs, and focused source/tests.
-- [x] Add a dependency-free helper converting ordered `FramePacket` sequences to `FrameBatch`.
-- [x] Add a tiny `RGBFrameSource` wrapper helper only if it keeps tests clearer.
-- [x] Reject empty sequences, non-`FramePacket` items, and duplicate `frame_id` values with field-named errors.
-- [x] Keep metadata compact and deterministic without changing mapper/runtime/TSDF paths.
-- [x] Add focused tests for conversion, preserved order, error cases, import safety, and fixture adapter/runner boundary acceptance.
-- [x] Update API/status docs within context budgets.
-- [x] Run required Ruff, mypy, unittest, `git diff --check`, and available make commands.
+- [x] Ignore stale Phase 3D `next_task.md` as an execution source.
+- [x] Read the Phase 4A prompt, API/status docs, and focused student/data/CLI files.
+- [x] Add optional `train` dependency extra with dependency-safe Torch helpers.
+- [x] Add deterministic procedural RGB/depth samples and `StudentClipInput` conversion.
+- [x] Add tiny trainable Torch depth/uncertainty/confidence/camera-center model.
+- [x] Add finite supervised depth, sigma NLL, confidence, and camera-center losses.
+- [x] Add `atlas3r train synthetic-overfit` writing config, metrics, checkpoint,
+  summary, prediction sample, and dependency-free HTML/SVG preview.
+- [x] Add import-safety, dataset, and optional Torch training smoke tests.
+- [x] Update API/status docs and Phase 4B handoff within context budgets.
+- [x] Run Ruff, mypy, unittest, diff check, optional training smoke, and make if available.
 
-Exclusions: no heavy dependencies, external models, training, video decoding,
-runtime scheduler, mapper, TSDF, export, inspection bundle, or CLI changes.
+Exclusions: no external teacher models, real datasets, video decoding, TSDF,
+runtime, GLB/PLY export, web servers, notebooks, or inspection bundles.

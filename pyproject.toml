@@ -19,6 +19,9 @@ dev = [
   "pytest>=8.2",
   "ruff>=0.5",
 ]
+train = [
+  "torch",
+]
 
 [project.scripts]
 atlas3r = "atlas3r.cli:main"

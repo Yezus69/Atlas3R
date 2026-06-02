@@ -25,6 +25,7 @@ tests, and the contract docs.
 | D-0018 | RGB frame source | `atlas3r.data.frame_source` provides `RGBFrameSource`, NPZ loading, and binary PPM sequence loading into existing `FramePacket` records. | Yes |
 | D-0019 | Student clip bridge | `atlas3r.data.student_clip_from_frame_packets` is the public dependency-free bridge from ordered `FramePacket` sequences to `StudentClipInput`. | Yes |
 | D-0020 | Teacher batch bridge | `atlas3r.data.teacher_frame_batch_from_frame_packets` and `teacher_frame_batch_from_rgb_source` bridge ordered `FramePacket` / `RGBFrameSource` inputs to existing teacher `FrameBatch`. | Yes |
+| D-0021 | Training MVP | `atlas3r train synthetic-overfit` writes a synthetic-only train-run folder with `checkpoint_last.pt`, JSON/JSONL metrics, NPZ sample arrays, and dependency-free HTML/SVG preview. | Yes |
 
 Active cross-cutting constraints:
 
