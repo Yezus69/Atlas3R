@@ -174,8 +174,8 @@ class SessionInspectTest(unittest.TestCase):
     def test_status_handoff_points_to_phase_3(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Codex Prompt - Atlas3R Phase 3C", next_task)
-        self.assertIn("FramePacket Clip Builder", next_task)
+        self.assertIn("Codex Prompt - Atlas3R Phase 3D", next_task)
+        self.assertIn("FrameSource to Teacher FrameBatch", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

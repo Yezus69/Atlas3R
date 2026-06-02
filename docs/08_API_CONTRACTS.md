@@ -50,11 +50,9 @@ class RGBFrameSource(Protocol):
     def frames(self) -> Iterator[FramePacket]: ...
 ```
 
-Public loaders:
-
-- `NPZFrameSource(path)` and `load_npz_clip_frames(path)`.
-- `PPMSequenceFrameSource(directory)` and `load_ppm_sequence_frames(directory)`.
-- `write_frame_source_smoke_fixture(output_dir)`.
+Public loaders: `NPZFrameSource(path)`, `load_npz_clip_frames(path)`,
+`PPMSequenceFrameSource(directory)`, `load_ppm_sequence_frames(directory)`, and
+`write_frame_source_smoke_fixture(output_dir)`.
 
 NPZ clips require `rgb_u8` shaped `T,H,W,3` and `K` shaped `3,3` or `T,3,3`.
 PPM sequences load binary `P6` `.ppm` files sorted by filename and use explicit
@@ -155,11 +153,9 @@ sigma, confidence in `[0, 1]`, optional HxW bool/probability `static_mask`,
 optional HxW integer `object_id`, optional HxWx3 uint8 `rgb_u8`, and non-empty
 `source`.
 
-Related public helpers:
-
-- `atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`.
-- `atlas3r.mapping.tsdf_grid.compute_tsdf_grid_shape(...)`.
-- `atlas3r.mapping.tsdf_grid.voxel_centers_world(...)`.
+Related public helpers: `atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`,
+`atlas3r.mapping.tsdf_grid.compute_tsdf_grid_shape(...)`, and
+`atlas3r.mapping.tsdf_grid.voxel_centers_world(...)`.
 
 ## Teacher Adapter And Cache Contracts
 
@@ -222,11 +218,8 @@ as `arrays/frame_<frame_id:06d>.npz`. Required keys are `depth_m`,
 Payload validation checks shapes, dtypes, finite values, probability ranges, and
 non-negative depth/uncertainty.
 
-Public commands:
-
-- `atlas3r adapters list`
-- `atlas3r adapters run --adapter <name> --input <session.atlas3r> --output <cache_dir> [--store-arrays]`
-- `atlas3r inspect teacher-cache --input <cache_dir>`
+Public commands: `atlas3r adapters list`; `atlas3r adapters run --adapter <name>
+--input <session.atlas3r> --output <cache_dir> [--store-arrays]`; `atlas3r inspect teacher-cache --input <cache_dir>`.
 
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 
@@ -264,10 +257,8 @@ and `object_id_per_face=-1` until object-aware fusion exists.
 `WorldMap`, empty `objects` and `keyframes`, deterministic `created_at_ns=0`,
 and source metadata.
 
-Inspection commands:
-
-- `atlas3r inspect world-map --input <folder>/world_map_sidecar.json`
-- `atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]`
+Inspection commands: `atlas3r inspect world-map --input <folder>/world_map_sidecar.json`;
+`atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]`.
 
 TSDF output inspection validates required artifacts, sidecars when required,
 metrics when present, and cross-checks coordinate frame, source frame IDs,
@@ -344,6 +335,15 @@ class StudentForwardOutput:
 `ShapeOnlyStudentModel.forward(input)` stub returns deterministic placeholder
 arrays with `learned_inference=false`, `usable_for_mapping=false`,
 `accuracy_report=false`, and `performance_report=false`.
+
+### FramePacket -> StudentClipInput Bridge
+
+`atlas3r.data.student_clip_from_frame_packets(frames, batch_id=...)` converts a
+non-empty ordered `FramePacket` sequence into one `StudentClipInput` with
+`images_rgb` shaped `1,T,3,H,W`, `intrinsics` shaped `1,T,3,3`, preserved
+`frame_ids`, compact source metadata, and no inference or mapper/TSDF use. It
+rejects non-packets, duplicate frame IDs, mismatched/non-`3,H,W` `rgb_model`
+shapes, and invalid intrinsics.
 
 ## Map Object Contracts
 

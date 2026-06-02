@@ -26,6 +26,10 @@ def __getattr__(name: str) -> Any:
         from atlas3r.data.synthetic_observations import depth_observation_from_synthetic_frame
 
         return depth_observation_from_synthetic_frame
+    if name == "student_clip_from_frame_packets":
+        from atlas3r.data.student_clip import student_clip_from_frame_packets
+
+        return student_clip_from_frame_packets
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -42,6 +46,7 @@ __all__ = [
     "depth_observation_from_synthetic_frame",
     "load_npz_clip_frames",
     "load_ppm_sequence_frames",
+    "student_clip_from_frame_packets",
     "write_frame_source_smoke_fixture",
     "write_synthetic_cube_room_session",
 ]
