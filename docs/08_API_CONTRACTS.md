@@ -1,24 +1,29 @@
-# 08 — API Contracts and Coordinate Conventions
+# 08 - API Contracts and Coordinate Conventions
 
-## Coordinate conventions
+This is the concise source-of-truth index for public Atlas3R contracts. It is
+not a phase log. Public field names, tensor shapes, coordinate conventions, and
+CLI names must not change silently.
 
-Internal Atlas3R convention:
+Diagnostic smoke, sidecar, and inspection outputs are contract-plumbing
+artifacts. They are not accuracy reports, not performance reports, and must not
+present hidden or completed geometry as measured geometry.
 
-- units: meters;
-- camera frame: `x` right, `y` down, `z` forward;
-- world frame: initialized from anchor keyframes unless external frame is supplied;
-- transform naming: `T_A_B` maps homogeneous points from frame `B` into frame `A`.
+## Coordinate Conventions
 
-Example:
+- Units are meters unless a field explicitly says otherwise.
+- Camera frame: `x` right, `y` down, `z` forward.
+- World frame: initialized from anchor keyframes unless an external frame is supplied.
+- Transform names use `T_A_B`, mapping homogeneous points from frame `B` into frame `A`.
+- Public transform fields must use explicit names such as `T_world_camera`, not `pose`.
 
 ```text
 p_world = T_world_camera @ p_camera
 camera_center_world = T_world_camera[:3, 3]
 ```
 
-Never use ambiguous variable names like `pose` at public boundaries.
+## Core Frame And Geometry Contracts
 
-## FramePacket
+### FramePacket
 
 ```python
 @dataclass(frozen=True)
@@ -28,59 +33,40 @@ class FramePacket:
     rgb_u8: NDArray[np.uint8]          # H,W,3 original frame
     rgb_model: Tensor                  # 3,Hm,Wm normalized
     K_original: NDArray[np.float32] | None
-    K_model: NDArray[np.float32]       # adjusted for model image
+    K_model: NDArray[np.float32]       # 3,3 adjusted for model image
     distortion: CameraDistortion | None
     resize_transform: NDArray[np.float32]
     camera_metadata: dict[str, Any]
 ```
 
-## RGB frame-source boundary
+### RGB Frame-Source Boundary
 
-Phase 3B introduces a dependency-free RGB ingestion boundary under
-`atlas3r.data.frame_source`. It is intentionally limited to local fixture/clip
-loading and does not run video decoding, neural inference, student models,
-mapping, scheduling, export, or inspection bundles.
+`atlas3r.data.frame_source` provides dependency-free local fixture ingestion.
+It must not import video decoders, image libraries, model packages, runtime
+schedulers, mappers, or exporters.
 
 ```python
 class RGBFrameSource(Protocol):
     def frames(self) -> Iterator[FramePacket]: ...
 ```
 
-`NPZFrameSource(path)` and `load_npz_clip_frames(path)` load NumPy clips with:
+Public loaders:
 
-```text
-rgb_u8   uint8 array shaped T,H,W,3
-K        float-compatible array shaped 3,3 or T,3,3
-```
+- `NPZFrameSource(path)` and `load_npz_clip_frames(path)`.
+- `PPMSequenceFrameSource(directory)` and `load_ppm_sequence_frames(directory)`.
+- `write_frame_source_smoke_fixture(output_dir)`.
 
-`PPMSequenceFrameSource(directory)` and `load_ppm_sequence_frames(directory)`
-load simple binary `P6` `.ppm` files sorted by filename. Intrinsics are supplied
-as an explicit `K` argument or loaded from `intrinsics.npz` in the sequence
-directory with the same required `K` key and shape rules.
+NPZ clips require `rgb_u8` shaped `T,H,W,3` and `K` shaped `3,3` or `T,3,3`.
+PPM sequences load binary `P6` `.ppm` files sorted by filename and use explicit
+`K` or `intrinsics.npz` with key `K`.
 
-Each emitted `FramePacket` uses:
+Each emitted `FramePacket` uses deterministic `frame_id` values, placeholder
+`timestamp_ns=0`, channel-first float32 `rgb_model` normalized to `[0, 1]`,
+validated `K_original`/`K_model`, identity `resize_transform`, and
+`camera_metadata.source_format` of `npz` or `ppm_sequence`. Invalid paths,
+RGB layouts, PPM headers, or intrinsics raise path-named `ValueError`s.
 
-- deterministic `frame_id` values starting at `frame_id_start`;
-- placeholder `timestamp_ns=0` with `camera_metadata.timestamp_placeholder=true`;
-- original `rgb_u8` as H,W,3;
-- `rgb_model` as 3,H,W float32, produced by channel-first conversion and
-  normalized to `[0, 1]`;
-- `K_original` and `K_model` copied from the validated frame intrinsics;
-- identity `resize_transform`;
-- `camera_metadata.source_format` set to `npz` or `ppm_sequence`.
-
-Invalid RGB layouts, channel counts, PPM headers, missing sidecars, and invalid
-intrinsics must raise explicit path-named `ValueError`s. Intrinsics validation
-uses the existing Atlas3R helper, so positive focal-length and finite principal
-point rules match `FramePacket` and `CameraModel`.
-
-`write_frame_source_smoke_fixture(output_dir)` writes a deterministic tiny
-`frame_source_smoke.npz` fixture and returns the validated `FramePacket` records
-loaded from it. This helper is a smoke path for ingestion contract plumbing
-only; it is not a runtime scheduler input, not neural inference, and not an
-accuracy or performance report.
-
-## CameraModel
+### CameraModel
 
 ```python
 @dataclass(frozen=True)
@@ -95,27 +81,24 @@ class CameraModel:
     source: str                        # metadata|predicted|calibrated|external
 ```
 
-## PoseEstimate
+### PoseEstimate
 
 ```python
 @dataclass(frozen=True)
 class PoseEstimate:
     frame_id: int
     timestamp_ns: int
-    T_world_camera: NDArray[np.float32] # 4,4
-    q_world_camera_xyzw: NDArray[np.float32]
+    T_world_camera: NDArray[np.float32]       # 4,4
+    q_world_camera_xyzw: NDArray[np.float32]  # 4
     camera_center_world_m: NDArray[np.float32] # 3
     covariance_6x6: NDArray[np.float32] | None
     confidence: float
-    tracking_state: str                # OK|LOW_CONFIDENCE|RELOCALIZING|LOST|NEW_SUBMAP
-    scale_source: str                  # rgb_prior|calibrated_rgb|known_anchor|external_pose
+    tracking_state: str      # OK|LOW_CONFIDENCE|RELOCALIZING|LOST|NEW_SUBMAP
+    scale_source: str        # rgb_prior|calibrated_rgb|known_anchor|external_pose
     diagnostics: dict[str, Any]
 ```
 
-## DenseMatchSet
-
-Minimal Phase 0A placeholder used by `FramePrediction`. Later teacher/student model
-work may extend this schema, but the core frame-to-frame correspondence contract is:
+### DenseMatchSet
 
 ```python
 @dataclass(frozen=True)
@@ -127,7 +110,7 @@ class DenseMatchSet:
     confidence: NDArray[np.float32]       # N values in [0,1]
 ```
 
-## FramePrediction
+### FramePrediction
 
 ```python
 @dataclass
@@ -135,23 +118,21 @@ class FramePrediction:
     pose: PoseEstimate
     camera: CameraModel
     depth_m: Tensor                    # H,W float32/float16
-    depth_sigma_m: Tensor              # H,W
+    depth_sigma_m: Tensor              # H,W non-negative
     normal_camera: Tensor              # H,W,3
     point_world: Tensor                # H,W,3
-    confidence: Tensor                 # H,W
+    confidence: Tensor                 # H,W values in [0,1]
     static_mask: Tensor                # H,W bool or probability
     object_embeddings: Tensor | None
     object_mask_logits: Tensor | None
     dense_matches: DenseMatchSet | None
 ```
 
-## Mapping observations
+### DepthObservation
 
-Phase 2C makes mapper inputs explicit through `DepthObservation` under
-`atlas3r.mapping.observations`. CPU TSDF fusion and teacher-cache TSDF replay
-must convert their source frames to this public contract before integration;
-mapping code should not rely on synthetic fixture frame classes or private
-helper type suppressions.
+Mapper inputs use `atlas3r.mapping.observations.DepthObservation`. CPU TSDF
+fusion and teacher-cache replay convert source data to this public boundary
+before integration.
 
 ```python
 @dataclass(frozen=True)
@@ -159,61 +140,42 @@ class DepthObservation:
     frame_id: int
     camera: CameraModel
     pose: PoseEstimate
-    depth_m: NDArray[np.float32]          # H,W finite, non-negative meters
-    depth_sigma_m: NDArray[np.float32]    # H,W finite, non-negative meters
-    confidence: NDArray[np.float32]       # H,W finite values in [0, 1]
+    depth_m: NDArray[np.float32]       # H,W finite, non-negative meters
+    depth_sigma_m: NDArray[np.float32] # H,W finite, non-negative meters
+    confidence: NDArray[np.float32]    # H,W finite values in [0,1]
     static_mask: NDArray[np.bool_] | NDArray[np.float32] | None = None
     object_id: NDArray[np.int32] | None = None
     rgb_u8: NDArray[np.uint8] | None = None
     source: str = "unknown"
 ```
 
-Validation requirements:
+Validation requires non-negative `frame_id`, `CameraModel`, `PoseEstimate`,
+HxW depth/sigma/confidence matching camera size, finite non-negative depth and
+sigma, confidence in `[0, 1]`, optional HxW bool/probability `static_mask`,
+optional HxW integer `object_id`, optional HxWx3 uint8 `rgb_u8`, and non-empty
+`source`.
 
-- `frame_id` is non-negative;
-- `camera` is a `CameraModel` and `pose` is a `PoseEstimate`;
-- `depth_m`, `depth_sigma_m`, and `confidence` match
-  `camera.height x camera.width`;
-- depth and sigma arrays are floating point, finite, and non-negative;
-- confidence arrays are floating point, finite, and in `[0, 1]`;
-- `static_mask`, when present, is HxW bool or numeric values in `[0, 1]`;
-- `object_id`, when present, is an HxW integer array;
-- `rgb_u8`, when present, is HxWx3 `uint8`;
-- `source` is non-empty.
+Related public helpers:
 
-`atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`
-converts Phase 0B synthetic cube-room frames and is exported from
-`atlas3r.data`. `atlas3r.mapping.observations` remains the generic mapper
-observation contract and must not import synthetic fixture classes.
-Teacher-cache replay performs its replay-frame conversion in
-`atlas3r.mapping.teacher_cache_replay`.
+- `atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`.
+- `atlas3r.mapping.tsdf_grid.compute_tsdf_grid_shape(...)`.
+- `atlas3r.mapping.tsdf_grid.voxel_centers_world(...)`.
 
-Shared TSDF grid geometry helpers live in `atlas3r.mapping.tsdf_grid`:
-`compute_tsdf_grid_shape(...)` computes deterministic XYZ voxel grid shape from
-world bounds and voxel size, and `voxel_centers_world(...)` returns Nx3
-world-frame voxel centers. TSDF replay paths should use these public helpers
-instead of importing private implementation details from `cpu_tsdf.py`.
+## Teacher Adapter And Cache Contracts
 
-## Teacher adapter contracts
-
-Phase 0E introduces dependency-safe teacher adapter contracts under
-`atlas3r.models.adapters`. Third-party model code and weights remain external to
-Atlas3R; adapter modules must import without optional teacher packages installed.
+Third-party models stay external and are isolated behind dependency-safe
+adapters under `atlas3r.models.adapters`.
 
 ```python
 class GeometryTeacherAdapter(Protocol):
     def predict(self, frames: FrameBatch) -> TeacherPrediction: ...
-```
 
-```python
 @dataclass(frozen=True)
 class FrameBatch:
-    frames: tuple[FramePacket, ...]         # non-empty, unique frame_id values
+    frames: tuple[FramePacket, ...]     # non-empty, unique frame_id values
     batch_id: str
     metadata: Mapping[str, Any]
-```
 
-```python
 @dataclass(frozen=True)
 class TeacherPrediction:
     adapter_name: str
@@ -222,338 +184,99 @@ class TeacherPrediction:
     metadata: Mapping[str, Any]
 ```
 
-`TeacherPrediction.frame_predictions` reuses `FramePrediction`, so every teacher
-output keeps the same `CameraModel`, `PoseEstimate`, dense geometry,
-confidence, and uncertainty conventions as Atlas3R runtime outputs.
+`AdapterCapabilities` fields are `predicts_camera`, `predicts_pose`,
+`predicts_depth`, `predicts_normals`, `predicts_points`,
+`predicts_dense_matches`, `predicts_objects`, `supports_batch`,
+`supports_streaming`, and `notes`.
 
-Adapter discovery reports:
+`AdapterStatus` fields are `name`, `display_name`, `availability`
+(`available|unavailable|stub-only`), `capabilities`, `install_hint`, and
+`reason`.
 
-```python
-@dataclass(frozen=True)
-class AdapterCapabilities:
-    predicts_camera: bool
-    predicts_pose: bool
-    predicts_depth: bool
-    predicts_normals: bool
-    predicts_points: bool
-    predicts_dense_matches: bool
-    predicts_objects: bool
-    supports_batch: bool
-    supports_streaming: bool
-    notes: tuple[str, ...]
+Known stubs include `VGGTAdapter` and `DepthProAdapter`; missing optional
+dependencies raise `AdapterDependencyError` at construction or prediction time.
+`fixture-cube-room` is an available synthetic-only adapter for plumbing tests
+and cache writing.
 
-@dataclass(frozen=True)
-class AdapterStatus:
-    name: str
-    display_name: str
-    availability: str    # available|unavailable|stub-only
-    capabilities: AdapterCapabilities
-    install_hint: str | None
-    reason: str | None
-```
-
-Known Phase 0E stubs are `VGGTAdapter` and `DepthProAdapter`. Missing optional
-dependencies must raise `AdapterDependencyError` from adapter construction or
-prediction with the adapter name and installation hint in the message.
-
-Phase 1B adds `fixture-cube-room`, an `available` dependency-free fixture
-adapter for exercising runner plumbing and cache writing only. It accepts Phase
-0B synthetic cube-room `.atlas3r` sessions, reconstructs `TeacherPrediction`
-records from analytic depth/session sidecars, and marks prediction metadata with
-`coordinate_frame: synthetic_world`, `fixture: true`, and a synthetic-only truth
-boundary. It is not an external teacher model, does not run neural inference, and
-must not be treated as measured geometry for real captures.
-
-## TeacherPrediction cache
-
-Phase 1A introduces a dependency-light cache for serialized teacher prediction
-metadata and per-frame contract summaries. Phase 1C adds an explicit opt-in full
-array payload path. The default cache still stores summaries, not full model
-tensors:
+Teacher cache layout:
 
 ```text
 teacher_cache/
   metadata.json
   frame_summaries.jsonl
-  arrays/ optional tensor payloads
+  arrays/ optional per-frame .npz payloads
 ```
 
-`metadata.json` is deterministic JSON with:
+`metadata.json` records `format_name=atlas3r_teacher_prediction_cache`,
+`format_version=1`, adapter status/capabilities, prediction metadata,
+coordinate frame/convention, frame count/IDs, scale sources, summary path, and
+array storage state. `frame_summaries.jsonl` is sorted by `frame_id` and records
+frame/timestamp, coordinate frame, scale source, camera fields, pose fields,
+confidence summaries, uncertainty summaries, tensor shape/dtype summaries, dense
+match summary, and `arrays_path`.
 
-- `format_name`: `atlas3r_teacher_prediction_cache`;
-- `format_version`: `1`;
-- `adapter`: adapter name, display name, availability, install hint, reason,
-  and full `AdapterCapabilities`;
-- `prediction_metadata`: JSON-serializable `TeacherPrediction.metadata`;
-- `coordinate_frame` and coordinate convention;
-- `frame_count`, sorted `frame_ids`, and observed `scale_sources`;
-- `frame_summaries_path`;
-- `arrays`: whether arrays are stored, the array directory when enabled, and
-  the documented `.npz` keys.
+Optional payloads are written only with `--store-arrays` or `store_arrays=True`
+as `arrays/frame_<frame_id:06d>.npz`. Required keys are `depth_m`,
+`depth_sigma_m`, `normal_camera`, `point_world`, `confidence`, and
+`static_mask`; optional keys are `object_embeddings` and `object_mask_logits`.
+Payload validation checks shapes, dtypes, finite values, probability ranges, and
+non-negative depth/uncertainty.
 
-`frame_summaries.jsonl` contains one deterministic JSON object per frame, sorted
-by `frame_id`. Each summary must preserve:
+Public commands:
 
-- `frame_id` and `timestamp_ns`;
-- `coordinate_frame` and `scale_source`;
-- camera confidence/source and pose confidence/tracking state/scale source;
-- replay-needed camera fields: `K`, `distortion_model`, `distortion_params`,
-  and `rolling_shutter_row_time_s`;
-- replay-needed pose fields: `T_world_camera`, `q_world_camera_xyzw`,
-  `camera_center_world_m`, `covariance_6x6`, and `diagnostics`;
-- pose covariance presence plus a small covariance-derived uncertainty summary;
-- dense confidence summary from `FramePrediction.confidence`;
-- depth uncertainty summary from `FramePrediction.depth_sigma_m`;
-- depth value summary and tensor shape/dtype summaries;
-- dense-match count and confidence summary when present;
-- `arrays_path`, `null` for summaries-only caches or a relative payload path
-  when full arrays are explicitly stored.
+- `atlas3r adapters list`
+- `atlas3r adapters run --adapter <name> --input <session.atlas3r> --output <cache_dir> [--store-arrays]`
+- `atlas3r inspect teacher-cache --input <cache_dir>`
 
-When full arrays are explicitly requested, the cache writer stores NumPy `.npz`
-payloads under `arrays/frame_<frame_id:06d>.npz`. Required payload keys are:
+## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 
-```text
-depth_m
-depth_sigma_m
-normal_camera
-point_world
-confidence
-static_mask
-```
-
-Optional payload keys are stored only when the corresponding `FramePrediction`
-field is not `None`:
-
-```text
-object_embeddings
-object_mask_logits
-```
-
-Payload validation must check shapes against frame tensor summaries, dtype
-matches, finite numeric values, confidence/probability ranges in `[0, 1]`, and
-non-negative depth/uncertainty arrays. Missing or corrupt `.npz` payloads must
-raise explicit path-named errors.
-
-Cache readers must validate metadata, adapter capabilities/status, frame
-summaries, payload references when declared, confidence ranges, non-negative
-uncertainty summaries, frame counts, frame IDs, and coordinate-frame consistency
-with explicit path-named errors. The cache is not an accuracy report and must
-not present predicted or completed geometry as measured geometry.
-
-`atlas3r adapters run --adapter fixture-cube-room --input <session.atlas3r>
---output <cache_dir>` writes this cache for valid synthetic cube-room sessions.
-The default runner behavior is summaries-only. `--store-arrays` explicitly opts
-in to full tensor payloads under `arrays/`. The runner must reject non-synthetic
-or malformed sessions with explicit errors. External adapter stubs such as
-`vggt` and `depth-pro` must continue to fail gracefully with adapter name,
-availability status, reason, and guidance until future phases implement real
-adapter prediction paths.
-
-`atlas3r inspect teacher-cache --input <cache_dir>` validates a teacher cache and
-prints deterministic JSON with adapter name/status, frame IDs, coordinate frame,
-scale sources, array storage state, confidence summaries, and uncertainty
-summaries. It must state that the cache inspection is not an accuracy report.
-
-### Phase 1D teacher-cache TSDF replay output
-
-`atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder>` replays
-a validated teacher cache with full array payloads into the dependency-free CPU
-TSDF reference path. Replay requires `metadata.json` to declare
-`arrays.stored=true`; summaries-only caches are rejected with a path-named error.
-Each frame payload is loaded through the Phase 1C `.npz` validation path, and
-replay reconstructs only the fields needed by CPU TSDF integration:
-
-- `CameraModel` width, height, intrinsics, distortion fields, confidence, and source;
-- `PoseEstimate` `T_world_camera`, quaternion, camera center, covariance,
-  confidence, tracking state, scale source, and diagnostics;
-- payload `depth_m`, `depth_sigma_m`, `confidence`, and `point_world` arrays.
-
-Replay writes deterministic artifacts:
+`atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic NumPy CPU
+TSDF reference artifacts:
 
 ```text
 <folder>/
+  synthetic_cube_room.atlas3r/
   tsdf_grid.npz        tsdf, weight, grid_min_corner_world_m, voxel_size_m
   surface_points.npz   points_world_m, confidence, uncertainty_m, voxel_indices_xyz
-  metadata.json        replay/source metadata and confidence/uncertainty summaries
-  metrics.json         synthetic fixture metrics or an explicit not-evaluated record
+  metadata.json        source frames, coordinate frame, voxel size, coverage, uncertainty
+  metrics.json         conservative synthetic fixture metrics or not-evaluated data
 ```
 
-`metadata.json` preserves source frame IDs, coordinate frame, metric scale
-source(s), voxel size, observed coverage estimate, adapter name, cache array
-state, and input confidence/uncertainty summaries. The output is a deterministic
-smoke artifact and not an accuracy report.
+`atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder>`
+requires a full-array cache, converts replay frames through `DepthObservation`,
+and writes the same TSDF artifact family.
 
-`metrics.json` contains synthetic cube-room fixture metrics only when cache
-metadata proves the source is the `fixture-cube-room` synthetic fixture with
-`fixture=true`, `fixture_session_type=synthetic_cube_room`, and
-`coordinate_frame=synthetic_world`. All other caches write
-`metric_family: not_evaluated` and must not report geometric accuracy.
-
-### Phase 1E TSDF MeshChunk sidecar
-
-CPU TSDF smoke commands can optionally write a dependency-free MeshChunk JSON
-sidecar from observed TSDF surface samples:
+Optional sidecar flags:
 
 ```bash
-atlas3r smoke tsdf-cube-room --output <folder> --write-mesh-sidecar
-atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-mesh-sidecar
+atlas3r smoke tsdf-cube-room --output <folder> --write-mesh-sidecar|--write-world-map-sidecar
+atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-mesh-sidecar|--write-world-map-sidecar
 ```
 
-The flag preserves all Phase 0D/1D artifacts and adds:
+`mesh_chunk_sidecar.json` has `format_name=atlas3r_tsdf_surface_mesh_chunk_sidecar`,
+`format_version=1`, a validated `MeshChunk`, sidecar/source metadata, and
+sample confidence/uncertainty arrays. It uses world-frame vertices with
+`T_world_chunk=identity`, low-fidelity marker triangles, `surface_source_per_face=0`,
+and `object_id_per_face=-1` until object-aware fusion exists.
 
-```text
-<folder>/
-  mesh_chunk_sidecar.json
-```
+`world_map_sidecar.json` has `format_name=atlas3r_tsdf_world_map_sidecar`,
+`format_version=1`, one validated observed `MeshChunk` inside a validated
+`WorldMap`, empty `objects` and `keyframes`, deterministic `created_at_ns=0`,
+and source metadata.
 
-`mesh_chunk_sidecar.json` is deterministic JSON:
+Inspection commands:
 
-```text
-{
-  "format_name": "atlas3r_tsdf_surface_mesh_chunk_sidecar",
-  "format_version": 1,
-  "mesh_chunk": { ... MeshChunk fields ... },
-  "metadata": { ... sidecar/source TSDF metadata ... },
-  "sample_attributes": { ... emitted confidence/uncertainty arrays ... }
-}
-```
+- `atlas3r inspect world-map --input <folder>/world_map_sidecar.json`
+- `atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]`
 
-The `mesh_chunk` object validates against the existing `MeshChunk` contract.
-It uses `T_world_chunk=identity` and world-frame vertices because the TSDF
-surface samples are already in the output coordinate frame. Faces are
-low-fidelity marker triangles around observed voxel-center surface samples; they
-are reference geometry for early pipeline testing, not marching-cubes output and
-not a GLB/PLY/game-engine final asset. `surface_source_per_face` is always
-`0 observed_surface`; `object_id_per_face` is `-1` until object-aware fusion
-exists.
+TSDF output inspection validates required artifacts, sidecars when required,
+metrics when present, and cross-checks coordinate frame, source frame IDs,
+voxel size, scale source, observed coverage, confidence, and mean/p95 uncertainty.
 
-The sidecar metadata preserves:
+## Runtime Fixture Contracts
 
-- source surface artifact type and full source surface metadata;
-- coordinate frame, unit scale, metric scale source, and source frame IDs;
-- voxel size, observed coverage estimate, and surface coverage estimate;
-- source and emitted sample counts plus the deterministic max-sample cap;
-- confidence summary and mean/p95 uncertainty;
-- `accuracy_report_path: null` and an explicit not-an-accuracy-report note.
-
-MeshChunk flags must include `low_fidelity_reference_only`,
-`observed_surface_samples`, `not_completed_surface`, and
-`not_accuracy_report`. The sidecar must not claim hidden/completed geometry as
-measured geometry. Missing or malformed `surface_points.npz` or `metadata.json`
-inputs must raise path-named errors.
-
-### Phase 2A CPU TSDF WorldMap sidecar
-
-CPU TSDF smoke commands can optionally assemble a dependency-free WorldMap JSON
-sidecar from the observed Phase 1E MeshChunk sidecar:
-
-```bash
-atlas3r smoke tsdf-cube-room --output <folder> --write-world-map-sidecar
-atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-world-map-sidecar
-```
-
-The flag preserves all Phase 0D/1D/1E artifacts. If the MeshChunk sidecar has
-not also been requested, the command writes and validates
-`mesh_chunk_sidecar.json` first, then adds:
-
-```text
-<folder>/
-  world_map_sidecar.json
-```
-
-`world_map_sidecar.json` is deterministic JSON:
-
-```text
-{
-  "format_name": "atlas3r_tsdf_world_map_sidecar",
-  "format_version": 1,
-  "world_map": { ... WorldMap fields ... },
-  "metadata": { ... sidecar/source MeshChunk metadata ... }
-}
-```
-
-The `world_map` object validates against the existing `WorldMap` contract and
-contains exactly one validated observed `MeshChunk`. `objects` and `keyframes`
-are empty in Phase 2A, `created_at_ns` is deterministically `0`, and no object
-meshes or completed hidden surfaces are invented.
-
-The sidecar metadata preserves:
-
-- source MeshChunk sidecar format and full source MeshChunk metadata;
-- coordinate frame/world frame name, unit scale, metric scale source, and source
-  frame IDs;
-- voxel size, observed coverage estimate, and surface coverage estimate when
-  present;
-- mesh chunk IDs/count, object count `0`, and keyframe count `0`;
-- confidence summary, global confidence, mean uncertainty, and p95 uncertainty;
-- `accuracy_report_path: null` and an explicit not-an-accuracy-report note.
-
-WorldMap sidecar flags include `low_fidelity_reference_only`,
-`observed_surface_samples`, `not_completed_surface`, and
-`not_accuracy_report`. Missing or malformed MeshChunk sidecars must raise
-path-named errors.
-
-```bash
-atlas3r inspect world-map --input <folder>/world_map_sidecar.json
-```
-
-The inspect command validates the WorldMap sidecar and prints deterministic JSON
-summarizing the map ID, frame name, mesh chunk IDs, source frame IDs, coordinate
-frame, scale source, confidence, uncertainty, truth-boundary flags, and the fact
-that the sidecar is not an accuracy report.
-
-### Phase 2B CPU TSDF output folder inspection
-
-Complete CPU TSDF smoke output folders can be inspected without GLB/PLY/trimesh,
-marching-cubes, model, or cloud dependencies:
-
-```bash
-atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]
-```
-
-The command validates `metadata.json` and `surface_points.npz` in every mode,
-validates `metrics.json` when present, validates `mesh_chunk_sidecar.json` when
-present or required, and validates `world_map_sidecar.json` when present or
-required. The default `complete` mode requires both sidecars. `surface` permits
-surface-only Phase 0D/1D outputs, `mesh` requires the Phase 1E MeshChunk
-sidecar, and `world-map`/`complete` require both the MeshChunk and WorldMap
-sidecars so the folder can be checked as one mapper pipeline output.
-
-Inspection prints deterministic JSON:
-
-```text
-{
-  "format_name": "atlas3r_cpu_tsdf_output_folder_inspection",
-  "format_version": 1,
-  "inspect_mode": "complete",
-  "artifacts": { ... required and optional artifact presence ... },
-  "surface": { ... surface artifact summary ... },
-  "mesh_chunk": { ... MeshChunk sidecar summary or null ... },
-  "world_map": { ... WorldMap sidecar summary or null ... },
-  "cross_checks": { ... shared metadata checks, "passed": true ... },
-  "truth_boundary": { ... explicit not-accuracy-report flags ... }
-}
-```
-
-The inspector cross-checks coordinate frame, source frame IDs, voxel size,
-metric scale source, observed coverage estimate, confidence summary, and
-mean/p95 uncertainty across the surface arrays/metadata, MeshChunk sidecar, and
-WorldMap sidecar. Missing required artifacts and metadata mismatches must raise
-path-named errors. The inspection JSON is a mapper pipeline diagnostic only; it
-is low-fidelity/reference-only, observed-only, not completed geometry, and not
-an accuracy report.
-
-### Phase 2D runtime fixture scheduler smoke
-
-`atlas3r smoke runtime-fixture --output <folder>` runs a single-threaded,
-deterministic scheduler skeleton over the synthetic cube-room fixture. It writes
-a Phase 0B session, runs `fixture-cube-room` through the existing teacher-cache
-path with `store_arrays=True`, and replays that full-array cache into CPU TSDF
-mapping through the public `DepthObservation` mapper input path. It does not
-start threads, asyncio workers, GPU work, neural inference, video decoding, or
-mesh export.
-
-The output layout is:
+`atlas3r smoke runtime-fixture --output <folder>` is a single-threaded
+deterministic scheduler skeleton over the synthetic cube-room fixture. It writes:
 
 ```text
 <folder>/
@@ -561,144 +284,29 @@ The output layout is:
   runtime_summary.json
   synthetic_cube_room.atlas3r/
   teacher_cache/
-    metadata.json
-    frame_summaries.jsonl
-    arrays/frame_000000.npz
-    arrays/frame_000001.npz
-    arrays/frame_000002.npz
   teacher_cache_tsdf/
-    tsdf_grid.npz
-    surface_points.npz
-    metadata.json
-    metrics.json
-    mesh_chunk_sidecar.json
-    world_map_sidecar.json
 ```
 
-`runtime_events.jsonl` contains deterministic JSON Lines records. Paths inside
-event records are relative to `<folder>` so two runs in different output folders
-produce byte-identical event logs. Each event has:
+Runtime event records use `format_name=atlas3r_runtime_fixture_event_log`,
+`format_version=1`, monotonic `event_index`, known `stage_name`, optional
+`frame_id`, deterministic placeholder `timestamp_ns` and `latency_ns`,
+`dropped_frame`, scheduler-owned `memory_counters`, relative `paths`, and
+deterministic `metadata`.
 
-```text
-{
-  "format_name": "atlas3r_runtime_fixture_event_log",
-  "format_version": 1,
-  "event_index": 0,
-  "stage_name": "runtime_start",
-  "frame_id": null,
-  "timestamp_ns": 0,
-  "latency_ns": 0,
-  "dropped_frame": false,
-  "memory_counters": {
-    "configured_frame_array_bound": 1,
-    "frame_arrays_in_memory": 0,
-    "peak_frame_arrays_in_memory": 0,
-    "processed_frame_count": 0,
-    "dropped_frame_count": 0,
-    "queued_frame_count": 0
-  },
-  "paths": { ... relative source/cache/output paths ... },
-  "metadata": { ... deterministic stage metadata ... }
-}
-```
-
-Known Phase 2D stage names are `runtime_start`, `session_write`,
-`source_frame`, `adapter_cache_write`, `adapter_cache_frame`, `tsdf_replay`,
+Known stage names: `runtime_start`, `session_write`, `source_frame`,
+`adapter_cache_write`, `adapter_cache_frame`, `tsdf_replay`,
 `tsdf_replay_frame`, `tsdf_output_write`, and `runtime_complete`.
-`timestamp_ns` and `latency_ns` are deterministic placeholders, not wall-clock
-measurements. `memory_counters` are scheduler-owned bounded-memory counters for
-this fixture skeleton; they are used to verify the runtime plumbing does not
-retain all fixture frame array payloads in scheduler state. They are not a
-process memory profile.
 
-`runtime_summary.json` contains:
+`runtime_summary.json` uses `format_name=atlas3r_runtime_fixture_smoke_summary`
+and records runtime paths, frame IDs, event-log path, bounded-memory counters,
+artifact paths, and a truth boundary. `atlas3r inspect runtime-fixture --input
+<folder>` validates the event log, summary, generated session, full-array
+teacher cache, and nested complete TSDF output inspection.
 
-```text
-{
-  "format_name": "atlas3r_runtime_fixture_smoke_summary",
-  "format_version": 1,
-  "runtime": { ... adapter/cache/DepthObservation path summary ... },
-  "frame_ids": [0, 1, 2],
-  "event_log": { ... event-log format and path ... },
-  "bounded_memory": {
-    "configured_frame_array_bound": 1,
-    "peak_frame_arrays_in_memory": 1,
-    "all_frame_arrays_accumulated": false,
-    "bounded_memory_check_passed": true,
-    ...
-  },
-  "artifacts": { ... relative output paths ... },
-  "truth_boundary": {
-    "accuracy_report": false,
-    "note": "Runtime fixture smoke uses synthetic analytic cube-room data and is not an accuracy report."
-  }
-}
-```
+## Student Model Boundary
 
-The runtime fixture output is a deterministic plumbing smoke artifact only. It
-must not be presented as real-time performance, a geometric accuracy report, or
-measured real-capture geometry.
-
-### Phase 2E runtime fixture output inspection
-
-Runtime fixture smoke output folders can be inspected without model, video,
-GPU/CUDA, GLB/PLY, marching-cubes, web, or notebook dependencies:
-
-```bash
-atlas3r inspect runtime-fixture --input <folder>
-```
-
-The command validates the Phase 2D output folder as a diagnostic artifact:
-
-- `runtime_events.jsonl` format name/version, event index ordering, known stage
-  sequence, frame IDs, deterministic timestamp and latency placeholders,
-  dropped-frame flags, bounded-memory counters, and forward-slash relative paths;
-- `runtime_summary.json` format name/version and cross-checks against the event
-  log, bounded-memory counters, frame IDs, truth boundary, and artifact list;
-- required generated `synthetic_cube_room.atlas3r` session files;
-- required `teacher_cache` metadata, frame summaries, `arrays.stored=true`, and
-  full `.npz` array payloads;
-- required `teacher_cache_tsdf` artifacts by running the existing
-  `atlas3r inspect tsdf-output --mode complete` validation path.
-
-Inspection prints deterministic JSON:
-
-```text
-{
-  "format_name": "atlas3r_runtime_fixture_output_inspection",
-  "format_version": 1,
-  "artifacts": { ... required artifact presence and relative paths ... },
-  "event_log": { ... stage counts, frame IDs, timing placeholders, memory counters ... },
-  "summary": { ... runtime summary cross-check fields ... },
-  "session": { ... generated synthetic session summary ... },
-  "teacher_cache": { ... fixture adapter, frame IDs, full array payload paths ... },
-  "teacher_cache_tsdf": { ... complete TSDF output inspection summary ... },
-  "cross_checks": { ... "passed": true ... },
-  "diagnostic_boundary": {
-    "diagnostic_only": true,
-    "performance_report": false,
-    "accuracy_report": false,
-    "note": "Runtime fixture inspection is a diagnostic only; it is not a performance report and not an accuracy report."
-  }
-}
-```
-
-Missing or malformed paths must produce path-named errors without tracebacks
-through the CLI. This inspection JSON is a runtime plumbing diagnostic only. It
-is not a performance report, not an accuracy report, and does not make claims
-about real-time throughput, metric reconstruction quality, or measured
-real-capture geometry.
-
-## Student model boundary
-
-Phase 3A introduces the dependency-safe student model boundary under
-`atlas3r.models.student`. It is a NumPy-only batched clip contract for future
-Streaming Metric Geometry Transformer implementations. It reuses Atlas3R naming
-and validation conventions for intrinsics, `T_world_camera`, confidence, and
-uncertainty. It is not a mapper input contract; future bridges into
-`FramePrediction` or `DepthObservation` must check the output truth boundary.
-
-### StudentClipInput
+`atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
+Streaming Metric Geometry Transformer work. It is not a mapper input contract.
 
 ```python
 @dataclass(frozen=True)
@@ -711,76 +319,42 @@ class StudentClipInput:
     metadata: dict[str, object]
 ```
 
-Validation requirements:
-
-- `images_rgb` is exactly `B,T,3,H,W`, with positive `B`, `T`, `H`, and `W`;
-- image dtype is `uint8`, `float32`, or `float64`, and floating images are
-  finite;
-- `len(frame_ids) == T`;
-- intrinsics are either shared `3x3` or clip-shaped `B,T,3,3`, with positive
-  focal lengths and finite principal points;
-- optional `T_world_camera_prior` is clip-shaped `B,T,4,4` and validates with
-  the existing transform helper;
-- Phase 3A only accepts the camera convention
-  `x_right_y_down_z_forward`.
-
-### StudentForwardOutput
+Validation requires positive `B,T,H,W`, `len(frame_ids)==T`, accepted image
+dtypes, finite floating images, valid intrinsics, optional clip-shaped valid
+transforms, and coordinate frame `x_right_y_down_z_forward`.
 
 ```python
 @dataclass(frozen=True)
 class StudentForwardOutput:
-    frame_ids: tuple[int, ...]              # length T
-    depth_m: NDArray                        # B,T,H,W
-    depth_sigma_m: NDArray                  # B,T,H,W
-    confidence: NDArray                     # B,T,H,W values in [0,1]
-    dynamic_probability: NDArray            # B,T,H,W values in [0,1]
-    normals_camera: NDArray                 # B,T,3,H,W
-    pointmap_camera_m: NDArray              # B,T,3,H,W
-    T_world_camera: NDArray                 # B,T,4,4
-    intrinsics: NDArray                     # B,T,3,3
+    frame_ids: tuple[int, ...]       # length T
+    depth_m: NDArray                 # B,T,H,W non-negative
+    depth_sigma_m: NDArray           # B,T,H,W non-negative
+    confidence: NDArray              # B,T,H,W values in [0,1]
+    dynamic_probability: NDArray     # B,T,H,W values in [0,1]
+    normals_camera: NDArray          # B,T,3,H,W
+    pointmap_camera_m: NDArray       # B,T,3,H,W
+    T_world_camera: NDArray          # B,T,4,4
+    intrinsics: NDArray              # B,T,3,3
     truth_boundary: dict[str, object]
     coordinate_frame: str = "x_right_y_down_z_forward"
 ```
 
-All numeric outputs must be finite. Depth and depth uncertainty are
-non-negative. Confidence and dynamic probability are bounded in `[0, 1]`.
-Transforms and intrinsics validate through the existing Atlas3R helpers.
-`truth_boundary` must include boolean flags for `shape_only`,
-`learned_inference`, `usable_for_mapping`, `accuracy_report`, and
-`performance_report`. Shape-only outputs must set `learned_inference`,
-`usable_for_mapping`, `accuracy_report`, and `performance_report` to `false`.
+`truth_boundary` must include boolean `shape_only`, `learned_inference`,
+`usable_for_mapping`, `accuracy_report`, and `performance_report`. The
+`ShapeOnlyStudentModel.forward(input)` stub returns deterministic placeholder
+arrays with `learned_inference=false`, `usable_for_mapping=false`,
+`accuracy_report=false`, and `performance_report=false`.
 
-### ShapeOnlyStudentModel
-
-`ShapeOnlyStudentModel.forward(input)` validates `StudentClipInput` and returns
-deterministic placeholder arrays with the exact output shapes: identity
-`T_world_camera`, broadcast/copied intrinsics, finite placeholder depth and
-uncertainty, zero confidence, zero dynamic probability, camera-forward normals,
-and zero pointmaps. Its truth boundary is:
-
-```text
-shape_only: true
-learned_inference: false
-usable_for_mapping: false
-accuracy_report: false
-performance_report: false
-```
-
-The shape-only stub has no random behavior, global state, optional ML imports,
-weights, training path, video decoding, datasets, mapper wiring, or export path.
-It must not be used to feed mapper/runtime outputs until a later task adds an
-explicit bridge that rejects outputs where `usable_for_mapping` is false.
-
-## ObjectInstance
+## Map Object Contracts
 
 ```python
 @dataclass
 class ObjectInstance:
     object_id: int
     label_candidates: list[tuple[str, float]]
-    T_world_object: NDArray[np.float32] # 4,4
-    oriented_bbox_center_m: NDArray[np.float32]
-    oriented_bbox_axes: NDArray[np.float32]      # 3,3
+    T_world_object: NDArray[np.float32]        # 4,4
+    oriented_bbox_center_m: NDArray[np.float32] # 3
+    oriented_bbox_axes: NDArray[np.float32]    # 3,3
     oriented_bbox_extents_m: NDArray[np.float32] # 3
     mesh_chunk_ids: list[str]
     is_dynamic: bool
@@ -792,18 +366,16 @@ class ObjectInstance:
     metadata: dict[str, Any]
 ```
 
-## MeshChunk
-
 ```python
 @dataclass
 class MeshChunk:
     chunk_id: str
     version: int
-    T_world_chunk: NDArray[np.float32]
-    vertices_m: NDArray[np.float32]     # N,3
-    faces: NDArray[np.int32]            # M,3
-    normals: NDArray[np.float32] | None # N,3
-    colors: NDArray[np.uint8] | None    # N,3/4
+    T_world_chunk: NDArray[np.float32]      # 4,4
+    vertices_m: NDArray[np.float32]         # N,3
+    faces: NDArray[np.int32]                # M,3
+    normals: NDArray[np.float32] | None     # N,3
+    colors: NDArray[np.uint8] | None        # N,3/4
     uvs: NDArray[np.float32] | None
     object_id_per_face: NDArray[np.int32] | None
     surface_source_per_face: NDArray[np.int8] | None
@@ -815,17 +387,8 @@ class MeshChunk:
     flags: list[str]
 ```
 
-Surface source enum:
-
-```text
-0 observed_surface
-1 single_view_prior
-2 completed_surface
-3 dynamic_surface
-4 low_confidence
-```
-
-## WorldMap
+Surface source enum: `0 observed_surface`, `1 single_view_prior`,
+`2 completed_surface`, `3 dynamic_surface`, `4 low_confidence`.
 
 ```python
 @dataclass
@@ -841,24 +404,22 @@ class WorldMap:
     metadata: dict[str, Any]
 ```
 
-## Live API events
+## Live API Events
 
-The runtime should stream events:
+Runtime event names:
 
-```text
-PoseUpdate(frame_id, PoseEstimate)
-DepthUpdate(frame_id, optional compressed depth/confidence)
-ObjectUpdate(object_id, ObjectInstance)
-MeshChunkAdded(chunk_id, version)
-MeshChunkUpdated(chunk_id, version)
-MeshChunkRemoved(chunk_id, version)
-TrackingStateChanged(state)
-BenchmarkMetric(name, value)
-```
+- `PoseUpdate(frame_id, PoseEstimate)`
+- `DepthUpdate(frame_id, optional compressed depth/confidence)`
+- `ObjectUpdate(object_id, ObjectInstance)`
+- `MeshChunkAdded(chunk_id, version)`
+- `MeshChunkUpdated(chunk_id, version)`
+- `MeshChunkRemoved(chunk_id, version)`
+- `TrackingStateChanged(state)`
+- `BenchmarkMetric(name, value)`
 
-## File formats
+## File Formats
 
-### `.atlas3r` session folder
+### `.atlas3r` Session Folder
 
 ```text
 session.atlas3r/
@@ -868,65 +429,22 @@ session.atlas3r/
   objects.jsonl
   mesh_chunks/
     chunk_<id>_v<version>.glb
-    chunk_<id>_v<version>.json Phase 0B metadata/full synthetic mesh sidecar
+    chunk_<id>_v<version>.json
   depth/
     frame_<id>.npz optional
   logs/
     runtime_profile.json
 ```
 
-Phase 0C supports a minimal reader for this Phase 0B sidecar format. The reader
-reconstructs `PoseEstimate`, `CameraModel`, `ObjectInstance`, and `MeshChunk`
-records from JSON/JSONL sidecars and records sorted `depth/frame_<id>.npz` paths
-without loading every depth array by default.
+The Phase 0C reader reconstructs `PoseEstimate`, `CameraModel`,
+`ObjectInstance`, and `MeshChunk` records from JSON/JSONL sidecars and records
+sorted `depth/frame_<id>.npz` paths without loading every depth array by default.
 
-### Session inspection preview
+`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>`
+writes deterministic `index.html`, `top_down.svg`, `depth_frame_000000.svg`,
+and `object_mask_frame_000000.svg` preview files.
 
-`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>` writes
-deterministic dependency-free HTML/SVG files:
-
-```text
-preview_dir/
-  index.html
-  top_down.svg
-  depth_frame_000000.svg
-  object_mask_frame_000000.svg
-```
-
-The preview is diagnostic only. It must not be used as an accuracy report, and
-hidden or completed geometry must not be presented as measured geometry.
-
-### Phase 0D CPU TSDF smoke output
-
-`atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic
-pure-NumPy reference artifacts:
-
-```text
-<folder>/
-  synthetic_cube_room.atlas3r/  Phase 0B analytic input session
-  tsdf_grid.npz                 tsdf, weight, grid_min_corner_world_m, voxel_size_m
-  surface_points.npz            points_world_m, confidence, uncertainty_m, voxel_indices_xyz
-  metadata.json                 surface metadata and uncertainty summary
-  metrics.json                  conservative synthetic fixture metrics
-```
-
-The Phase 0D surface is a voxel-center point cloud extracted from observed
-near-zero TSDF voxels, not a game-engine mesh. `metadata.json` must include
-source frame IDs, voxel size, coordinate frame, metric scale source, observed
-coverage estimate, and mean/p50/p95/max uncertainty. `metrics.json` compares
-the points to the synthetic cube-room ground-truth box mesh with voxel-scale
-fixture checks and must include known limitations. It is not an accuracy report
-and must not claim millimeter-level accuracy.
-
-### Metadata requirements
-
-Every export must include:
-
-- coordinate convention;
-- unit scale;
-- scale source;
-- camera metadata source;
-- model checkpoint hash;
-- voxel size;
-- accuracy report path or `null`;
-- warnings if RGB-only best effort.
+Every export or sidecar must include or preserve coordinate convention, unit
+scale, scale source, camera metadata source when known, model checkpoint hash or
+`null`, voxel size when relevant, accuracy report path or `null`, and warnings
+for RGB-only best effort.

@@ -71,6 +71,29 @@ docs/status/decisions.md     # architecture decisions and rationale
 
 When context gets compacted, reload `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and the current `docs/status/*` files before continuing.
 
+## Context budget
+
+- `docs/status/progress.md` is a rolling compact state summary, not an append-only transcript.
+- `docs/status/decisions.md` is a compact ADR index/table, not long prose blocks.
+- `docs/status/active_task.md` is only the current task checklist.
+- `docs/status/next_task.md` contains only one self-contained next prompt.
+- `docs/08_API_CONTRACTS.md` should stay a concise contract index, not a history of every phase.
+- Detailed history belongs in git commits and tests, not in ever-growing markdown.
+
+Target maximums:
+
+```text
+AGENTS.md <= 140 lines
+PLANS.md <= 220 lines
+docs/08_API_CONTRACTS.md <= 450 lines
+docs/status/active_task.md <= 80 lines
+docs/status/progress.md <= 180 lines
+docs/status/decisions.md <= 180 lines
+docs/status/next_task.md <= 150 lines
+```
+
+These guardrails are not license to delete source behavior, public APIs, CLI commands, tests, or documented coordinate/schema contracts.
+
 ## Model integration rule
 
 Third-party models must be isolated behind adapters:
@@ -98,4 +121,3 @@ Every geometry output must carry confidence/uncertainty. Mesh chunks must contai
 - coordinate frame,
 - metric scale source,
 - mean and percentile uncertainty.
-
