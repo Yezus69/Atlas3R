@@ -823,3 +823,51 @@ Known gaps:
 - Runtime fixture inspection validates deterministic plumbing artifacts only;
   it is not a performance report and not an accuracy report.
 ```
+
+```text
+2026-06-01 19:26 local
+Task: Phase 3A - minimal public student-model input/output contract and
+deterministic shape-only stub.
+Changed files:
+- Added src/atlas3r/models/student/ with StudentClipInput,
+  StudentForwardOutput, and ShapeOnlyStudentModel.
+- Added tests/unit/test_student_model_contracts.py for input/output validation,
+  deterministic shape-only forward shapes, truth-boundary flags, identity
+  transforms, and dependency-safe import.
+- Documented the student boundary in docs/08_API_CONTRACTS.md and recorded
+  decision D-0017.
+- Rewrote docs/status/active_task.md and replaced docs/status/next_task.md with
+  the Phase 3B RGB frame-source prompt.
+- Updated the status handoff assertion in tests/synthetic/test_session_inspect.py.
+Commands run:
+- python -m unittest tests.unit.test_student_model_contracts
+- python -m ruff format src\atlas3r\models\student tests\unit\test_student_model_contracts.py
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- where.exe make
+- git diff --check
+Results:
+- Focused student contract unittest ran 8 tests and passed.
+- Ruff formatted one new source file during focused cleanup.
+- Final Ruff format check passed with 71 files already formatted.
+- Final Ruff lint passed.
+- Final mypy passed with no issues in 51 source files.
+- Full unittest discovery ran 100 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.`
+- `where.exe make` reported: `INFO: Could not find files for the given pattern(s).`
+  Therefore `make test`, `make lint`, and `make typecheck` were not run.
+- `git diff --check` reported no whitespace errors; Git warned that changed
+  files will be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 3A intentionally does not add PyTorch, TensorFlow, JAX, Core ML,
+  TensorRT, CUDA, Metal, OpenCV, video decoding, datasets, training loops,
+  weights, downloads, external model repos, web servers, notebooks, GLB/PLY
+  export, marching cubes, runtime scheduler changes, TSDF fusion changes,
+  visualization, performance claims, or accuracy claims.
+- The shape-only student stub is not neural inference and is explicitly marked
+  not usable for mapping.
+```

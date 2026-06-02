@@ -324,3 +324,27 @@ report and not an accuracy report.
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/synthetic/test_runtime_fixture_inspection.py.
 ```
+
+```text
+Decision ID: D-0017
+Date: 2026-06-01
+Context: Phase 3A needs future Streaming Metric Geometry Transformer work to
+share one small, dependency-safe student-model input/output boundary before any
+training code, weights, tensor library, or mapper bridge exists.
+Decision: Add `atlas3r.models.student` with NumPy-only `StudentClipInput`,
+`StudentForwardOutput`, and `ShapeOnlyStudentModel`. The output keeps batched
+versions of existing Atlas3R geometry names such as `depth_m`,
+`depth_sigma_m`, `confidence`, `T_world_camera`, and `intrinsics`, validates
+them through existing helpers, and requires truth-boundary flags that mark the
+shape-only stub as not learned inference, not mapping-ready, not a performance
+report, and not an accuracy report.
+Alternatives considered: Add a real tensor/model dependency now; emit
+`FramePrediction` or `DepthObservation` directly from the stub; create an
+unvalidated free-form dictionary boundary.
+Consequences: Future student implementations have a stable shape contract while
+mapper/runtime paths remain untouched. Any later bridge to existing public
+geometry contracts must explicitly reject outputs where
+`truth_boundary.usable_for_mapping` is false.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/unit/test_student_model_contracts.py.
+```

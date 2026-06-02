@@ -643,6 +643,88 @@ is not a performance report, not an accuracy report, and does not make claims
 about real-time throughput, metric reconstruction quality, or measured
 real-capture geometry.
 
+## Student model boundary
+
+Phase 3A introduces the dependency-safe student model boundary under
+`atlas3r.models.student`. It is a NumPy-only batched clip contract for future
+Streaming Metric Geometry Transformer implementations. It reuses Atlas3R naming
+and validation conventions for intrinsics, `T_world_camera`, confidence, and
+uncertainty. It is not a mapper input contract; future bridges into
+`FramePrediction` or `DepthObservation` must check the output truth boundary.
+
+### StudentClipInput
+
+```python
+@dataclass(frozen=True)
+class StudentClipInput:
+    frame_ids: tuple[int, ...]           # length T
+    images_rgb: NDArray                  # B,T,3,H,W uint8|float32|float64
+    intrinsics: NDArray                  # B,T,3,3 or shared 3,3
+    T_world_camera_prior: NDArray | None # optional B,T,4,4 context
+    coordinate_frame: str = "x_right_y_down_z_forward"
+    metadata: dict[str, object]
+```
+
+Validation requirements:
+
+- `images_rgb` is exactly `B,T,3,H,W`, with positive `B`, `T`, `H`, and `W`;
+- image dtype is `uint8`, `float32`, or `float64`, and floating images are
+  finite;
+- `len(frame_ids) == T`;
+- intrinsics are either shared `3x3` or clip-shaped `B,T,3,3`, with positive
+  focal lengths and finite principal points;
+- optional `T_world_camera_prior` is clip-shaped `B,T,4,4` and validates with
+  the existing transform helper;
+- Phase 3A only accepts the camera convention
+  `x_right_y_down_z_forward`.
+
+### StudentForwardOutput
+
+```python
+@dataclass(frozen=True)
+class StudentForwardOutput:
+    frame_ids: tuple[int, ...]              # length T
+    depth_m: NDArray                        # B,T,H,W
+    depth_sigma_m: NDArray                  # B,T,H,W
+    confidence: NDArray                     # B,T,H,W values in [0,1]
+    dynamic_probability: NDArray            # B,T,H,W values in [0,1]
+    normals_camera: NDArray                 # B,T,3,H,W
+    pointmap_camera_m: NDArray              # B,T,3,H,W
+    T_world_camera: NDArray                 # B,T,4,4
+    intrinsics: NDArray                     # B,T,3,3
+    truth_boundary: dict[str, object]
+    coordinate_frame: str = "x_right_y_down_z_forward"
+```
+
+All numeric outputs must be finite. Depth and depth uncertainty are
+non-negative. Confidence and dynamic probability are bounded in `[0, 1]`.
+Transforms and intrinsics validate through the existing Atlas3R helpers.
+`truth_boundary` must include boolean flags for `shape_only`,
+`learned_inference`, `usable_for_mapping`, `accuracy_report`, and
+`performance_report`. Shape-only outputs must set `learned_inference`,
+`usable_for_mapping`, `accuracy_report`, and `performance_report` to `false`.
+
+### ShapeOnlyStudentModel
+
+`ShapeOnlyStudentModel.forward(input)` validates `StudentClipInput` and returns
+deterministic placeholder arrays with the exact output shapes: identity
+`T_world_camera`, broadcast/copied intrinsics, finite placeholder depth and
+uncertainty, zero confidence, zero dynamic probability, camera-forward normals,
+and zero pointmaps. Its truth boundary is:
+
+```text
+shape_only: true
+learned_inference: false
+usable_for_mapping: false
+accuracy_report: false
+performance_report: false
+```
+
+The shape-only stub has no random behavior, global state, optional ML imports,
+weights, training path, video decoding, datasets, mapper wiring, or export path.
+It must not be used to feed mapper/runtime outputs until a later task adds an
+explicit bridge that rejects outputs where `usable_for_mapping` is false.
+
 ## ObjectInstance
 
 ```python
