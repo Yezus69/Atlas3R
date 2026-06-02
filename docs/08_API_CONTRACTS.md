@@ -194,14 +194,14 @@ dependencies raise `AdapterDependencyError` at construction or prediction time.
 `fixture-cube-room` is an available synthetic-only adapter for plumbing tests
 and cache writing.
 
-Teacher cache layout:
-
-```text
-teacher_cache/
-  metadata.json
-  frame_summaries.jsonl
-  arrays/ optional per-frame .npz payloads
-```
+`atlas3r.data.teacher_frame_batch_from_frame_packets(frames, ...)` and
+`teacher_frame_batch_from_rgb_source(source, ...)` build ordered `FrameBatch`
+records from existing `FramePacket` / `RGBFrameSource` inputs. They preserve
+input order, reject empty/non-packet/duplicate-frame-id inputs, keep compact
+deterministic metadata, and do not run inference or touch mapper/runtime/TSDF
+paths.
+Teacher cache layout: `metadata.json`, `frame_summaries.jsonl`, and optional
+`arrays/` per-frame `.npz` payloads.
 
 `metadata.json` records `format_name=atlas3r_teacher_prediction_cache`,
 `format_version=1`, adapter status/capabilities, prediction metadata,

@@ -5,26 +5,27 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 3C complete; next pointer is Phase 3D.
-- Latest implementation: dependency-free `FramePacket` -> `StudentClipInput`
-  bridge in `atlas3r.data.student_clip_from_frame_packets`.
-- The bridge preserves input order, rejects empty/non-packet/duplicate/mismatched
-  clips, stacks `rgb_model` as `1,T,3,H,W`, stacks `K_model` as `1,T,3,3`, and
-  emits compact deterministic metadata.
-- Shape-only student forward accepts bridge clips and remains a truth-boundary
-  stub with `learned_inference=false` and `usable_for_mapping=false`.
+- Current phase: Phase 3D complete; next pointer remains the Phase 3D handoff.
+- Latest implementation: dependency-free `FramePacket` / `RGBFrameSource` ->
+  teacher `FrameBatch` bridge in `atlas3r.data.teacher_batch`.
+- The teacher bridge preserves input order, rejects empty/non-packet/duplicate
+  clips with field-named errors, keeps compact deterministic metadata, accepts
+  caller metadata such as fixture `session_path`, and does not run inference or
+  touch mapper/runtime/TSDF paths.
+- Existing `FramePacket` -> `StudentClipInput` bridge remains NumPy-only student
+  contract plumbing and does not feed mapper/runtime/TSDF paths.
 - Architecture focus remains:
   `RGB FramePacket -> teacher/student geometry prediction -> DepthObservation /
   FramePrediction -> runtime scheduler -> TSDF/surfel/object map -> mesh/world output`.
 
 ## Latest Verified Test State
 
-Phase 3C verification in this working tree:
+Phase 3D verification in this working tree:
 
-- `python -m ruff format --check src tests`: passed with 76 files already formatted.
+- `python -m ruff format --check src tests`: passed with 78 files already formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 53 source files.
-- `python -m unittest discover -s tests -p 'test_*.py'`: ran 118 tests and passed.
+- `python -m mypy src`: passed with no issues in 54 source files.
+- `python -m unittest discover -s tests -p 'test_*.py'`: ran 127 tests and passed.
 - `git diff --check`: passed; Git warned that changed files will be converted
   from LF to CRLF in the working tree.
 - `Get-Command make`: `The term 'make' is not recognized as the name of a
@@ -56,6 +57,7 @@ Phase 3C verification in this working tree:
 - Phase 3B: dependency-free RGB frame-source boundary and NPZ/PPM smoke path.
 - Phase 3B.1: context-budget cleanup for status/API docs and guard tests.
 - Phase 3C: minimal FramePacket clip builder for the student boundary.
+- Phase 3D: minimal FramePacket/RGBFrameSource builder for the teacher boundary.
 
 ## Current Known Gaps
 
@@ -63,8 +65,8 @@ Phase 3C verification in this working tree:
   vendored third-party model code.
 - External teacher adapters remain dependency-safe stubs except the synthetic
   `fixture-cube-room` adapter.
-- The student clip bridge is shape/contract plumbing only; it does not feed
-  mapper, runtime, TSDF, export, or inspection paths.
+- The student and teacher frame bridges are shape/contract plumbing only; they
+  do not feed mapper, runtime, TSDF, export, or inspection paths.
 - CPU TSDF outputs, MeshChunk sidecars, WorldMap sidecars, and inspections are
   deterministic diagnostic artifacts, not accuracy or performance reports.
 - No GLB/PLY export, marching cubes, object-aware fusion, GPU/CUDA/Metal mapper,
@@ -74,27 +76,25 @@ Phase 3C verification in this working tree:
 - The shape-only student stub is not learned inference and is not usable for
   mapping.
 
-## Phase 3C Update
+## Phase 3D Update
 
 Changed files:
 
-- `src/atlas3r/data/student_clip.py`
+- `src/atlas3r/data/teacher_batch.py`
 - `src/atlas3r/data/__init__.py`
-- `tests/unit/test_student_clip.py`
-- `tests/unit/test_repo_context_budget.py`
-- `tests/synthetic/test_session_inspect.py`
+- `tests/unit/test_teacher_batch.py`
 - `docs/08_API_CONTRACTS.md`
 - `docs/status/active_task.md`
 - `docs/status/progress.md`
 - `docs/status/decisions.md`
-- `docs/status/next_task.md`
 
 Results:
 
-- Added public, lazy-exported `student_clip_from_frame_packets`.
-- Added focused bridge tests for success, ordering, duplicate IDs, empty clips,
-  non-packets, mismatched shapes, no input-array mutation, shape-only forward,
-  and dependency-safe imports.
-- Updated API contracts, ADR index, and the next-task prompt for Phase 3D.
-- No heavy dependency, CLI, mapper, runtime, TSDF, export, or inspection-bundle
-  changes were introduced.
+- Added lazy-exported `teacher_frame_batch_from_frame_packets` and
+  `teacher_frame_batch_from_rgb_source`.
+- Added focused bridge tests for smoke fixture conversion, preserved order,
+  RGBFrameSource wrapper conversion, duplicate IDs, empty clips, non-packets,
+  reserved metadata, fixture teacher adapter acceptance, and import safety.
+- Updated API contracts and ADR/status docs within context budgets.
+- No heavy dependency, real adapter inference, CLI, mapper, runtime, TSDF,
+  export, or inspection-bundle changes were introduced.

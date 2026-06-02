@@ -24,6 +24,7 @@ tests, and the contract docs.
 | D-0017 | Student boundary | `atlas3r.models.student` provides NumPy-only `StudentClipInput`, `StudentForwardOutput`, and `ShapeOnlyStudentModel` contracts. | Yes |
 | D-0018 | RGB frame source | `atlas3r.data.frame_source` provides `RGBFrameSource`, NPZ loading, and binary PPM sequence loading into existing `FramePacket` records. | Yes |
 | D-0019 | Student clip bridge | `atlas3r.data.student_clip_from_frame_packets` is the public dependency-free bridge from ordered `FramePacket` sequences to `StudentClipInput`. | Yes |
+| D-0020 | Teacher batch bridge | `atlas3r.data.teacher_frame_batch_from_frame_packets` and `teacher_frame_batch_from_rgb_source` bridge ordered `FramePacket` / `RGBFrameSource` inputs to existing teacher `FrameBatch`. | Yes |
 
 Active cross-cutting constraints:
 
