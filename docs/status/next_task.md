@@ -1,45 +1,42 @@
-# Codex Prompt - Atlas3R Phase 4B: Trained Checkpoint Inference Bridge to DepthObservation and TSDF Smoke
+# Codex Prompt - Atlas3R Phase 4C: Coherent Checkpoint Inference Sequence Smoke
 
-You are working in `Yezus69/Atlas3R` after Phase 4A.
+You are working in `Yezus69/Atlas3R` after Phase 4B.
 
 ## Goal
 
-Load the Phase 4A `checkpoint_last.pt`, run the tiny trained model on
-synthetic or NPZ `FramePacket` inputs, convert predictions into the existing
-`DepthObservation` mapper boundary, feed the CPU TSDF smoke path, and compare
-predicted-vs-target TSDF/preview artifacts.
+Extend the Phase 4B checkpoint-inference bridge from one-frame procedural
+debug inputs to a deterministic coherent multi-frame synthetic sequence, then
+measure depth, camera-center, and TSDF consistency across the sequence.
 
-This is a checkpoint-inference-to-mapper bridge. It should prove that the first
-training MVP can drive the existing geometry-facing contracts without changing
-runtime scheduling or TSDF internals.
+This should stay a diagnostic bridge for the tiny Phase 4A model. It must not
+claim real-capture performance or benchmark accuracy.
 
 ## Scope
 
-- Add a dependency-safe checkpoint loader that fails clearly when Torch is
-  missing.
-- Add a small inference helper for `TinyDepthPoseNet` over existing
-  `FramePacket` / `StudentClipInput` data.
-- Convert model outputs to `DepthObservation` with explicit uncertainty,
-  confidence, coordinate frame, metric scale source, and truth-boundary
-  metadata.
-- Add a CPU TSDF smoke command or focused helper that consumes those predicted
-  observations on deterministic synthetic inputs.
-- Write compact predicted-vs-target metrics/preview artifacts sufficient for
-  debugging the bridge.
-- Add tests that skip Torch-dependent inference when the optional train extra is
-  unavailable.
+- Add a small coherent synthetic RGB/depth sequence generator that shares one
+  static scene across frames and varies only camera center within the existing
+  coordinate convention.
+- Convert that sequence through `StudentClipInput`, run the Phase 4A checkpoint,
+  and emit validated `DepthObservation` records for every frame.
+- Feed all predicted observations into the existing CPU TSDF smoke helper and
+  compare against the sequence target TSDF on the same grid.
+- Record compact per-frame and aggregate depth/camera-center/TSDF metrics.
+- Keep base imports Torch-free and skip Torch-dependent tests when the optional
+  train extra is unavailable.
 
 ## Exclusions
 
-Do not add external teacher models, real datasets, video decoding, runtime
-scheduler changes, GLB/PLY export, object fusion, web servers, notebooks, or a
-new broad inspection bundle.
+Do not add real datasets, video decoding, external teacher models, runtime
+scheduler changes, TSDF internals, GLB/PLY export, notebooks, web servers, or
+broad inspection bundles.
 
-## Done criteria
+## Done Criteria
 
-- Base imports remain Torch-free.
-- Missing Torch produces clear installation errors.
-- Loaded checkpoints preserve Phase 4A truth-boundary flags.
-- Predicted observations validate as `DepthObservation`.
-- CPU TSDF smoke accepts predicted observations and records uncertainty.
-- Tests and status docs are updated within context budgets.
+- Coherent sequence target and prediction observations validate as
+  `DepthObservation`.
+- Predicted TSDF smoke records source frame IDs, uncertainty, confidence,
+  coordinate frame, metric scale source, and truth-boundary metadata.
+- Metrics distinguish diagnostic smoke output from accuracy reports.
+- API/status docs and tests are updated within context budgets.
+- Relevant lint, typecheck, unit tests, and smoke commands are run or explicitly
+  documented as unavailable.

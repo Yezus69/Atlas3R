@@ -23,6 +23,8 @@ class TrainingImportSafetyTest(unittest.TestCase):
             "import atlas3r.data\n"
             "import atlas3r.models.student\n"
             "import atlas3r.training\n"
+            "import atlas3r.training.checkpoint_inference\n"
+            "import atlas3r.mapping.checkpoint_tsdf_smoke\n"
             "from atlas3r.training.torch_runtime import torch_available\n"
             "available = torch_available()\n"
             "unexpected = {'torch', 'tensorflow', 'jax', 'cv2', 'PIL', 'imageio', 'av'} & "

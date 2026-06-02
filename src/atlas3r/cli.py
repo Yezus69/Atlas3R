@@ -62,6 +62,31 @@ def _run_teacher_cache_tsdf(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_checkpoint_tsdf(args: argparse.Namespace) -> int:
+    from atlas3r.mapping.checkpoint_tsdf_smoke import write_checkpoint_tsdf_smoke
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        written_paths = write_checkpoint_tsdf_smoke(
+            args.checkpoint,
+            args.output,
+            input_npz=args.input,
+            width=args.width,
+            height=args.height,
+            seed=args.seed,
+            device=args.device,
+            voxel_size_m=args.voxel_size_m,
+            truncation_voxels=args.truncation_voxels,
+        )
+    except (TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("Wrote checkpoint TSDF smoke outputs:")
+    for path in written_paths:
+        print(f"  {path}")
+    return 0
+
+
 def _run_runtime_fixture(args: argparse.Namespace) -> int:
     try:
         result = write_runtime_fixture_smoke(args.output)
@@ -253,6 +278,39 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     teacher_cache_tsdf_parser.set_defaults(handler=_run_teacher_cache_tsdf)
+    checkpoint_tsdf_parser = smoke_subparsers.add_parser(
+        "checkpoint-tsdf",
+        help=("Run a Phase 4A tiny checkpoint through DepthObservation and CPU TSDF smoke."),
+    )
+    checkpoint_tsdf_parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        required=True,
+        help="Input Phase 4A checkpoint_last.pt.",
+    )
+    checkpoint_tsdf_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output folder for predicted TSDF artifacts and comparison files.",
+    )
+    checkpoint_tsdf_parser.add_argument(
+        "--input",
+        type=Path,
+        default=None,
+        help="Optional NPZ RGB clip; omitted uses deterministic synthetic target data.",
+    )
+    checkpoint_tsdf_parser.add_argument("--width", type=int, default=32)
+    checkpoint_tsdf_parser.add_argument("--height", type=int, default=24)
+    checkpoint_tsdf_parser.add_argument("--seed", type=int, default=0)
+    checkpoint_tsdf_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="cpu",
+    )
+    checkpoint_tsdf_parser.add_argument("--voxel-size-m", type=float, default=0.1)
+    checkpoint_tsdf_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    checkpoint_tsdf_parser.set_defaults(handler=_run_checkpoint_tsdf)
     runtime_fixture_parser = smoke_subparsers.add_parser(
         "runtime-fixture",
         help="Run the deterministic runtime fixture scheduler smoke.",

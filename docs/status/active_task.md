@@ -1,21 +1,24 @@
 # Active task
 
-Goal: Phase 4A training MVP on deterministic procedural RGB + metric-depth
-synthetic samples.
+Goal: Phase 4B checkpoint inference bridge from Phase 4A
+`checkpoint_last.pt` into `DepthObservation` and CPU TSDF smoke artifacts.
 
 Checklist:
 
-- [x] Ignore stale Phase 3D `next_task.md` as an execution source.
-- [x] Read the Phase 4A prompt, API/status docs, and focused student/data/CLI files.
-- [x] Add optional `train` dependency extra with dependency-safe Torch helpers.
-- [x] Add deterministic procedural RGB/depth samples and `StudentClipInput` conversion.
-- [x] Add tiny trainable Torch depth/uncertainty/confidence/camera-center model.
-- [x] Add finite supervised depth, sigma NLL, confidence, and camera-center losses.
-- [x] Add `atlas3r train synthetic-overfit` writing config, metrics, checkpoint,
-  summary, prediction sample, and dependency-free HTML/SVG preview.
-- [x] Add import-safety, dataset, and optional Torch training smoke tests.
-- [x] Update API/status docs and Phase 4B handoff within context budgets.
-- [x] Run Ruff, mypy, unittest, diff check, optional training smoke, and make if available.
+- [x] Read Phase 4B prompt, status docs, API contracts, training, mapper, TSDF,
+  frame-source, and CLI files.
+- [x] Add a dependency-safe tiny checkpoint loader with clear missing-Torch errors.
+- [x] Add inference helpers for `StudentClipInput` and ordered `FramePacket`
+  inputs.
+- [x] Convert predictions to validated `DepthObservation` records with
+  uncertainty, confidence, coordinate frame, scale source, and truth-boundary
+  diagnostics.
+- [x] Add a deterministic synthetic checkpoint-to-TSDF smoke helper/CLI with
+  predicted-vs-target metrics and preview artifacts.
+- [x] Add optional Torch tests that skip when the `train` extra is unavailable.
+- [x] Update API/status docs within context budgets.
+- [x] Run relevant lint, typecheck, tests, smoke, and diff checks.
 
-Exclusions: no external teacher models, real datasets, video decoding, TSDF,
-runtime, GLB/PLY export, web servers, notebooks, or inspection bundles.
+Exclusions: no external teacher models, real datasets, video decoding, runtime
+scheduler changes, TSDF internals, GLB/PLY export, web servers, notebooks, or
+broad inspection bundles.

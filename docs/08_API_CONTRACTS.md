@@ -343,27 +343,31 @@ non-empty ordered `FramePacket` sequence into one `StudentClipInput` with
 rejects non-packets, duplicate frame IDs, mismatched/non-`3,H,W` `rgb_model`
 shapes, and invalid intrinsics.
 
-## Training MVP Contracts
+## Training And Checkpoint-Inference MVP Contracts
 `atlas3r train synthetic-overfit --output <run_dir>` is an optional PyTorch MVP
-over deterministic procedural synthetic RGB/depth. Base imports,
-`atlas3r.training`, and dataset generation must not import Torch eagerly;
-missing Torch exits CLI training with code 2 and the train-extra install hint.
-
-`SyntheticDepthSample` fields: `sample_id`, `frame_id`, `rgb_u8 H,W,3`,
-`rgb_model 3,H,W`, `depth_m H,W`, `depth_sigma_m H,W`, `confidence H,W`,
-`object_mask H,W`, `K 3,3`, `T_world_camera 4,4`, `camera_center_world_m 3`,
-and metadata with `synthetic_only=true`, seed, and scene bounds.
-`sample_to_student_clip(sample)` returns shapes `1,1,3,H,W`, `1,1,3,3`, and
-`T_world_camera_prior 1,1,4,4`.
-
+over deterministic synthetic RGB/depth. Base imports stay Torch-free; missing Torch exits
+training/checkpoint smoke with code 2 and the train-extra hint.
+`SyntheticDepthSample`: `sample_id`, `frame_id`, `rgb_u8 H,W,3`, `rgb_model 3,H,W`,
+`depth_m/depth_sigma_m/confidence/object_mask H,W`, `K 3,3`, `T_world_camera 4,4`,
+`camera_center_world_m 3`, and synthetic-only metadata. `sample_to_student_clip` returns
+`1,1,3,H,W`, `1,1,3,3`, and `T_world_camera_prior 1,1,4,4`.
 `checkpoint_last.pt`: `format_name=atlas3r_tiny_depth_pose_checkpoint`,
-`format_version=1`, `step`, `model_state_dict`, `optimizer_state_dict`,
-`config`, `metrics`, and `truth_boundary`. Runs write `config.json`,
-`metrics.jsonl`, `summary.json`, `prediction_sample.npz`,
-`prediction_preview.html`, and `prediction_preview.svg`. Truth boundary fields:
+`format_version=1`, `step`, `model_state_dict`, `optimizer_state_dict`, `config`,
+`metrics`, `model_config`, and Phase 4A `truth_boundary`. Required truth flags:
 `training_mvp=true`, `synthetic_only=true`, `real_capture_model=false`,
-`usable_for_realtime_mapping=false`, `accuracy_report=false`,
-`performance_report=false`; synthetic-overfit only, not realtime or real-capture.
+`usable_for_mapping=false`, `usable_for_realtime_mapping=false`, `accuracy_report=false`,
+and `performance_report=false`.
+`load_tiny_depth_pose_checkpoint(path)` validates/preserves truth flags. The
+student-clip and frame-packet predictors run `TinyDepthPoseNet`;
+`depth_observations_from_tiny_prediction(...)` emits validated `DepthObservation`
+with predicted depth/sigma/confidence, RGB-prior scale, coordinate frame, and
+truth-boundary diagnostics.
+
+`atlas3r smoke checkpoint-tsdf --checkpoint <checkpoint_last.pt> --output <folder> [--input
+<clip.npz>]` writes predicted TSDF artifacts and `prediction_sample.npz`.
+Synthetic mode also writes `target_tsdf/`, previews, and predicted-vs-target
+metrics. NPZ clips are not target-evaluated. All artifacts carry uncertainty and
+`accuracy_report=false`.
 
 ## Map Object Contracts
 ```python
@@ -424,27 +428,23 @@ class WorldMap:
 ```
 
 ## Live API Events
-Runtime event names: `PoseUpdate(frame_id, PoseEstimate)`,
-`DepthUpdate(frame_id, optional compressed depth/confidence)`,
-`ObjectUpdate(object_id, ObjectInstance)`, `MeshChunkAdded(chunk_id, version)`,
-`MeshChunkUpdated(chunk_id, version)`, `MeshChunkRemoved(chunk_id, version)`,
-`TrackingStateChanged(state)`, and `BenchmarkMetric(name, value)`.
+Runtime event names: `PoseUpdate`, `DepthUpdate`, `ObjectUpdate`,
+`MeshChunkAdded/Updated/Removed`, `TrackingStateChanged`, and
+`BenchmarkMetric`; payloads use the public contracts above.
 
 ## File Formats
 ### `.atlas3r` Session Folder
-Folder layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`,
-`objects.jsonl`, `mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files,
-optional `depth/frame_<id>.npz`, and `logs/runtime_profile.json`.
+Folder layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
+`mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files, optional
+`depth/frame_<id>.npz`, and `logs/runtime_profile.json`.
 
-The Phase 0C reader reconstructs `PoseEstimate`, `CameraModel`,
-`ObjectInstance`, and `MeshChunk` records from JSON/JSONL sidecars and records
-sorted `depth/frame_<id>.npz` paths without loading every depth array by default.
+The Phase 0C reader reconstructs `PoseEstimate`, `CameraModel`, `ObjectInstance`,
+and `MeshChunk` from sidecars and records sorted depth NPZ paths without loading
+every depth array by default.
 
-`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>`
-writes deterministic `index.html`, `top_down.svg`, `depth_frame_000000.svg`,
-and `object_mask_frame_000000.svg` preview files.
+`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>` writes
+deterministic HTML/SVG preview files.
 
-Every export or sidecar must include or preserve coordinate convention, unit
-scale, scale source, camera metadata source when known, model checkpoint hash or
-`null`, voxel size when relevant, accuracy report path or `null`, and warnings
-for RGB-only best effort.
+Every export/sidecar must preserve coordinate convention, unit scale, scale
+source, camera metadata source when known, model checkpoint hash or `null`, voxel
+size when relevant, accuracy report path or `null`, and RGB-only warnings.
