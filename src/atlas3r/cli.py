@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
 
 from atlas3r import __version__
+from atlas3r.cli_datasets import register_datasets_parser
+from atlas3r.cli_train import register_train_parser
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.session import validate_session
 from atlas3r.io.teacher_cache_inspection import format_teacher_cache_inspection
@@ -173,31 +174,6 @@ def _run_adapters_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_train_synthetic_overfit(args: argparse.Namespace) -> int:
-    from atlas3r.training import SyntheticOverfitConfig, TorchDependencyError, run_synthetic_overfit
-
-    try:
-        result = run_synthetic_overfit(
-            SyntheticOverfitConfig(
-                output=args.output,
-                steps=args.steps,
-                batch_size=args.batch_size,
-                num_samples=args.num_samples,
-                width=args.width,
-                height=args.height,
-                seed=args.seed,
-                device=args.device,
-                learning_rate=args.learning_rate,
-                log_every=args.log_every,
-            )
-        )
-    except (TorchDependencyError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print(json.dumps(result, sort_keys=True))
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level Atlas3R argument parser."""
     parser = argparse.ArgumentParser(
@@ -280,13 +256,13 @@ def build_parser() -> argparse.ArgumentParser:
     teacher_cache_tsdf_parser.set_defaults(handler=_run_teacher_cache_tsdf)
     checkpoint_tsdf_parser = smoke_subparsers.add_parser(
         "checkpoint-tsdf",
-        help=("Run a Phase 4A tiny checkpoint through DepthObservation and CPU TSDF smoke."),
+        help=("Run a tiny training checkpoint through DepthObservation and CPU TSDF smoke."),
     )
     checkpoint_tsdf_parser.add_argument(
         "--checkpoint",
         type=Path,
         required=True,
-        help="Input Phase 4A checkpoint_last.pt.",
+        help="Input tiny checkpoint_last.pt or checkpoint_best.pt.",
     )
     checkpoint_tsdf_parser.add_argument(
         "--output",
@@ -431,35 +407,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Store full tensor payloads under teacher_cache/arrays/frame_<id>.npz.",
     )
     adapters_run_parser.set_defaults(handler=_run_adapters_run)
-    train_parser = subparsers.add_parser(
-        "train",
-        help="Run bounded optional training MVP commands.",
-    )
-    train_subparsers = train_parser.add_subparsers(dest="train_command", required=True)
-    synthetic_overfit_parser = train_subparsers.add_parser(
-        "synthetic-overfit",
-        help="Train the tiny synthetic-only depth/pose MVP.",
-    )
-    synthetic_overfit_parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="Output run folder for checkpoint, metrics, and preview artifacts.",
-    )
-    synthetic_overfit_parser.add_argument("--steps", type=int, default=200)
-    synthetic_overfit_parser.add_argument("--batch-size", type=int, default=8)
-    synthetic_overfit_parser.add_argument("--num-samples", type=int, default=64)
-    synthetic_overfit_parser.add_argument("--width", type=int, default=64)
-    synthetic_overfit_parser.add_argument("--height", type=int, default=48)
-    synthetic_overfit_parser.add_argument("--seed", type=int, default=0)
-    synthetic_overfit_parser.add_argument(
-        "--device",
-        choices=("auto", "cuda", "mps", "cpu"),
-        default="auto",
-    )
-    synthetic_overfit_parser.add_argument("--learning-rate", type=float, default=0.001)
-    synthetic_overfit_parser.add_argument("--log-every", type=int, default=10)
-    synthetic_overfit_parser.set_defaults(handler=_run_train_synthetic_overfit)
+    register_datasets_parser(subparsers)
+    register_train_parser(subparsers)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser
 

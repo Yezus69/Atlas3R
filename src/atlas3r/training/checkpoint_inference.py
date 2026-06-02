@@ -22,8 +22,6 @@ TINY_DEPTH_POSE_OBSERVATION_SOURCE = "tiny_depth_pose_checkpoint_inference"
 
 _REQUIRED_TRUTH_BOUNDARY: Mapping[str, bool] = {
     "training_mvp": True,
-    "synthetic_only": True,
-    "real_capture_model": False,
     "usable_for_realtime_mapping": False,
     "usable_for_mapping": False,
     "accuracy_report": False,
@@ -35,7 +33,7 @@ _REQUIRED_TRUTH_BOUNDARY: Mapping[str, bool] = {
 
 @dataclass(frozen=True)
 class TinyDepthPoseCheckpoint:
-    """Loaded Phase 4A tiny checkpoint plus model metadata."""
+    """Loaded tiny training checkpoint plus model metadata."""
 
     path: Path
     model: Any
@@ -68,7 +66,7 @@ def load_tiny_depth_pose_checkpoint(
     *,
     device: str = "cpu",
 ) -> TinyDepthPoseCheckpoint:
-    """Load a Phase 4A tiny checkpoint and instantiate its Torch model lazily."""
+    """Load a tiny debug checkpoint and instantiate its Torch model lazily."""
 
     path = Path(checkpoint_path)
     if not path.is_file():
@@ -412,6 +410,32 @@ def _validated_truth_boundary(path: Path, value: object) -> dict[str, object]:
         observed = truth_boundary.get(flag_name)
         if not isinstance(observed, bool) or observed is not expected:
             raise ValueError(f"{path}: truth_boundary.{flag_name} must be {str(expected).lower()}")
+    synthetic_only = truth_boundary.get("synthetic_only")
+    if not isinstance(synthetic_only, bool):
+        raise ValueError(f"{path}: truth_boundary.synthetic_only must be a boolean")
+    trained_on_real_rgbd = truth_boundary.get("trained_on_real_rgbd", False)
+    if not isinstance(trained_on_real_rgbd, bool):
+        raise ValueError(f"{path}: truth_boundary.trained_on_real_rgbd must be a boolean")
+    if trained_on_real_rgbd:
+        dataset = truth_boundary.get("dataset")
+        if not isinstance(dataset, str) or not dataset:
+            raise ValueError(
+                f"{path}: truth_boundary.dataset is required for real RGB-D checkpoints"
+            )
+        if synthetic_only:
+            raise ValueError(
+                f"{path}: truth_boundary.synthetic_only must be false for real RGB-D checkpoints"
+            )
+        debug_model = truth_boundary.get("real_capture_debug_model")
+        if not isinstance(debug_model, bool) or not debug_model:
+            raise ValueError(
+                f"{path}: truth_boundary.real_capture_debug_model must be true for "
+                "real RGB-D debug checkpoints"
+            )
+    elif not synthetic_only:
+        raise ValueError(
+            f"{path}: truth_boundary.synthetic_only=false requires trained_on_real_rgbd=true"
+        )
     return truth_boundary
 
 

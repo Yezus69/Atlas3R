@@ -5,34 +5,34 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 4B complete; `docs/status/next_task.md` now points to
-  Phase 4C coherent checkpoint inference sequence smoke.
-- Latest implementation: dependency-safe Phase 4A checkpoint inference bridge
-  that loads `checkpoint_last.pt`, preserves truth-boundary flags, runs
-  `TinyDepthPoseNet` on `StudentClipInput` or ordered `FramePacket` inputs, and
-  converts predictions to validated `DepthObservation`.
-- `atlas3r smoke checkpoint-tsdf --checkpoint <checkpoint_last.pt> --output <dir>
-  [--input <clip.npz>]` writes predicted CPU TSDF artifacts, `prediction_sample.npz`,
-  and, for deterministic synthetic input, target TSDF plus predicted-vs-target
-  metrics and HTML/SVG preview.
-- Predicted observations and TSDF metadata carry depth uncertainty, confidence,
-  coordinate frame, RGB-prior metric scale source, source frame IDs, and the
-  Phase 4A synthetic-only/not-accuracy-report truth boundary.
+- Current phase: Phase 4C code slice implemented; real TUM RGB-D download and
+  overnight CUDA run still need environment validation after the code commit.
+- Latest implementation: dependency-light TUM RGB-D `freiburg1_xyz` download,
+  safe tar extraction, timestamp association, and manifest preparation CLI.
+- Added lazy optional Torch/Pillow TUM RGB-D dataset with depth scale
+  `raw/5000.0`, valid-depth masks, resize-scaled intrinsics, pose metadata, and
+  no all-images-in-memory load.
+- Added `masked_rgbd_depth_pose_loss(...)`, real-data training CLI
+  `atlas3r train tum-rgbd-depth-pose`, JSON/JSONL metrics, last/best tiny
+  checkpoints, NPZ prediction sample, and HTML/SVG preview with valid mask.
+- Tiny checkpoint loading now accepts old synthetic-only and real-RGBD debug
+  checkpoints only when the truth boundary keeps mapping/realtime/accuracy/
+  performance/generalization gates false.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: ran; 3 files reformatted.
-- `python -m ruff format --check src tests`: passed with 91 files formatted.
+- `python -m pip install -e ".[dev,train]"`: passed; Torch 2.1.0+cu121 and
+  Pillow 12.2.0 were already installed.
+- `python -m ruff format src tests`: passed with 92 files unchanged.
+- `python -m ruff format --check src tests`: passed with 92 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 63 source files.
-- `python -m unittest discover -s tests -p 'test_*.py'`: ran 141 tests and passed.
-- `python -m atlas3r train synthetic-overfit --output build/smoke/phase4b_synthetic_overfit --steps 1 --batch-size 1 --num-samples 2 --width 16 --height 12 --device cpu --log-every 1`: passed and wrote `checkpoint_last.pt`.
-- `python -m atlas3r smoke checkpoint-tsdf --checkpoint build/smoke/phase4b_synthetic_overfit/checkpoint_last.pt --output build/smoke/phase4b_checkpoint_tsdf --width 16 --height 12 --device cpu`: passed and wrote predicted/target TSDF plus preview artifacts.
-- `python -m atlas3r inspect tsdf-output --input build/smoke/phase4b_checkpoint_tsdf --mode surface`: passed.
-- `git diff --check`: passed; Git warned that changed files will be converted
-  from LF to CRLF in the working tree.
-- `Get-Command make`: `make` is not recognized on PATH, so `make test`,
-  `make lint`, `make typecheck`, and `make smoke` were not run.
+- `python -m mypy src`: passed with no issues in 70 source files.
+- `python -m unittest discover -s tests -p "test_*.py"`: ran 146 tests and
+  passed. A pre-existing `einops` import warning appeared during optional Torch
+  tests.
+- `python -m atlas3r train tum-rgbd-depth-pose --help`: passed.
+- `git diff --check`: passed; Git warned that changed LF files will be
+  converted to CRLF in the working tree.
 
 ## Compact Phase Ledger
 
@@ -47,15 +47,16 @@ Detailed history belongs in git commits, tests, and older revisions.
   cleanup, and FramePacket bridges to student/teacher batch contracts.
 - Phase 4A: optional PyTorch synthetic-overfit training MVP with checkpoint,
   metrics, prediction sample, and dependency-free preview.
-- Phase 4B: trained-checkpoint inference bridge into `DepthObservation` and
-  CPU TSDF smoke comparison artifacts.
+- Phase 4B: trained-checkpoint inference bridge into `DepthObservation` and CPU
+  TSDF smoke comparison artifacts.
+- Phase 4C: real TUM RGB-D debug training MVP code and tests.
 
 ## Current Known Gaps
 
-- No final SMGT transformer, real-world inference bridge, real datasets,
-  teacher model downloads, external model integration, or coherent sequence smoke.
-- The tiny trained model remains synthetic-only and not usable for realtime
-  mapping or real captures.
-- No video decoding, live camera runtime, runtime scheduler changes, TSDF
-  internals changes, GLB/PLY export, object-aware fusion, web server, notebook,
-  or broad inspection bundle was added.
+- No final SMGT transformer, teacher downloads, external model integration,
+  video decoding, live camera runtime, object-aware mapping, GLB/PLY export, or
+  benchmark accuracy/performance report.
+- The TUM model path is a supervised real-capture debug checkpoint only; it is
+  not usable for mapping or realtime mapping.
+- Real TUM download, manifest preparation, CUDA availability, and overnight run
+  evidence are pending after the code commit.

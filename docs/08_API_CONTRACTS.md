@@ -344,88 +344,73 @@ rejects non-packets, duplicate frame IDs, mismatched/non-`3,H,W` `rgb_model`
 shapes, and invalid intrinsics.
 
 ## Training And Checkpoint-Inference MVP Contracts
-`atlas3r train synthetic-overfit --output <run_dir>` is an optional PyTorch MVP
-over deterministic synthetic RGB/depth. Base imports stay Torch-free; missing Torch exits
-training/checkpoint smoke with code 2 and the train-extra hint.
-`SyntheticDepthSample`: `sample_id`, `frame_id`, `rgb_u8 H,W,3`, `rgb_model 3,H,W`,
-`depth_m/depth_sigma_m/confidence/object_mask H,W`, `K 3,3`, `T_world_camera 4,4`,
-`camera_center_world_m 3`, and synthetic-only metadata. `sample_to_student_clip` returns
-`1,1,3,H,W`, `1,1,3,3`, and `T_world_camera_prior 1,1,4,4`.
-`checkpoint_last.pt`: `format_name=atlas3r_tiny_depth_pose_checkpoint`,
-`format_version=1`, `step`, `model_state_dict`, `optimizer_state_dict`, `config`,
-`metrics`, `model_config`, and Phase 4A `truth_boundary`. Required truth flags:
-`training_mvp=true`, `synthetic_only=true`, `real_capture_model=false`,
-`usable_for_mapping=false`, `usable_for_realtime_mapping=false`, `accuracy_report=false`,
-and `performance_report=false`.
-`load_tiny_depth_pose_checkpoint(path)` validates/preserves truth flags. The
-student-clip and frame-packet predictors run `TinyDepthPoseNet`;
-`depth_observations_from_tiny_prediction(...)` emits validated `DepthObservation`
-with predicted depth/sigma/confidence, RGB-prior scale, coordinate frame, and
-truth-boundary diagnostics.
+Optional Torch/Pillow paths must not load through base `import atlas3r`; missing
+deps exit CLI training/checkpoint commands with code 2 and the train-extra hint.
 
-`atlas3r smoke checkpoint-tsdf --checkpoint <checkpoint_last.pt> --output <folder> [--input
-<clip.npz>]` writes predicted TSDF artifacts and `prediction_sample.npz`.
-Synthetic mode also writes `target_tsdf/`, previews, and predicted-vs-target
-metrics. NPZ clips are not target-evaluated. All artifacts carry uncertainty and
-`accuracy_report=false`.
+Synthetic MVP: `atlas3r train synthetic-overfit --output <run_dir>` uses
+`SyntheticDepthSample` fields `sample_id`, `frame_id`, `rgb_u8 H,W,3`,
+`rgb_model 3,H,W`, `depth_m/depth_sigma_m/confidence/object_mask H,W`, `K 3,3`,
+`T_world_camera 4,4`, `camera_center_world_m 3`, and synthetic-only metadata.
+`sample_to_student_clip` returns `1,1,3,H,W`, `1,1,3,3`, and
+`T_world_camera_prior 1,1,4,4`.
+
+Tiny checkpoints use `format_name=atlas3r_tiny_depth_pose_checkpoint`,
+`format_version=1`, `step`, `model_state_dict`, `optimizer_state_dict`,
+`config`, `metrics`, `model_config`, and `truth_boundary`. Required gates are
+`training_mvp=true`, `learned_inference=true`, `usable_for_mapping=false`,
+`usable_for_realtime_mapping=false`, `accuracy_report=false`,
+`performance_report=false`, and `generalizes_to_real_world=false`.
+
+`load_tiny_depth_pose_checkpoint(path)` validates truth flags and runs
+`TinyDepthPoseNet` for student-clip or frame-packet prediction.
+`depth_observations_from_tiny_prediction(...)` emits validated
+`DepthObservation` records with predicted depth/sigma/confidence, RGB-prior
+scale, coordinate frame, and truth-boundary diagnostics. `atlas3r smoke
+checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
+<clip.npz>]` writes predicted TSDF artifacts and `prediction_sample.npz`;
+synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
+
+### TUM RGB-D Real-Data Debug Training
+Commands: `atlas3r datasets tum-rgbd download --sequence freiburg1_xyz --output
+<data_dir>`, `atlas3r datasets tum-rgbd prepare --input <sequence_dir> --output
+<manifest.json> [--stride N] [--max-frames N] [--max-delta-s S]`, and
+`atlas3r train tum-rgbd-depth-pose --manifest <manifest.json> --output
+<run_dir>`. Download uses stdlib networking and safe tar extraction.
+
+The manifest is `format_name=atlas3r_tum_rgbd_manifest`, `format_version=1`,
+and records `640x480` RGB/depth, ROS default `K`, `depth_raw/5000.0` meters,
+zero as missing, nearest timestamps, train/val split, frame IDs, paths,
+`T_world_camera`, camera center, and truth boundary. `TumRgbdDepthDataset`
+returns lazy optional Torch/Pillow samples with `images_rgb 3,H,W`,
+scaled `intrinsics 3,3`, `target.depth_m`, `target.valid_depth_mask`,
+`target.confidence`, `target.camera_center_world_m`, `target.T_world_camera`,
+and metadata.
+
+`masked_rgbd_depth_pose_loss(...)` masks all depth/uncertainty metrics and
+rejects all-invalid batches. Real-RGBD train runs write config, train/validation
+JSONL, summary, last/best checkpoints, NPZ sample, and HTML/SVG preview. Real
+checkpoint truth requires `trained_on_real_rgbd=true`, `synthetic_only=false`,
+dataset metadata, and the common tiny-checkpoint gates above.
 
 ## Map Object Contracts
-```python
-@dataclass
-class ObjectInstance:
-    object_id: int
-    label_candidates: list[tuple[str, float]]
-    T_world_object: NDArray[np.float32]        # 4,4
-    oriented_bbox_center_m: NDArray[np.float32] # 3
-    oriented_bbox_axes: NDArray[np.float32]    # 3,3
-    oriented_bbox_extents_m: NDArray[np.float32] # 3
-    mesh_chunk_ids: list[str]
-    is_dynamic: bool
-    observed_coverage_ratio: float
-    confidence: float
-    uncertainty_m: float
-    first_seen_frame_id: int
-    last_seen_frame_id: int
-    metadata: dict[str, Any]
-```
+`ObjectInstance` fields: `object_id`, `label_candidates`, `T_world_object 4,4`,
+`oriented_bbox_center_m 3`, `oriented_bbox_axes 3,3`,
+`oriented_bbox_extents_m 3`, `mesh_chunk_ids`, `is_dynamic`,
+`observed_coverage_ratio`, `confidence`, `uncertainty_m`,
+`first_seen_frame_id`, `last_seen_frame_id`, and `metadata`.
 
-```python
-@dataclass
-class MeshChunk:
-    chunk_id: str
-    version: int
-    T_world_chunk: NDArray[np.float32]      # 4,4
-    vertices_m: NDArray[np.float32]         # N,3
-    faces: NDArray[np.int32]                # M,3
-    normals: NDArray[np.float32] | None     # N,3
-    colors: NDArray[np.uint8] | None        # N,3/4
-    uvs: NDArray[np.float32] | None
-    object_id_per_face: NDArray[np.int32] | None
-    surface_source_per_face: NDArray[np.int8] | None
-    voxel_size_m: float
-    mean_uncertainty_m: float
-    p95_uncertainty_m: float
-    source_frame_ids: list[int]
-    scale_source: str
-    flags: list[str]
-```
-
-Surface source enum: `0 observed_surface`, `1 single_view_prior`,
+`MeshChunk` fields: `chunk_id`, `version`, `T_world_chunk 4,4`,
+`vertices_m N,3`, `faces M,3`, optional `normals N,3`, optional
+`colors N,3/4`, optional `uvs`, optional `object_id_per_face`, optional
+`surface_source_per_face`, `voxel_size_m`, `mean_uncertainty_m`,
+`p95_uncertainty_m`, `source_frame_ids`, `scale_source`, and `flags`. Surface
+source enum: `0 observed_surface`, `1 single_view_prior`,
 `2 completed_surface`, `3 dynamic_surface`, `4 low_confidence`.
 
-```python
-@dataclass
-class WorldMap:
-    map_id: str
-    world_frame_name: str
-    created_at_ns: int
-    mesh_chunks: dict[str, MeshChunk]
-    objects: dict[int, ObjectInstance]
-    keyframes: dict[int, PoseEstimate]
-    scale_source: str
-    global_confidence: float
-    metadata: dict[str, Any]
-```
+`WorldMap` fields: `map_id`, `world_frame_name`, `created_at_ns`,
+`mesh_chunks: dict[str, MeshChunk]`, `objects: dict[int, ObjectInstance]`,
+`keyframes: dict[int, PoseEstimate]`, `scale_source`, `global_confidence`, and
+`metadata`.
 
 ## Live API Events
 Runtime event names: `PoseUpdate`, `DepthUpdate`, `ObjectUpdate`,

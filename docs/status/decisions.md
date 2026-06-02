@@ -27,6 +27,8 @@ tests, and the contract docs.
 | D-0020 | Teacher batch bridge | `atlas3r.data.teacher_frame_batch_from_frame_packets` and `teacher_frame_batch_from_rgb_source` bridge ordered `FramePacket` / `RGBFrameSource` inputs to existing teacher `FrameBatch`. | Yes |
 | D-0021 | Training MVP | `atlas3r train synthetic-overfit` writes a synthetic-only train-run folder with `checkpoint_last.pt`, JSON/JSONL metrics, NPZ sample arrays, and dependency-free HTML/SVG preview. | Yes |
 | D-0022 | Checkpoint bridge | Phase 4A `checkpoint_last.pt` loads through a dependency-safe tiny-model inference bridge, emits `DepthObservation`, and can drive CPU TSDF smoke without TSDF internals or runtime scheduler changes. | Yes |
+| D-0023 | TUM RGB-D MVP | `freiburg1_xyz` real-data support is a small stdlib manifest pipeline plus lazy optional Torch/Pillow dataset and masked debug training, not the final SMGT. | Yes |
+| D-0024 | Checkpoint truth gates | Tiny checkpoint loading accepts synthetic-only and real-RGBD debug checkpoints only when mapping, realtime, accuracy, performance, and generalization claims remain false. | Yes |
 
 Active cross-cutting constraints:
 

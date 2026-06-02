@@ -360,9 +360,15 @@ def _npz_metrics(
         "reason": "NPZ RGB clips do not carry target metric depth for comparison.",
         "known_limitations": [
             "This smoke output is not an accuracy report.",
-            "The tiny Phase 4A checkpoint is synthetic-only and not a real-capture model.",
+            _checkpoint_limitation(checkpoint),
         ],
     }
+
+
+def _checkpoint_limitation(checkpoint: TinyDepthPoseCheckpoint) -> str:
+    if bool(checkpoint.truth_boundary.get("synthetic_only", False)):
+        return "The tiny checkpoint is synthetic-only and not a real-capture model."
+    return "The tiny real-RGBD debug checkpoint is not usable for mapping or realtime mapping."
 
 
 def _result(

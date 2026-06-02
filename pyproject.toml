@@ -21,6 +21,7 @@ dev = [
 ]
 train = [
   "torch",
+  "Pillow",
 ]
 
 [project.scripts]
