@@ -5,12 +5,11 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 4D in progress. Phase 4C produced a real TUM RGB-D
-  `freiburg1_xyz` debug checkpoint; Phase 4D adds held-out checkpoint eval,
-  block validation split, optional TSDF diagnostics, and one v2 training path.
+- Current phase: Phase 4D complete; Phase 5A is next.
 - Latest implementation: dependency-light TUM RGB-D ingestion/training plus
   `atlas3r eval tum-rgbd-checkpoint`, manifest `split_policy=block`,
-  `TinyMetricDepthNetV2`, and masked `log_l1` depth-loss support.
+  `TinyMetricDepthNetV2`, masked `log_l1` depth-loss support, and a compact
+  Phase 4D diagnostic report.
 - Overnight run artifacts live under ignored
   `runs/tum_rgbd_freiburg1_xyz_overnight/`: `summary.json`, train/validation
   JSONL, `checkpoint_last.pt`, `checkpoint_best.pt`, `prediction_sample.npz`,
@@ -46,12 +45,25 @@ Detailed history belongs in git commits, tests, and older revisions.
 - CUDA: Torch `2.1.0+cu121`, 3 CUDA devices, first device
   `NVIDIA GeForce RTX 4090`.
 - CUDA smoke: 2 real-data steps passed with AMP.
-- Overnight run: 30,000 steps completed with `batch-size=16`, `160x120`,
+- Phase 4C overnight run: 30,000 steps completed with `batch-size=16`, `160x120`,
   `num-workers=4`, AMP enabled, and `--max-runtime-minutes 480`.
-- Best validation metrics: RMSE `0.2116048286` m, MAE `0.1216395150` m, AbsRel
+- Phase 4C best validation metrics: RMSE `0.2116048286` m, MAE `0.1216395150` m, AbsRel
   `0.0996375158`. This is training evidence, not an accuracy report.
 - Real checkpoint TSDF diagnostic with RGB-only NPZ input passed and wrote
   `metric_family=not_evaluated`, 454 surface points, and no target-depth claim.
+- Phase 4D block manifest: 398 selected frames, 338 train and 60 validation.
+- Phase 4D baseline block eval wrote ignored artifacts under
+  `runs/phase4d_eval_baseline_block/`: depth RMSE `0.1463244370` m, MAE
+  `0.0841197038` m, AbsRel `0.0746864870`, camera-center mean error
+  `0.0225338522` m, and CPU TSDF diagnostic chamfer-like mean `0.1183717438` m.
+- Phase 4D v2 CUDA run wrote ignored artifacts under
+  `runs/tum_rgbd_freiburg1_xyz_v2_5h/`: `19009` steps, stopped at
+  `max_runtime_minutes`, best validation step `17000`, RMSE `0.0737374956` m,
+  MAE `0.0425126282` m, and AbsRel `0.0403562384`.
+- Phase 4D v2 block eval wrote ignored artifacts under
+  `runs/phase4d_eval_v2_block/`: depth RMSE `0.0754485318` m, MAE
+  `0.0422393417` m, AbsRel `0.0396844349`, camera-center mean error
+  `0.0318729403` m, and CPU TSDF diagnostic chamfer-like mean `0.0769099724` m.
 
 ## Compact Phase Ledger
 
@@ -70,8 +82,9 @@ Detailed history belongs in git commits, tests, and older revisions.
   TSDF smoke comparison artifacts.
 - Phase 4C: real TUM RGB-D debug training MVP code, tests, checkpoint, and
   diagnostic checkpoint-to-TSDF smoke.
-- Phase 4D: code in progress for real held-out checkpoint eval, predicted-vs-
-  target CPU TSDF diagnostics, block validation split, and single v2 model.
+- Phase 4D: real held-out checkpoint eval, predicted-vs-target CPU TSDF
+  diagnostics, block validation split, single v2 model, CUDA run, v2 eval, and
+  compact report.
 
 ## Current Known Gaps
 
@@ -80,5 +93,6 @@ Detailed history belongs in git commits, tests, and older revisions.
   benchmark accuracy/performance report.
 - The TUM checkpoint is a supervised real-capture debug checkpoint only; it is
   not usable for mapping or realtime mapping.
-- Phase 4D still needs full verification, code commit, real baseline eval, v2
-  CUDA training/eval if available, compact report, and push if credentials allow.
+- Phase 5A should build the reusable real multi-view clip cache and temporal
+  geometry training path. Do not add external model repositories or commit
+  generated data/checkpoints/previews.

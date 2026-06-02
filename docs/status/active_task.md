@@ -23,10 +23,14 @@ Checklist:
 - [x] Add focused unit/CLI tests and update API/status docs within context
   budgets.
 - [x] Run required format, lint, typecheck, unittest, and diff-check gates.
-- [ ] Commit code only, then run real baseline evaluation/training/v2 evaluation
+- [x] Commit code only, then run real baseline evaluation/training/v2 evaluation
   if CUDA/data/checkpoints are available.
-- [ ] Write and commit compact Phase 4D report with commands, metrics, map
+- [x] Write and commit compact Phase 4D report with commands, metrics, map
   diagnostics, blockers, and next task.
+
+Result: Phase 4D is complete as diagnostic real-RGBD debug evidence. v2 improved
+depth and TSDF diagnostic metrics on the block validation split, while
+camera-center mean/median error worsened versus the Phase 4C checkpoint.
 
 Exclusions: no external teacher models, OpenCV, DDP, notebooks, web servers,
 mesh export, base dependency additions, or accuracy/performance claims.
