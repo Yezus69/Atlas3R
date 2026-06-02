@@ -21,10 +21,15 @@ Checklist:
   debug checkpoints without weakening mapping/accuracy gates.
 - [x] Add focused optional-dependency tests and a tiny CPU smoke.
 - [x] Run required format, lint, typecheck, unittest, and CLI help checks.
-- [ ] Commit code only, then attempt TUM download/prepare and long CUDA run if
+- [x] Commit code only, then attempt TUM download/prepare and long CUDA run if
   the environment supports it.
-- [ ] Update compact status/report docs with exact commands, results, gaps, and
+- [x] Update compact status/report docs with exact commands, results, gaps, and
   next task.
+
+Stop condition: official TUM download is blocked in this environment by Python
+stdlib HTTPS certificate verification failure for `cvg.cit.tum.de`; CUDA is
+available, so the next unblock is certificate trust or pre-provided official TUM
+files under ignored `data/tum_rgbd/`.
 
 Exclusions: no external model repos, teacher downloads, OpenCV, PyAV,
 TensorBoard, W&B, notebooks, web servers, DDP, final SMGT transformer, or

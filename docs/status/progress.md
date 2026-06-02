@@ -5,8 +5,9 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 4C code slice implemented; real TUM RGB-D download and
-  overnight CUDA run still need environment validation after the code commit.
+- Current phase: Phase 4C code slice implemented and committed; real TUM RGB-D
+  download is blocked by stdlib HTTPS certificate verification against the
+  official TUM host in this environment.
 - Latest implementation: dependency-light TUM RGB-D `freiburg1_xyz` download,
   safe tar extraction, timestamp association, and manifest preparation CLI.
 - Added lazy optional Torch/Pillow TUM RGB-D dataset with depth scale
@@ -58,5 +59,8 @@ Detailed history belongs in git commits, tests, and older revisions.
   benchmark accuracy/performance report.
 - The TUM model path is a supervised real-capture debug checkpoint only; it is
   not usable for mapping or realtime mapping.
-- Real TUM download, manifest preparation, CUDA availability, and overnight run
-  evidence are pending after the code commit.
+- CUDA is available (`NVIDIA GeForce RTX 4090`, 3 CUDA devices), but the real
+  TUM download failed before manifest preparation or overnight training.
+- Blocker command: `python -m atlas3r datasets tum-rgbd download --sequence
+  freiburg1_xyz --output data/tum_rgbd` failed with
+  `[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate`.
