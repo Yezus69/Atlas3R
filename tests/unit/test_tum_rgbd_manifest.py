@@ -35,6 +35,27 @@ class TumRgbdManifestTest(unittest.TestCase):
             self.assertEqual(frames[0]["camera_center_world_m"], [0.0, 0.0, 0.0])
             self.assertEqual(frames[1]["camera_center_world_m"], [0.1, 0.0, 0.0])
 
+    def test_prepare_manifest_block_split_uses_tail_validation_block(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "rgbd_dataset_freiburg1_xyz"
+            _write_minimal_tum_sequence(root, frame_count=10)
+            output = Path(tmp) / "manifest_block.json"
+
+            manifest = prepare_tum_rgbd_manifest(
+                root,
+                output,
+                split_policy="block",
+                val_fraction=0.2,
+            )
+
+            frames = manifest["frames"]
+            train_ids = {frame["frame_id"] for frame in frames if frame["split"] == "train"}
+            val_ids = {frame["frame_id"] for frame in frames if frame["split"] == "val"}
+            self.assertEqual(val_ids, {8, 9})
+            self.assertTrue(train_ids.isdisjoint(val_ids))
+            self.assertEqual(manifest["split"]["policy"], "block")
+            self.assertEqual(manifest["split"]["val_fraction"], 0.2)
+
     def test_safe_extract_rejects_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

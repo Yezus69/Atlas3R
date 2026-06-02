@@ -63,6 +63,7 @@ def masked_rgbd_depth_pose_loss(
     prediction: Mapping[str, Any],
     target: Mapping[str, Any],
     *,
+    depth_loss: str = "metric_l1",
     depth_weight: float = 1.0,
     sigma_nll_weight: float = 0.05,
     confidence_weight: float = 0.01,
@@ -96,7 +97,15 @@ def masked_rgbd_depth_pose_loss(
     valid_target_depth = target_depth[valid_mask]
     valid_abs_error = (valid_pred_depth - valid_target_depth).abs()
     valid_sigma = pred_sigma[valid_mask]
-    loss_depth = _F.smooth_l1_loss(valid_pred_depth, valid_target_depth)
+    if depth_loss == "metric_l1":
+        loss_depth = _F.smooth_l1_loss(valid_pred_depth, valid_target_depth)
+    elif depth_loss == "log_l1":
+        loss_depth = _F.smooth_l1_loss(
+            _TORCH.log(valid_pred_depth.clamp(min=1e-4)),
+            _TORCH.log(valid_target_depth.clamp(min=1e-4)),
+        )
+    else:
+        raise ValueError("depth_loss: must be 'metric_l1' or 'log_l1'")
     loss_sigma_nll = (valid_abs_error / valid_sigma + valid_sigma.log()).mean()
     confidence_target = valid_mask.to(dtype=pred_confidence.dtype)
     loss_confidence = _F.mse_loss(pred_confidence, confidence_target)

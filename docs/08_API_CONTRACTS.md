@@ -370,27 +370,42 @@ checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
 <clip.npz>]` writes predicted TSDF artifacts and `prediction_sample.npz`;
 synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 
-### TUM RGB-D Real-Data Debug Training
-Commands: `atlas3r datasets tum-rgbd download --sequence freiburg1_xyz --output
-<data_dir>`, `atlas3r datasets tum-rgbd prepare --input <sequence_dir> --output
-<manifest.json> [--stride N] [--max-frames N] [--max-delta-s S]`, and
-`atlas3r train tum-rgbd-depth-pose --manifest <manifest.json> --output
-<run_dir>`. Download uses stdlib networking and safe tar extraction.
+### TUM RGB-D Real-Data Debug Training And Eval
+Commands: `atlas3r datasets tum-rgbd download`, `atlas3r datasets tum-rgbd
+prepare --split-policy every10|block --val-fraction F`, `atlas3r train
+tum-rgbd-depth-pose --model tiny-v1|tiny-v2 --depth-loss metric_l1|log_l1`,
+and `atlas3r eval tum-rgbd-checkpoint [--write-tsdf]`. Download uses stdlib
+networking and safe tar extraction.
 
 The manifest is `format_name=atlas3r_tum_rgbd_manifest`, `format_version=1`,
-and records `640x480` RGB/depth, ROS default `K`, `depth_raw/5000.0` meters,
-zero as missing, nearest timestamps, train/val split, frame IDs, paths,
-`T_world_camera`, camera center, and truth boundary. `TumRgbdDepthDataset`
-returns lazy optional Torch/Pillow samples with `images_rgb 3,H,W`,
-scaled `intrinsics 3,3`, `target.depth_m`, `target.valid_depth_mask`,
+and records RGB/depth metadata, ROS default `K`, `depth_raw/5000.0`, zero-depth
+masking, nearest timestamps, split policy metadata, frame IDs, paths,
+`T_world_camera`, camera center, and truth boundary. `every10` preserves the
+original split; `block` uses the selected-frame tail as validation. The dataset
+returns lazy optional Torch/Pillow samples with `images_rgb 3,H,W`, scaled
+`intrinsics 3,3`, `target.depth_m`, `target.valid_depth_mask`,
 `target.confidence`, `target.camera_center_world_m`, `target.T_world_camera`,
 and metadata.
 
-`masked_rgbd_depth_pose_loss(...)` masks all depth/uncertainty metrics and
-rejects all-invalid batches. Real-RGBD train runs write config, train/validation
-JSONL, summary, last/best checkpoints, NPZ sample, and HTML/SVG preview. Real
-checkpoint truth requires `trained_on_real_rgbd=true`, `synthetic_only=false`,
-dataset metadata, and the common tiny-checkpoint gates above.
+`TinyDepthPoseNet` (`tiny-v1`) is RGB-only and remains the default.
+`TinyMetricDepthNetV2` (`tiny-v2`) is the single camera-aware debug variant:
+RGB plus `(u-cx)/fx`, `(v-cy)/fy`, and ray-radius channels, with the same
+`depth_m`, `depth_sigma_m`, `confidence`, and `camera_center_world_m` keys.
+
+`masked_rgbd_depth_pose_loss(...)` masks all depth/uncertainty metrics, rejects
+all-invalid batches, and supports metric smooth-L1 or masked log-depth smooth-L1.
+Real-RGBD train runs write config, train/validation JSONL, summary, last/best
+checkpoints, NPZ sample, and HTML/SVG preview. Checkpoint metadata stores
+`model_name` and reload config; real checkpoint truth requires
+`trained_on_real_rgbd=true`, `synthetic_only=false`, dataset metadata, and the
+common tiny-checkpoint gates above.
+
+TUM checkpoint eval writes summary/per-frame metrics, NPZ sample, HTML/SVG
+preview, and TUM-format trajectories. Metrics are diagnostic depth MAE/RMSE,
+AbsRel, valid pixels, threshold percentages, and camera-center translation only.
+With `--write-tsdf`, eval writes `predicted_tsdf/`, `target_tsdf/`, and
+`map_comparison.json` with capped NumPy nearest-neighbor point-set metrics.
+Eval records `metric_family=real_rgbd_debug_eval`, `diagnostic_only=true`, `accuracy_report=false`, and `performance_report=false`.
 
 ## Map Object Contracts
 `ObjectInstance` fields: `object_id`, `label_candidates`, `T_world_object 4,4`,

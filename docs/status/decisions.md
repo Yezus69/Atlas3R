@@ -29,6 +29,9 @@ tests, and the contract docs.
 | D-0022 | Checkpoint bridge | Phase 4A `checkpoint_last.pt` loads through a dependency-safe tiny-model inference bridge, emits `DepthObservation`, and can drive CPU TSDF smoke without TSDF internals or runtime scheduler changes. | Yes |
 | D-0023 | TUM RGB-D MVP | `freiburg1_xyz` real-data support is a small stdlib manifest pipeline plus lazy optional Torch/Pillow dataset and masked debug training, not the final SMGT. | Yes |
 | D-0024 | Checkpoint truth gates | Tiny checkpoint loading accepts synthetic-only and real-RGBD debug checkpoints only when mapping, realtime, accuracy, performance, and generalization claims remain false. | Yes |
+| D-0025 | TUM eval | `atlas3r eval tum-rgbd-checkpoint` is a diagnostic real-RGBD checkpoint loop with depth, camera-center, preview, trajectory, and optional CPU TSDF point-set metrics; it is not an accuracy or performance report. | Yes |
+| D-0026 | TUM v2 | Phase 4D adds only `TinyMetricDepthNetV2`, using RGB plus intrinsics-derived ray channels, and keeps v1 checkpoint loading intact. | Yes |
+| D-0027 | TUM split | TUM manifests preserve `every10` splitting and add `block` tail validation to reduce temporal-neighbor leakage in new real-data runs. | Yes |
 
 Active cross-cutting constraints:
 

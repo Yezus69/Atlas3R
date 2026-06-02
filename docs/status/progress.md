@@ -5,11 +5,12 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 4C complete. The real TUM RGB-D `freiburg1_xyz` debug
-  training run completed on CUDA and produced ignored checkpoint artifacts.
-- Latest implementation: dependency-light TUM RGB-D `freiburg1_xyz` download,
-  safe tar extraction, timestamp association, manifest preparation, lazy
-  optional Torch/Pillow dataset, masked RGB-D loss, and real-data training CLI.
+- Current phase: Phase 4D in progress. Phase 4C produced a real TUM RGB-D
+  `freiburg1_xyz` debug checkpoint; Phase 4D adds held-out checkpoint eval,
+  block validation split, optional TSDF diagnostics, and one v2 training path.
+- Latest implementation: dependency-light TUM RGB-D ingestion/training plus
+  `atlas3r eval tum-rgbd-checkpoint`, manifest `split_policy=block`,
+  `TinyMetricDepthNetV2`, and masked `log_l1` depth-loss support.
 - Overnight run artifacts live under ignored
   `runs/tum_rgbd_freiburg1_xyz_overnight/`: `summary.json`, train/validation
   JSONL, `checkpoint_last.pt`, `checkpoint_best.pt`, `prediction_sample.npz`,
@@ -22,14 +23,17 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 - `python -m pip install -e ".[dev,train]"`: passed; Torch 2.1.0+cu121 and
   Pillow 12.2.0 were already installed.
-- `python -m ruff format src tests`: passed with 92 files unchanged.
-- `python -m ruff format --check src tests`: passed with 92 files formatted.
+- `python -m ruff format src tests`: passed with 104 files unchanged.
+- `python -m ruff format --check src tests`: passed with 104 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 70 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: ran 146 tests and
+- `python -m mypy src`: passed with no issues in 73 source files.
+- `python -m unittest discover -s tests -p "test_*.py"`: ran 152 tests and
   passed. A pre-existing `einops` import warning appeared during optional Torch
   tests.
-- `python -m atlas3r train tum-rgbd-depth-pose --help`: passed.
+- `git diff --check`: passed; Git warned that changed LF files will be
+  converted to CRLF in the working tree.
+- `make test`, `make lint`, and `make typecheck`: not run because `make` is not
+  installed in this Windows shell.
 - `git diff --check`: passed before the code commit; Git warned that changed LF
   files will be converted to CRLF in the working tree.
 
@@ -66,6 +70,8 @@ Detailed history belongs in git commits, tests, and older revisions.
   TSDF smoke comparison artifacts.
 - Phase 4C: real TUM RGB-D debug training MVP code, tests, checkpoint, and
   diagnostic checkpoint-to-TSDF smoke.
+- Phase 4D: code in progress for real held-out checkpoint eval, predicted-vs-
+  target CPU TSDF diagnostics, block validation split, and single v2 model.
 
 ## Current Known Gaps
 
@@ -74,5 +80,5 @@ Detailed history belongs in git commits, tests, and older revisions.
   benchmark accuracy/performance report.
 - The TUM checkpoint is a supervised real-capture debug checkpoint only; it is
   not usable for mapping or realtime mapping.
-- Phase 4D should add held-out real-checkpoint inference and mapping diagnostics
-  without new datasets, external teacher models, DDP, or mesh export.
+- Phase 4D still needs full verification, code commit, real baseline eval, v2
+  CUDA training/eval if available, compact report, and push if credentials allow.

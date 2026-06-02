@@ -73,6 +73,18 @@ def register_train_parser(subparsers: Any) -> None:
     tum_train_parser.add_argument("--seed", type=int, default=0)
     tum_train_parser.add_argument("--amp", action="store_true")
     tum_train_parser.add_argument("--max-runtime-minutes", type=float, default=None)
+    tum_train_parser.add_argument(
+        "--model",
+        choices=("tiny-v1", "tiny-v2"),
+        default="tiny-v1",
+        help="Tiny model variant; tiny-v1 preserves existing checkpoint behavior.",
+    )
+    tum_train_parser.add_argument(
+        "--depth-loss",
+        choices=("metric_l1", "log_l1"),
+        default="metric_l1",
+        help="Masked depth loss mode for valid TUM RGB-D pixels.",
+    )
     tum_train_parser.add_argument("--hidden-channels", type=int, default=32)
     tum_train_parser.add_argument("--min-valid-depth-pixels", type=int, default=1)
     tum_train_parser.set_defaults(handler=_run_train_tum_rgbd_depth_pose)
@@ -130,6 +142,8 @@ def _run_train_tum_rgbd_depth_pose(args: argparse.Namespace) -> int:
                 seed=args.seed,
                 amp=args.amp,
                 max_runtime_minutes=args.max_runtime_minutes,
+                model=args.model,
+                depth_loss=args.depth_loss,
                 hidden_channels=args.hidden_channels,
                 min_valid_depth_pixels=args.min_valid_depth_pixels,
             )

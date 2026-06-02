@@ -54,6 +54,18 @@ def register_datasets_parser(subparsers: Any) -> None:
     tum_prepare_parser.add_argument("--stride", type=int, default=1)
     tum_prepare_parser.add_argument("--max-frames", type=int, default=None)
     tum_prepare_parser.add_argument("--max-delta-s", type=float, default=0.02)
+    tum_prepare_parser.add_argument(
+        "--split-policy",
+        choices=("every10", "block"),
+        default="every10",
+        help="Validation split policy; every10 preserves the original deterministic split.",
+    )
+    tum_prepare_parser.add_argument(
+        "--val-fraction",
+        type=float,
+        default=0.1,
+        help="Validation fraction used by --split-policy block.",
+    )
     tum_prepare_parser.set_defaults(handler=_run_datasets_tum_rgbd_prepare)
 
 
@@ -82,6 +94,8 @@ def _run_datasets_tum_rgbd_prepare(args: argparse.Namespace) -> int:
             stride=args.stride,
             max_frames=args.max_frames,
             max_delta_s=args.max_delta_s,
+            split_policy=args.split_policy,
+            val_fraction=args.val_fraction,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

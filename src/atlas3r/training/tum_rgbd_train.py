@@ -36,6 +36,8 @@ class TumRgbdTrainConfig:
     seed: int = 0
     amp: bool = False
     max_runtime_minutes: float | None = None
+    model: str = "tiny-v1"
+    depth_loss: str = "metric_l1"
     hidden_channels: int = 32
     min_valid_depth_pixels: int = 1
 
@@ -66,6 +68,8 @@ class TumRgbdTrainConfig:
             "amp_enabled": amp_enabled,
             "cuda_device_name": cuda_device_name,
             "max_runtime_minutes": self.max_runtime_minutes,
+            "model": self.model,
+            "depth_loss": self.depth_loss,
             "hidden_channels": self.hidden_channels,
             "min_valid_depth_pixels": self.min_valid_depth_pixels,
         }
@@ -137,9 +141,11 @@ def run_tum_rgbd_depth_pose_training(config: TumRgbdTrainConfig) -> dict[str, ob
     train_iterator = iter(train_loader)
 
     from atlas3r.training.losses import masked_rgbd_depth_pose_loss
-    from atlas3r.training.tiny_depth_pose_model import TinyDepthPoseNet
+    from atlas3r.training.tiny_depth_pose_model import build_tiny_depth_pose_model
 
-    model = TinyDepthPoseNet(hidden_channels=config.hidden_channels).to(resolved_device)
+    model = build_tiny_depth_pose_model(config.model, hidden_channels=config.hidden_channels).to(
+        resolved_device
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     metrics_path = config.output / "metrics.jsonl"
@@ -166,7 +172,11 @@ def run_tum_rgbd_depth_pose_training(config: TumRgbdTrainConfig) -> dict[str, ob
         )
         with context:
             prediction = model(batch["images_rgb"], batch["intrinsics"])
-            loss, metrics = masked_rgbd_depth_pose_loss(prediction, batch["target"])
+            loss, metrics = masked_rgbd_depth_pose_loss(
+                prediction,
+                batch["target"],
+                depth_loss=config.depth_loss,
+            )
         if amp_enabled:
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -186,7 +196,9 @@ def run_tum_rgbd_depth_pose_training(config: TumRgbdTrainConfig) -> dict[str, ob
                 },
             )
         if step == 1 or step % config.val_every == 0 or step == config.steps:
-            val_metrics = _validate(model, val_loader, resolved_device)
+            val_metrics = _validate(
+                model, val_loader, resolved_device, depth_loss=config.depth_loss
+            )
             append_jsonl(
                 validation_path,
                 {
@@ -234,7 +246,12 @@ def run_tum_rgbd_depth_pose_training(config: TumRgbdTrainConfig) -> dict[str, ob
             break
 
     if best_val_metrics is None:
-        best_val_metrics = _validate(model, val_loader, resolved_device)
+        best_val_metrics = _validate(
+            model,
+            val_loader,
+            resolved_device,
+            depth_loss=config.depth_loss,
+        )
         best_val_rmse = best_val_metrics["depth_rmse_m"]
         append_jsonl(
             validation_path,
@@ -323,7 +340,7 @@ def run_tum_rgbd_depth_pose_training(config: TumRgbdTrainConfig) -> dict[str, ob
     }
 
 
-def _validate(model: Any, val_loader: Any, device: str) -> dict[str, float]:
+def _validate(model: Any, val_loader: Any, device: str, *, depth_loss: str) -> dict[str, float]:
     torch = require_torch()
     from atlas3r.training.losses import masked_rgbd_depth_pose_loss
 
@@ -334,7 +351,11 @@ def _validate(model: Any, val_loader: Any, device: str) -> dict[str, float]:
         for batch in val_loader:
             batch = _move_batch_to_device(batch, device)
             prediction = model(batch["images_rgb"], batch["intrinsics"])
-            _loss, metrics = masked_rgbd_depth_pose_loss(prediction, batch["target"])
+            _loss, metrics = masked_rgbd_depth_pose_loss(
+                prediction,
+                batch["target"],
+                depth_loss=depth_loss,
+            )
             for key, value in metrics.items():
                 totals[key] = totals.get(key, 0.0) + value
             batches += 1
@@ -395,6 +416,10 @@ def _validate_config(config: TumRgbdTrainConfig) -> None:
         raise ValueError("learning_rate: must be positive")
     if config.max_runtime_minutes is not None and config.max_runtime_minutes <= 0.0:
         raise ValueError("max_runtime_minutes: must be positive when provided")
+    if config.model not in {"tiny-v1", "tiny-v2"}:
+        raise ValueError("model: must be 'tiny-v1' or 'tiny-v2'")
+    if config.depth_loss not in {"metric_l1", "log_l1"}:
+        raise ValueError("depth_loss: must be 'metric_l1' or 'log_l1'")
 
 
 def _seed_torch(torch: Any, seed: int) -> None:

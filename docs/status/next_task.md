@@ -1,3 +1,7 @@
-# Codex Prompt - Atlas3R Phase 4D: Real Checkpoint Inference and Mapping Smoke
+# Codex Prompt - Atlas3R Phase 4D: Run Real Eval, V2 Training, And Report
 
-Load the TUM RGB-D debug checkpoint, run it on a short held-out TUM RGB frame sequence, convert predictions to DepthObservation, feed CPU TSDF, and write predicted-vs-ground-truth depth/pose/TSDF diagnostics. Keep this as a diagnostic, not an accuracy claim. Do not add new datasets, external teacher models, DDP, or mesh export.
+Run the Phase 4D TUM RGB-D checkpoint evaluator on the block-split manifest,
+train the single `tiny-v2` real-depth model if CUDA/data/checkpoints are
+available, evaluate v2 with `--write-tsdf`, then write the compact committed
+report. Keep all generated datasets, checkpoints, NPZs, previews, and run
+folders ignored.

@@ -11,11 +11,12 @@ import urllib.request
 from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import TypeVar
 
 TUM_RGBD_MANIFEST_FORMAT = "atlas3r_tum_rgbd_manifest"
 TUM_RGBD_MANIFEST_VERSION = 1
 TUM_RGBD_COORDINATE_FRAME = "x_right_y_down_z_forward"
+TUM_RGBD_SPLIT_POLICIES = ("every10", "block")
 
 _FREIBURG1_XYZ_ARCHIVE = "rgbd_dataset_freiburg1_xyz.tgz"
 _FREIBURG1_XYZ_GROUNDTRUTH = "rgbd_dataset_freiburg1_xyz-groundtruth.txt"
@@ -26,8 +27,7 @@ TUM_RGBD_SEQUENCES: dict[str, dict[str, object]] = {
         "dataset_name": "TUM RGB-D freiburg1_xyz",
         "archive_name": _FREIBURG1_XYZ_ARCHIVE,
         "archive_url": (
-            "https://cvg.cit.tum.de/rgbd/dataset/freiburg1/"
-            "rgbd_dataset_freiburg1_xyz.tgz"
+            "https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz"
         ),
         "groundtruth_name": _FREIBURG1_XYZ_GROUNDTRUTH,
         "groundtruth_url": (
@@ -117,10 +117,18 @@ def prepare_tum_rgbd_manifest(
     stride: int = 1,
     max_frames: int | None = None,
     max_delta_s: float = 0.02,
+    split_policy: str = "every10",
+    val_fraction: float = 0.1,
 ) -> dict[str, object]:
     """Prepare a deterministic Atlas3R manifest from a TUM RGB-D sequence folder."""
 
-    _validate_prepare_args(stride=stride, max_frames=max_frames, max_delta_s=max_delta_s)
+    _validate_prepare_args(
+        stride=stride,
+        max_frames=max_frames,
+        max_delta_s=max_delta_s,
+        split_policy=split_policy,
+        val_fraction=val_fraction,
+    )
     spec = _sequence_spec(sequence)
     root = Path(input_dir)
     rgb_entries = parse_tum_image_list(root / "rgb.txt")
@@ -138,10 +146,12 @@ def prepare_tum_rgbd_manifest(
     if not selected:
         raise ValueError(f"{root}: no associated RGB/depth/pose frames after stride/max-frames")
 
-    records = [
-        _frame_record(root, frame_id=frame_id, associated_frame=frame, split=_split(frame_id))
-        for frame_id, frame in enumerate(selected)
-    ]
+    records = []
+    for frame_id, frame in enumerate(selected):
+        split = _split(
+            frame_id, total_count=len(selected), policy=split_policy, val_fraction=val_fraction
+        )
+        records.append(_frame_record(root, frame_id=frame_id, associated_frame=frame, split=split))
     train_count = sum(1 for record in records if record["split"] == "train")
     val_count = sum(1 for record in records if record["split"] == "val")
     manifest = {
@@ -174,9 +184,11 @@ def prepare_tum_rgbd_manifest(
             "rgb_depth_pose_timestamp_source": "nearest within max_delta_s",
         },
         "split": {
-            "policy": "deterministic: every tenth associated frame is validation",
+            "policy": split_policy,
+            "val_fraction": val_fraction,
             "train_count": train_count,
             "val_count": val_count,
+            "notes": _split_notes(split_policy),
         },
         "frame_count": len(records),
         "frames": records,
@@ -239,9 +251,7 @@ def parse_tum_groundtruth(path: str | Path) -> tuple[TumPoseEntry, ...]:
     for line_number, line in _iter_data_lines(gt_path):
         parts = line.split()
         if len(parts) != 8:
-            raise ValueError(
-                f"{gt_path}:{line_number}: expected timestamp tx ty tz qx qy qz qw"
-            )
+            raise ValueError(f"{gt_path}:{line_number}: expected timestamp tx ty tz qx qy qz qw")
         try:
             values = [float(part) for part in parts]
         except ValueError as exc:
@@ -430,7 +440,9 @@ def _float_spec(spec: dict[str, object], field_name: str) -> float:
 def _sequence_spec(sequence: str) -> dict[str, object]:
     if sequence not in TUM_RGBD_SEQUENCES:
         supported = ", ".join(sorted(TUM_RGBD_SEQUENCES))
-        raise ValueError(f"sequence: unsupported TUM RGB-D sequence {sequence!r}; supported: {supported}")
+        raise ValueError(
+            f"sequence: unsupported TUM RGB-D sequence {sequence!r}; supported: {supported}"
+        )
     return TUM_RGBD_SEQUENCES[sequence]
 
 
@@ -439,6 +451,8 @@ def _validate_prepare_args(
     stride: int,
     max_frames: int | None,
     max_delta_s: float,
+    split_policy: str,
+    val_fraction: float,
 ) -> None:
     if stride <= 0:
         raise ValueError("stride: must be a positive integer")
@@ -446,10 +460,32 @@ def _validate_prepare_args(
         raise ValueError("max_frames: must be positive when provided")
     if max_delta_s <= 0.0:
         raise ValueError("max_delta_s: must be positive")
+    if split_policy not in TUM_RGBD_SPLIT_POLICIES:
+        supported = ", ".join(TUM_RGBD_SPLIT_POLICIES)
+        raise ValueError(
+            f"split_policy: unsupported policy {split_policy!r}; supported: {supported}"
+        )
+    if val_fraction <= 0.0 or val_fraction >= 1.0:
+        raise ValueError("val_fraction: must be > 0.0 and < 1.0")
 
 
-def _split(frame_id: int) -> str:
-    return "val" if frame_id % 10 == 0 else "train"
+def _split(frame_id: int, *, total_count: int, policy: str, val_fraction: float) -> str:
+    if policy == "every10":
+        return "val" if frame_id % 10 == 0 else "train"
+    if policy == "block":
+        if total_count <= 1:
+            return "val"
+        val_count = min(total_count - 1, max(1, math.ceil(total_count * val_fraction)))
+        return "val" if frame_id >= total_count - val_count else "train"
+    raise ValueError(f"split_policy: unsupported policy {policy!r}")
+
+
+def _split_notes(split_policy: str) -> str:
+    if split_policy == "every10":
+        return "Backward-compatible deterministic every-tenth-frame validation split."
+    if split_policy == "block":
+        return "Tail block of selected frames is validation to reduce temporal-neighbor leakage."
+    return "unknown split policy"
 
 
 def _truth_boundary() -> dict[str, object]:
@@ -472,6 +508,7 @@ __all__ = [
     "TUM_RGBD_COORDINATE_FRAME",
     "TUM_RGBD_MANIFEST_FORMAT",
     "TUM_RGBD_MANIFEST_VERSION",
+    "TUM_RGBD_SPLIT_POLICIES",
     "TumAssociatedFrame",
     "TumImageEntry",
     "TumPoseEntry",

@@ -95,9 +95,12 @@ def load_tiny_depth_pose_checkpoint(
     metrics = _dict_payload_field(path, payload, "metrics")
     hidden_channels = _hidden_channels(path, model_config)
 
-    from atlas3r.training.tiny_depth_pose_model import TinyDepthPoseNet
+    from atlas3r.training.tiny_depth_pose_model import build_tiny_depth_pose_model
 
-    model = TinyDepthPoseNet(hidden_channels=hidden_channels).to(resolved_device)
+    model_name = _model_name(model_config)
+    model = build_tiny_depth_pose_model(model_name, hidden_channels=hidden_channels).to(
+        resolved_device
+    )
     try:
         model.load_state_dict(state_dict)
     except Exception as exc:
@@ -443,6 +446,13 @@ def _hidden_channels(path: Path, model_config: Mapping[str, object]) -> int:
     value = model_config.get("hidden_channels", 24)
     if not isinstance(value, int) or value <= 0:
         raise ValueError(f"{path}: model_config.hidden_channels must be a positive integer")
+    return value
+
+
+def _model_name(model_config: Mapping[str, object]) -> str:
+    value = model_config.get("model_name", "TinyDepthPoseNet")
+    if not isinstance(value, str) or not value:
+        raise ValueError("model_config.model_name must be a non-empty string")
     return value
 
 
