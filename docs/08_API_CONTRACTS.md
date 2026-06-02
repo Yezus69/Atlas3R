@@ -34,6 +34,52 @@ class FramePacket:
     camera_metadata: dict[str, Any]
 ```
 
+## RGB frame-source boundary
+
+Phase 3B introduces a dependency-free RGB ingestion boundary under
+`atlas3r.data.frame_source`. It is intentionally limited to local fixture/clip
+loading and does not run video decoding, neural inference, student models,
+mapping, scheduling, export, or inspection bundles.
+
+```python
+class RGBFrameSource(Protocol):
+    def frames(self) -> Iterator[FramePacket]: ...
+```
+
+`NPZFrameSource(path)` and `load_npz_clip_frames(path)` load NumPy clips with:
+
+```text
+rgb_u8   uint8 array shaped T,H,W,3
+K        float-compatible array shaped 3,3 or T,3,3
+```
+
+`PPMSequenceFrameSource(directory)` and `load_ppm_sequence_frames(directory)`
+load simple binary `P6` `.ppm` files sorted by filename. Intrinsics are supplied
+as an explicit `K` argument or loaded from `intrinsics.npz` in the sequence
+directory with the same required `K` key and shape rules.
+
+Each emitted `FramePacket` uses:
+
+- deterministic `frame_id` values starting at `frame_id_start`;
+- placeholder `timestamp_ns=0` with `camera_metadata.timestamp_placeholder=true`;
+- original `rgb_u8` as H,W,3;
+- `rgb_model` as 3,H,W float32, produced by channel-first conversion and
+  normalized to `[0, 1]`;
+- `K_original` and `K_model` copied from the validated frame intrinsics;
+- identity `resize_transform`;
+- `camera_metadata.source_format` set to `npz` or `ppm_sequence`.
+
+Invalid RGB layouts, channel counts, PPM headers, missing sidecars, and invalid
+intrinsics must raise explicit path-named `ValueError`s. Intrinsics validation
+uses the existing Atlas3R helper, so positive focal-length and finite principal
+point rules match `FramePacket` and `CameraModel`.
+
+`write_frame_source_smoke_fixture(output_dir)` writes a deterministic tiny
+`frame_source_smoke.npz` fixture and returns the validated `FramePacket` records
+loaded from it. This helper is a smoke path for ingestion contract plumbing
+only; it is not a runtime scheduler input, not neural inference, and not an
+accuracy or performance report.
+
 ## CameraModel
 
 ```python

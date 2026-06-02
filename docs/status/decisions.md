@@ -348,3 +348,23 @@ geometry contracts must explicitly reject outputs where
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/unit/test_student_model_contracts.py.
 ```
+
+```text
+Decision ID: D-0018
+Date: 2026-06-01
+Context: Phase 3B needs future video/live ingestion to share one small RGB
+frame-source boundary before adding video decoder dependencies, runtime
+scheduling, or student-model inference.
+Decision: Add `atlas3r.data.frame_source.RGBFrameSource` plus dependency-free
+NPZ and simple binary PPM sequence loaders that emit existing `FramePacket`
+records with deterministic IDs, placeholder timestamps, validated intrinsics,
+identity resize metadata, and source-format metadata.
+Alternatives considered: Add OpenCV/PyAV/imageio/Pillow now; create a parallel
+frame API for ingestion; wire the source directly into the student model or
+runtime scheduler.
+Consequences: Ingestion contract plumbing can be tested from local fixtures
+using only stdlib and NumPy while keeping model/runtime imports out of the data
+path. Future video/live adapters must convert into this boundary or explicitly
+extend it.
+Docs/tests updated: docs/08_API_CONTRACTS.md and tests/unit/test_frame_source.py.
+```

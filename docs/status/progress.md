@@ -871,3 +871,54 @@ Known gaps:
 - The shape-only student stub is not neural inference and is explicitly marked
   not usable for mapping.
 ```
+
+```text
+2026-06-01 19:49 local
+Task: Phase 3B - dependency-free RGB frame-source boundary and NPZ/PPM
+sequence smoke path.
+Changed files:
+- Added src/atlas3r/data/frame_source.py with RGBFrameSource, NPZFrameSource,
+  PPMSequenceFrameSource, dependency-free NPZ/PPM loaders, validated
+  FramePacket conversion, and a tiny NPZ smoke fixture writer.
+- Exported frame-source helpers from src/atlas3r/data/__init__.py.
+- Added tests/unit/test_frame_source.py for valid NPZ/PPM conversion,
+  deterministic ordering and IDs, invalid RGB/intrinsics rejection,
+  dependency-safe imports, and no student package import.
+- Documented the frame-source boundary in docs/08_API_CONTRACTS.md and
+  recorded decision D-0018.
+- Rewrote docs/status/active_task.md and replaced docs/status/next_task.md
+  with the Phase 3C FramePacket clip-builder prompt.
+- Updated tests/synthetic/test_session_inspect.py for the Phase 3C handoff.
+Commands run:
+- python -m unittest tests.unit.test_frame_source
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- where.exe make
+- git diff --check
+Results:
+- Focused frame-source unittest ran 7 tests and passed.
+- Ruff format left 73 files unchanged on the final run.
+- Ruff format check passed with 73 files already formatted.
+- Ruff lint passed.
+- mypy passed with no issues in 52 source files.
+- Full unittest discovery ran 107 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.`
+- `where.exe make` reported: `INFO: Could not find files for the given
+  pattern(s).` Therefore `make test`, `make lint`, and `make typecheck` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that changed
+  files will be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 3B intentionally does not add OpenCV, PyAV, imageio, Pillow, ffmpeg,
+  web servers, notebooks, datasets, training, weights, downloads, external
+  repos, GLB/PLY export, marching cubes, TSDF/runtime scheduler changes,
+  inspection bundles, neural inference, or student model calls.
+- The frame-source smoke fixture validates ingestion contract plumbing only; it
+  is not a runtime path, performance report, accuracy report, or measured
+  geometry artifact.
+```
