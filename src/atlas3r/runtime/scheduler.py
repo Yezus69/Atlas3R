@@ -205,7 +205,10 @@ def write_runtime_fixture_smoke(
             frame_id=frame_id,
             frame_arrays_in_memory=1,
             paths={
-                "array_payload": str(summary["arrays_path"]),
+                "array_payload": _rel(
+                    output_path,
+                    teacher_cache_path / str(summary["arrays_path"]),
+                ),
                 "teacher_cache": _rel(output_path, teacher_cache_path),
             },
             metadata={"cache_arrays_stored": True},
@@ -229,7 +232,10 @@ def write_runtime_fixture_smoke(
             frame_id=frame_id,
             frame_arrays_in_memory=1,
             paths={
-                "array_payload": str(summary["arrays_path"]),
+                "array_payload": _rel(
+                    output_path,
+                    teacher_cache_path / str(summary["arrays_path"]),
+                ),
                 "tsdf_output": _rel(output_path, tsdf_output_path),
             },
             metadata={"mapper_input_contract": "DepthObservation"},

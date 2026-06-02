@@ -1,6 +1,6 @@
-# Codex Prompt - Atlas3R Phase 2E: Runtime Fixture Output Inspection
+# Codex Prompt - Atlas3R Phase 3A: Student Model Contract and Shape-Only Forward Skeleton
 
-You are working in `Yezus69/Atlas3R` after Phase 2D.
+You are working in `Yezus69/Atlas3R` after Phase 2E.
 
 Read only these files first unless a test failure requires more context:
 
@@ -10,11 +10,9 @@ Read only these files first unless a test failure requires more context:
 - `docs/status/active_task.md`
 - `docs/status/progress.md`
 - `docs/status/decisions.md`
-- `src/atlas3r/runtime/events.py`
-- `src/atlas3r/runtime/scheduler.py`
-- `src/atlas3r/mapping/tsdf_output_inspection.py`
-- focused tests under `tests/synthetic/` that cover runtime fixture smoke,
-  TSDF output inspection, teacher-cache replay, and CLI smoke wiring.
+- focused API/model adapter tests under `tests/unit/`
+- focused synthetic runtime/teacher-cache tests under `tests/synthetic/` only if
+  they are needed to preserve existing contracts.
 
 Do not paste large code blocks in chat. Modify files directly. Keep changes
 small. Preserve all existing CLI commands and artifacts. Run tests before
@@ -22,44 +20,44 @@ declaring done.
 
 ## Task goal
 
-Add a dependency-free inspection command for Phase 2D runtime fixture output
-folders. This is validation and reporting only.
+Start Phase 3 by defining the public student model boundary and a dependency-safe
+shape-only forward skeleton for the Streaming Metric Geometry Transformer MVP.
+This is a contract and tensor-shape slice only.
 
-Do not add threads, asyncio, GPU/CUDA, neural inference, video decoding,
-external model dependencies, web servers, notebooks, GLB/PLY export, marching
-cubes, object-aware mesh extraction, or accuracy claims.
+Do not add training loops, datasets, downloads, model weights, third-party model
+repos, web servers, notebooks, video decoding, GLB/PLY export, CUDA-specific
+kernels, real-time performance claims, or accuracy claims.
 
 ## Required implementation
 
-Add:
+Add a small student-model contract under `src/atlas3r/models/student/` that
+captures:
 
-```bash
-atlas3r inspect runtime-fixture --input <folder>
-```
+- input clip/frame IDs, image tensor shape, camera intrinsics availability,
+  optional previous pose/context metadata, and coordinate frame;
+- output per-frame depth, depth uncertainty, confidence, pose, intrinsics,
+  normals, pointmap, dynamic/static mask, optional object embedding, and dense
+  match summary fields;
+- explicit batch, time, channel, height, and width shape validation;
+- confidence and uncertainty fields from day one;
+- dependency-safe behavior when optional tensor/model dependencies are missing.
 
-The inspector should validate:
+Add a shape-only forward skeleton that validates inputs and returns deterministic
+placeholder outputs with the right shapes and truth-boundary metadata. The
+skeleton must not claim neural inference, learned geometry, speed, or accuracy.
 
-- `runtime_events.jsonl` event format, event index ordering, deterministic
-  timestamp/latency placeholders, stage names, frame IDs, dropped-frame flags,
-  bounded-memory counters, and relative paths;
-- `runtime_summary.json` and its cross-checks against the event log;
-- required generated session, teacher cache, full array payloads, and
-  `teacher_cache_tsdf` artifacts;
-- `teacher_cache_tsdf` by reusing the existing TSDF output folder inspector in
-  complete mode.
-
-The command should print deterministic JSON and report missing or malformed
-paths without traceback. The output must state that runtime fixture inspection is
-a diagnostic only, not a performance report and not an accuracy report.
+If a tensor library is used, keep imports dependency-safe and raise a clear
+installation/configuration error when unavailable. Prefer the smallest slice
+that can be tested without downloading weights.
 
 ## Documentation and status
 
-- Rewrite `docs/status/active_task.md` before coding with a concise Phase 2E
+- Rewrite `docs/status/active_task.md` before coding with a concise Phase 3A
   checklist.
-- Update `docs/08_API_CONTRACTS.md` with the runtime fixture inspection
-  contract.
-- Append to `docs/status/decisions.md` if the inspection JSON becomes a new
-  public format.
+- Update `docs/08_API_CONTRACTS.md` with the student model input/output
+  contracts and shape-only skeleton truth boundary.
+- Append to `docs/status/decisions.md` if the student contract becomes a new
+  public format/API.
 - Append results to `docs/status/progress.md` after verification.
 - Replace `docs/status/next_task.md` with the next Phase 3 prompt before
   declaring done.

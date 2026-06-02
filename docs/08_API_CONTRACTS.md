@@ -593,6 +593,56 @@ The runtime fixture output is a deterministic plumbing smoke artifact only. It
 must not be presented as real-time performance, a geometric accuracy report, or
 measured real-capture geometry.
 
+### Phase 2E runtime fixture output inspection
+
+Runtime fixture smoke output folders can be inspected without model, video,
+GPU/CUDA, GLB/PLY, marching-cubes, web, or notebook dependencies:
+
+```bash
+atlas3r inspect runtime-fixture --input <folder>
+```
+
+The command validates the Phase 2D output folder as a diagnostic artifact:
+
+- `runtime_events.jsonl` format name/version, event index ordering, known stage
+  sequence, frame IDs, deterministic timestamp and latency placeholders,
+  dropped-frame flags, bounded-memory counters, and forward-slash relative paths;
+- `runtime_summary.json` format name/version and cross-checks against the event
+  log, bounded-memory counters, frame IDs, truth boundary, and artifact list;
+- required generated `synthetic_cube_room.atlas3r` session files;
+- required `teacher_cache` metadata, frame summaries, `arrays.stored=true`, and
+  full `.npz` array payloads;
+- required `teacher_cache_tsdf` artifacts by running the existing
+  `atlas3r inspect tsdf-output --mode complete` validation path.
+
+Inspection prints deterministic JSON:
+
+```text
+{
+  "format_name": "atlas3r_runtime_fixture_output_inspection",
+  "format_version": 1,
+  "artifacts": { ... required artifact presence and relative paths ... },
+  "event_log": { ... stage counts, frame IDs, timing placeholders, memory counters ... },
+  "summary": { ... runtime summary cross-check fields ... },
+  "session": { ... generated synthetic session summary ... },
+  "teacher_cache": { ... fixture adapter, frame IDs, full array payload paths ... },
+  "teacher_cache_tsdf": { ... complete TSDF output inspection summary ... },
+  "cross_checks": { ... "passed": true ... },
+  "diagnostic_boundary": {
+    "diagnostic_only": true,
+    "performance_report": false,
+    "accuracy_report": false,
+    "note": "Runtime fixture inspection is a diagnostic only; it is not a performance report and not an accuracy report."
+  }
+}
+```
+
+Missing or malformed paths must produce path-named errors without tracebacks
+through the CLI. This inspection JSON is a runtime plumbing diagnostic only. It
+is not a performance report, not an accuracy report, and does not make claims
+about real-time throughput, metric reconstruction quality, or measured
+real-capture geometry.
+
 ## ObjectInstance
 
 ```python

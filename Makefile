@@ -31,6 +31,7 @@ inspect:
 	$(PYTHON) -m atlas3r inspect tsdf-output --input build/smoke/teacher_cache_tsdf
 	$(PYTHON) -m atlas3r inspect world-map --input build/smoke/teacher_cache_tsdf/world_map_sidecar.json
 	$(PYTHON) -m atlas3r smoke runtime-fixture --output build/smoke/runtime_fixture
+	$(PYTHON) -m atlas3r inspect runtime-fixture --input build/smoke/runtime_fixture
 
 profile:
 	$(PYTHON) -m atlas3r profile --help

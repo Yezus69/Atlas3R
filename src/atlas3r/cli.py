@@ -21,6 +21,7 @@ from atlas3r.mapping.tsdf_output_inspection import (
 from atlas3r.mapping.world_map_sidecar import format_world_map_sidecar_inspection
 from atlas3r.models.adapters import list_adapters
 from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
+from atlas3r.runtime.fixture_inspection import format_runtime_fixture_inspection
 from atlas3r.runtime.scheduler import write_runtime_fixture_smoke
 from atlas3r.visualization.session_preview import write_session_preview
 
@@ -99,6 +100,15 @@ def _run_inspect_teacher_cache(args: argparse.Namespace) -> int:
 def _run_inspect_tsdf_output(args: argparse.Namespace) -> int:
     try:
         print(format_tsdf_output_folder_inspection(args.input, mode=args.mode), end="")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+def _run_inspect_runtime_fixture(args: argparse.Namespace) -> int:
+    try:
+        print(format_runtime_fixture_inspection(args.input), end="")
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -278,6 +288,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     inspect_tsdf_output_parser.set_defaults(handler=_run_inspect_tsdf_output)
+    inspect_runtime_fixture_parser = inspect_subparsers.add_parser(
+        "runtime-fixture",
+        help="Validate a runtime fixture output folder and print deterministic metadata.",
+    )
+    inspect_runtime_fixture_parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="Input runtime fixture output folder.",
+    )
+    inspect_runtime_fixture_parser.set_defaults(handler=_run_inspect_runtime_fixture)
     inspect_world_map_parser = inspect_subparsers.add_parser(
         "world-map",
         help="Validate a WorldMap sidecar and print deterministic metadata.",

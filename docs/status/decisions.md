@@ -301,3 +301,26 @@ with measured profiling and broaden the memory accounting deliberately.
 Docs/tests updated: docs/08_API_CONTRACTS.md and
 tests/synthetic/test_runtime_fixture_scheduler.py.
 ```
+
+```text
+Decision ID: D-0016
+Date: 2026-06-01
+Context: Phase 2E needs a dependency-free way to validate complete Phase 2D
+runtime fixture smoke output folders after generation, including the event log,
+summary, teacher cache, generated session, and nested TSDF mapper artifacts.
+Decision: Add `atlas3r inspect runtime-fixture --input <folder>` with a new
+deterministic JSON format named `atlas3r_runtime_fixture_output_inspection`.
+The inspector validates event ordering, deterministic timing placeholders,
+bounded-memory counters, relative paths, summary cross-checks, required
+full-array teacher-cache payloads, and runs the existing complete TSDF output
+folder inspector for `teacher_cache_tsdf`.
+Alternatives considered: Extend the TSDF output inspector to understand runtime
+folders; add a manifest to the runtime smoke output; rely on test-only helper
+validation without a public command.
+Consequences: Runtime fixture folders can be checked as one diagnostic artifact
+without adding threads, GPU/model/video/export dependencies, or performance and
+accuracy claims. The JSON explicitly states that inspection is not a performance
+report and not an accuracy report.
+Docs/tests updated: docs/08_API_CONTRACTS.md and
+tests/synthetic/test_runtime_fixture_inspection.py.
+```

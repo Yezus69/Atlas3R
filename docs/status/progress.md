@@ -768,3 +768,58 @@ Known gaps:
   bounded-memory counters describe scheduler-owned frame-array payload state
   for the fixture skeleton, not process-wide memory profiling.
 ```
+
+```text
+2026-06-01 18:55 local
+Task: Phase 2E - dependency-free runtime fixture output inspection.
+Changed files:
+- Added src/atlas3r/runtime/fixture_inspection.py and
+  src/atlas3r/runtime/_fixture_inspection_helpers.py with deterministic runtime
+  fixture output validation for event logs, summaries, required artifacts,
+  full-array teacher caches, and nested complete TSDF output inspection.
+- Exported runtime fixture inspection helpers from src/atlas3r/runtime/__init__.py.
+- Added `atlas3r inspect runtime-fixture --input <folder>` and extended the
+  Makefile inspect target to exercise it when make is available.
+- Tightened runtime fixture event array payload paths to be root-relative.
+- Added tests/synthetic/test_runtime_fixture_inspection.py and updated the
+  status handoff test for the Phase 3A prompt.
+- Documented the Phase 2E inspection contract in docs/08_API_CONTRACTS.md,
+  recorded decision D-0016, rewrote docs/status/active_task.md, and replaced
+  docs/status/next_task.md with the Phase 3A prompt.
+Commands run:
+- python -m unittest tests.synthetic.test_runtime_fixture_inspection
+- python -m unittest tests.synthetic.test_runtime_fixture_scheduler
+- python -m ruff check src/atlas3r/runtime tests/synthetic/test_runtime_fixture_inspection.py
+- python -m ruff format src/atlas3r/runtime tests/synthetic/test_runtime_fixture_inspection.py tests/synthetic/test_session_inspect.py
+- python -m ruff format src/atlas3r/runtime/_fixture_inspection_helpers.py src/atlas3r/runtime/fixture_inspection.py
+- python -m ruff format src tests
+- python -m ruff format --check src tests
+- python -m ruff check src tests
+- python -m mypy src
+- python -m unittest discover -s tests -p 'test_*.py'
+- Get-Command make
+- git diff --check
+Results:
+- Focused runtime fixture inspection unittest ran 4 tests and passed.
+- Focused runtime fixture scheduler unittest ran 3 tests and passed after the
+  root-relative event path alignment.
+- Initial mypy caught one missing local type annotation in the new helper; it
+  was fixed.
+- Final Ruff format left 67 files unchanged, format check passed, and Ruff
+  lint passed.
+- Final mypy passed with no issues in 48 source files.
+- Full unittest discovery ran 92 tests and passed.
+- `Get-Command make` reported: `The term 'make' is not recognized as the name
+  of a cmdlet, function, script file, or operable program.` Therefore `make
+  test`, `make lint`, `make typecheck`, `make smoke`, and `make inspect` were
+  not run.
+- `git diff --check` reported no whitespace errors; Git warned that files will
+  be converted from LF to CRLF in the working tree.
+Known gaps:
+- Phase 2E intentionally does not implement threads, asyncio, GPU/CUDA/Metal,
+  neural inference, video decoding, external model dependencies, web servers,
+  notebooks, GLB/PLY export, marching cubes, object-aware mesh extraction,
+  performance reporting, or accuracy reporting.
+- Runtime fixture inspection validates deterministic plumbing artifacts only;
+  it is not a performance report and not an accuracy report.
+```
