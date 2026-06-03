@@ -2,8 +2,9 @@
 
 Branch: `codex/phase5e-streaming-student-map-runtime`
 
-Base commit before Phase 5E edits: `a1fafa2`. The implementation commit is the
-branch tip containing this report.
+Base commit before Phase 5E edits: `a1fafa2`.
+
+Implementation commit: `a72f7f8`.
 
 ## What Changed
 

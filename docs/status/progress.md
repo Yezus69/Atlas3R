@@ -9,6 +9,7 @@ Detailed history belongs in git commits, tests, and reports.
   external teacher data generation and mixed teacher-signal training is next.
 - Branch: `codex/phase5e-streaming-student-map-runtime`.
 - Base commit before Phase 5E edits: `a1fafa2`.
+- Implementation commit: `a72f7f8`.
 - Latest implementation: `atlas3r runtime stream-student-map`, unique
   chronological clip-cache stream builder, padded temporal windows,
   Phase 5D checkpoint-to-`DepthObservation` conversion, oracle and diagnostic
