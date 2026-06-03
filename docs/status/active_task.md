@@ -1,44 +1,39 @@
 # Active Task
 
-Goal: Phase 5D teacher-weighted temporal student training and mapping loop.
+Goal: Phase 5E streaming student map runtime and quality/latency report.
 
-Branch: `codex/phase5d-teacher-weighted-temporal-mapping-training`
-
-Implementation commit: `670aac8`
+Branch: `codex/phase5e-streaming-student-map-runtime`
 
 Checklist:
 
-- [x] Read Phase 5D goal, required docs/status files, teacher-signal validators,
-  cache writer, map diagnostics, and existing temporal-v0 source.
-- [x] Create branch from `codex/phase5c-external-teacher-runner-bootstrap`.
-- [x] Add lazy teacher-signal temporal dataset aligned to source clip caches.
-- [x] Add confidence/uncertainty-weighted temporal losses and diagnostics.
-- [x] Add one small `TemporalMetricNetV1` model with per-frame
-  depth/sigma/confidence and relative translation outputs.
-- [x] Add `atlas3r train teacher-signals-temporal`.
-- [x] Add `atlas3r teachers run-student-temporal`.
-- [x] Add focused unit/smoke tests for dataset, losses, model shapes, CLI help,
-  CPU 1-step train, export, inspect, and map diagnostics.
+- [x] Read Phase 5E goal, API contracts, current status docs, Phase 5D checkpoint
+  loader/exporter, clip-cache IO, runtime events, and CPU TSDF helpers.
+- [x] Create branch from `codex/phase5d-teacher-weighted-temporal-mapping-training`.
+- [x] Add chronological unique-frame stream/window builder for clip caches.
+- [x] Add checkpoint streaming inference to `DepthObservation` conversion.
+- [x] Fuse observations through existing CPU TSDF helpers and write sidecars.
+- [x] Export ASCII PLY point cloud and lightweight map preview.
+- [x] Write quality, per-frame quality, latency, observation, summary, and event logs.
+- [x] Add `atlas3r runtime stream-student-map`.
+- [x] Add focused tests for stream dedupe, padding, oracle pose, CLI help, fixture run,
+  truth flags, and PLY header/vertex count.
 - [x] Run required format, lint, typecheck, unit, and diff checks.
-- [x] Attempt real TUM measured teacher training/eval on local CUDA data.
-- [x] Write Phase 5D report and update progress/decisions/next-task handoff.
-- [x] Commit code, tests, and docs only; generated runs/caches remain ignored.
+- [x] Attempt the real local TUM Phase 5D runtime command; record missing inputs if any.
+- [x] Update progress, decisions, next task, API contracts, and Phase 5E report.
 
 Verification:
 
-- `python -m ruff format src tests`: passed, 134 files unchanged.
-- `python -m ruff format --check src tests`: passed, 134 files formatted.
+- `python -m ruff format src tests`: passed, 142 files unchanged.
+- `python -m ruff format --check src tests`: passed, 142 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed, 98 source files checked.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed, 181 tests;
-  existing optional Torch/einops import warning appeared.
-- `git diff --check`: passed; Git emitted CRLF conversion warnings.
+- `python -m mypy src`: passed, 105 source files checked.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed, 186 tests.
+- `git diff --check`: passed with CRLF conversion warnings.
 - `where.exe make`: no `make` found in this Windows shell.
 
-Real run:
+Known constraints:
 
-- Measured-only CUDA run completed 20,000 steps on local TUM teacher caches.
-- Student cache export, inspect-signals, and map-signals completed on 56 val
-  clips.
-- External Depth Pro was importable, but no explicit checkpoint URI/env var was
-  configured; no external pseudo-label run was faked.
+- Runtime diagnostics remain non-realtime, non-mapping-ready, non-benchmark, and
+  non-accuracy reports.
+- `student-relative` pose is diagnostic only; if unsafe, report a blocker instead of
+  faking pose readiness.

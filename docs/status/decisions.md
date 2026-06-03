@@ -37,6 +37,7 @@ tests, and the contract docs.
 | D-0030 | Teacher signals | Teacher-signal caches use `atlas3r_teacher_signal_manifest.json` plus relative `signals/clip_<id>.npz` payloads with confidence, uncertainty, source metadata, explicit measured/pseudo-label truth flags, explicit raw NPZ source-clip filename mapping, JSON-only inspection, and deduped map replay. | Yes |
 | D-0031 | External teachers | `atlas3r.teachers.external` runners produce only validated teacher-signal caches; optional model imports happen only inside real runs, Depth Pro needs an explicit external checkpoint URI, and VGGT support is local-output ingestion. | Yes |
 | D-0032 | Teacher-signal training | Phase 5D adds `TemporalMetricNetV1`, `atlas3r train teacher-signals-temporal`, and `atlas3r teachers run-student-temporal` as a diagnostic teacher-signal student loop; checkpoints and exported caches remain non-realtime, non-mapping, non-accuracy, and pseudo-label bounded. | Yes |
+| D-0033 | Student map runtime | Phase 5E adds `atlas3r runtime stream-student-map` as a diagnostic checkpoint-to-`DepthObservation`-to-CPU-TSDF path over unique clip-cache frames, with oracle and diagnostic student-relative pose modes plus PLY point-cloud, quality, and latency reports. | Yes |
 
 Active cross-cutting constraints:
 

@@ -293,6 +293,11 @@ artifact paths, and a truth boundary. `atlas3r inspect runtime-fixture --input
 <folder>` validates the event log, summary, generated session, full-array
 teacher cache, and nested complete TSDF output inspection.
 
+`atlas3r runtime stream-student-map --checkpoint ... --clip-cache ... --teacher-cache ... --output ...`
+runs a Phase 5D checkpoint over unique frames, emits `DepthObservation`s, fuses
+CPU TSDF, and writes per-mode logs, reports, TSDF sidecars, `point_cloud.ply`,
+and preview HTML. Pose modes are `oracle`, diagnostic-only `student-relative`,
+or `both`; all truth-claim flags stay false.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.

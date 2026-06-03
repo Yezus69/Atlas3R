@@ -12,6 +12,7 @@ from atlas3r import __version__
 from atlas3r.cli_datasets import register_datasets_parser
 from atlas3r.cli_eval import register_eval_parser
 from atlas3r.cli_forge import register_forge_parser
+from atlas3r.cli_runtime import register_runtime_parser
 from atlas3r.cli_teachers import register_teachers_parser
 from atlas3r.cli_train import register_train_parser
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
@@ -413,6 +414,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_datasets_parser(subparsers)
     register_eval_parser(subparsers)
     register_forge_parser(subparsers)
+    register_runtime_parser(subparsers)
     register_teachers_parser(subparsers)
     register_train_parser(subparsers)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
