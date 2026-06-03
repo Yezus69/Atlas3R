@@ -1,53 +1,41 @@
 # Active Task
 
-Goal: Phase 5B.1 repo slimming and teacher-signal hardening.
+Goal: Phase 5C external teacher runner bootstrap.
 
-Branch: `codex/phase5b1-repo-slim-teacher-hardening`
-
-Source inventory before cleanup:
-
-- `src/atlas3r/teachers/*.py`: 1,365 total lines.
-- Teacher files over 400 lines: none.
-- `tests/unit/test_teacher_signals.py`: 271 lines.
-
-Source inventory after cleanup:
-
-- `src/atlas3r/teachers/*.py`: 1,359 total lines, net -6.
-- Teacher files over 400 lines: none.
-- `tests/unit/test_teacher_signals.py`: 436 lines, net +165.
+Branch: `codex/phase5c-external-teacher-runner-bootstrap`
 
 Checklist:
 
-- [x] Read requested Phase 5B.1 goal, compact docs/status files, teacher signal
-  source files, CLI registration, and focused tests.
-- [x] Create non-main cleanup branch from Phase 5B branch.
-- [x] Remove teacher-signal inspection HTML/SVG preview outputs while keeping
-  JSON and JSONL diagnostics.
-- [x] Deduplicate `map-signals` observations by `frame_id`, reject conflicting
-  duplicate payloads, and report before/after counts.
-- [x] Make raw local NPZ ingest map `clip_<source_clip_id:06d>.npz` explicitly
-  and reject bad, duplicate, out-of-range, or mismatched payloads.
-- [x] Resolve relative source clip-cache manifest paths from the teacher cache
-  root and reject invalid manifest entries with field paths.
-- [x] Update focused tests and concise API/status docs; keep Phase 5C as the
-  next handoff without executing it.
-- [x] Run required format/lint/type/unit/diff checks plus `make` targets if
-  available.
-- [x] Record after-inventory, verification results, and commit
-  `Slim and harden teacher signal bridge`.
+- [x] Read Phase 5C goal, relevant contract/status docs, teacher-signal code,
+  clip-cache IO, TUM data helpers, and adapter stubs.
+- [x] Create branch from committed Phase 5B.1 cleanup branch.
+- [x] Add dependency-safe external teacher runner contracts under
+  `atlas3r.teachers.external`.
+- [x] Add Depth Pro runner path with dependency-safe status, explicit external
+  checkpoint configuration, fake-test execution, validated signal writing, and
+  post-run inspect support.
+- [x] Add VGGT local-output ingestion scaffold for validated local arrays.
+- [x] Wire `atlas3r teachers run-depth-pro` and
+  `atlas3r teachers ingest-vggt-local`.
+- [x] Update external teacher runner API contract docs.
+- [x] Add focused tests for optional dependency safety, unavailable status,
+  fake runner cache writing, VGGT local ingest, inspect/map smoke, and CLI help.
+- [x] Run required format/lint/type/unit/diff checks.
+- [x] Record verification, known gaps, Phase 5D next task, and commit
+  code/docs/tests only.
 
 Verification:
 
-- `python -m ruff format src tests`: passed, 122 files unchanged.
-- `python -m ruff format --check src tests`: passed.
+- `python -m ruff format src tests`: passed, 128 files unchanged.
+- `python -m ruff format --check src tests`: passed, 128 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed, 88 files checked.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed, 170 tests;
+- `python -m mypy src`: passed, 93 source files checked.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed, 175 tests;
   existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git emitted CRLF conversion warnings.
-- `make test`, `make lint`, `make typecheck`: not run; `make` is not installed
-  in this Windows shell.
+- `where.exe make`: no `make` found in this Windows shell.
 
-Scope guard: no external teacher runners, model downloads, datasets, training,
-new mapping algorithms, or new public feature surfaces beyond the cleanup
-contracts above.
+Real-run note: local TUM validation clip cache exists and `depth_pro` imports
+from an external repo, but no external checkpoint URI is configured through
+`--checkpoint-uri` or `ATLAS3R_DEPTH_PRO_CHECKPOINT`; the real Depth Pro run was
+not attempted to avoid implicit weight loading.

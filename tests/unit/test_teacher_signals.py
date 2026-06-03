@@ -338,11 +338,10 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase5c(self) -> None:
+    def test_status_handoff_points_to_phase5d(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5C - External Teacher Runner Bootstrap", text)
-        self.assertIn("Depth Pro", text)
-        self.assertIn("VGGT", text)
+        self.assertIn("Phase 5D", text)
+        self.assertIn("teacher confidence weighting", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

@@ -171,11 +171,11 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_5c(self) -> None:
+    def test_status_handoff_points_to_phase_5d(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Phase 5C", next_task)
-        self.assertIn("External Teacher Runner Bootstrap", next_task)
+        self.assertIn("Phase 5D", next_task)
+        self.assertIn("teacher confidence weighting", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):
