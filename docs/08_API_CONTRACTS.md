@@ -219,7 +219,7 @@ Raw `teachers ingest-local` NPZ inputs must be named `clip_<source_clip_id:06d>.
 `teachers inspect-signals` writes only `summary.json` and `per_clip_metrics.jsonl`. `teachers map-signals` deduplicates by `frame_id` before CPU TSDF integration; first occurrence wins in signal order then frame offset, duplicates must match depth/K/`T_world_camera`, and `map_summary.json` records before/after counts, duplicate count, and policy.
 External teacher runners under `atlas3r.teachers.external` expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`, and `ExternalTeacherRunner`; must not import external model packages at module import time; `status()` reports availability/install/input/output/local-run capability; and `run(...)` writes a validated signal cache or raises an explicit error.
 Depth Pro uses source RGB plus clip-cache `T_world_camera`, records `teacher_source=depth_pro`, and sets measured false/pseudo-label true. VGGT local ingest maps `clip_<source_clip_id:06d>.npz` arrays with `teacher_source_type=local_external_geometry_teacher`.
-Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`; `atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`; `atlas3r teachers ingest-local`; `atlas3r teachers run-depth-pro`; `atlas3r teachers ingest-vggt-local`; `atlas3r teachers inspect-signals`; and `atlas3r teachers map-signals`.
+Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`; `atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`; `atlas3r teachers ingest-local`; `atlas3r teachers run-depth-pro`; `atlas3r teachers ingest-vggt-local`; `atlas3r teachers run-student-temporal`; `atlas3r teachers inspect-signals`; and `atlas3r teachers map-signals`.
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 
 `atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic NumPy CPU
@@ -370,11 +370,7 @@ checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
 synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 
 ### TUM RGB-D Real-Data Debug Training, Eval, And Temporal Clips
-Commands: `atlas3r datasets tum-rgbd download|prepare`, `atlas3r train
-tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `atlas3r eval
-tum-rgbd-checkpoint [--write-tsdf]`, `atlas3r forge tum-rgbd-clips`, and
-`atlas3r train tum-rgbd-temporal`. Download uses stdlib networking and safe tar
-extraction.
+Commands: `atlas3r datasets tum-rgbd download|prepare`, `atlas3r train tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `atlas3r eval tum-rgbd-checkpoint [--write-tsdf]`, `atlas3r forge tum-rgbd-clips`, `atlas3r train tum-rgbd-temporal`, and `atlas3r train teacher-signals-temporal`. Download uses stdlib networking and safe tar extraction.
 
 The TUM manifest is `format_name=atlas3r_tum_rgbd_manifest`, `format_version=1`,
 and records RGB/depth metadata, ROS default `K`, `depth_raw/5000.0`, split
@@ -398,13 +394,13 @@ Payloads are `clips/clip_<id>.npz` with `images_rgb_u8 T,H,W,3`, `depth_m T,H,W`
 `timestamps_s T`, `center_index`, and optional `pointmap_camera_m`,
 `pointmap_world_m`, `normal_camera` as `T,H,W,3`.
 
-`TumRgbdClipCacheDataset` returns `images_rgb T,3,H,W`, `intrinsics T,3,3`,
-`T_world_camera T,4,4`, center depth/mask/confidence targets, and
-`relative_T_center_camera T,4,4` where `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`.
-`TinyTemporalMetricNetV0` predicts center depth/sigma/confidence and
-`relative_translation_center_from_camera B,T,3`; rotation is not learned in
-Phase 5A. Temporal runs write config, train/validation JSONL, summary, last/best
-checkpoints, NPZ sample, and HTML/SVG preview. All metrics are diagnostic.
+`TumRgbdClipCacheDataset` returns `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, center depth/mask/confidence targets, and `relative_T_center_camera T,4,4` where `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`. `TinyTemporalMetricNetV0` predicts center depth/sigma/confidence and `relative_translation_center_from_camera B,T,3`; rotation is not learned in Phase 5A. Temporal runs write config, train/validation JSONL, summary, last/best checkpoints, NPZ sample, and HTML/SVG preview. All metrics are diagnostic.
+
+`TeacherSignalTemporalDataset` lazily aligns one or more validated teacher-signal caches to source clip RGB, intrinsics, `T_world_camera`, frame IDs, and timestamps. Samples expose `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, `frame_ids T`, `timestamps_s T`, targets `depth_m/depth_sigma_m/confidence/valid_mask T,1,H,W`, `teacher_is_measured`, teacher metadata, and optional `pointmap_camera_m T,3,H,W`; mixed caches must share dataset, sequence, split, clip length, and image size.
+
+`TemporalMetricNetV1` is the only Phase 5D trainable model addition: RGB plus ray channels, shared 2D encoder, small ConvGRU bottleneck, `depth_m/depth_sigma_m/confidence B,T,1,H,W`, and `relative_translation_center_from_camera B,T,3`. `atlas3r train teacher-signals-temporal` writes config/metrics/validation/summary/last+best checkpoints and a compact preview; checkpoints use `format_name=atlas3r_teacher_signal_temporal_checkpoint` and include model/loss config, teacher cache lists, step, metrics, optimizer state, and truth flags with mapping/realtime/accuracy/performance/final-SMGT false.
+
+Teacher-signal losses weight valid pixels by `confidence / clamp(depth_sigma_m^2, min_sigma^2, max_sigma^2)`, clamp and normalize weights per batch, and default to measured teacher weight `1.0` and pseudo teacher weight `0.25`. `atlas3r teachers run-student-temporal` loads a Phase 5D checkpoint and writes `teacher_name=atlas3r_temporal_v1_student` pseudo-label caches; exported `T_world_camera` comes from the source clip cache unless a later phase upgrades pose export.
 
 ## Map Object Contracts
 `ObjectInstance` fields: `object_id`, `label_candidates`, `T_world_object 4,4`,

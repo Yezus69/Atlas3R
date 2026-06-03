@@ -323,6 +323,10 @@ def _load_source_clip_manifest(
     source_path = Path(raw_path)
     if not source_path.is_absolute():
         source_path = cache_root / source_path
+        if not source_path.exists():
+            cwd_relative = Path(raw_path)
+            if cwd_relative.exists():
+                source_path = cwd_relative
     return load_clip_cache_manifest(manifest_path_from_input(source_path))
 
 

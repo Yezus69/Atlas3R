@@ -36,6 +36,7 @@ tests, and the contract docs.
 | D-0029 | Temporal MVP | `TinyTemporalMetricNetV0` trains center-frame depth/sigma/confidence and relative translation only; rotation, mapping readiness, realtime, accuracy, and performance claims stay false. | Yes |
 | D-0030 | Teacher signals | Teacher-signal caches use `atlas3r_teacher_signal_manifest.json` plus relative `signals/clip_<id>.npz` payloads with confidence, uncertainty, source metadata, explicit measured/pseudo-label truth flags, explicit raw NPZ source-clip filename mapping, JSON-only inspection, and deduped map replay. | Yes |
 | D-0031 | External teachers | `atlas3r.teachers.external` runners produce only validated teacher-signal caches; optional model imports happen only inside real runs, Depth Pro needs an explicit external checkpoint URI, and VGGT support is local-output ingestion. | Yes |
+| D-0032 | Teacher-signal training | Phase 5D adds `TemporalMetricNetV1`, `atlas3r train teacher-signals-temporal`, and `atlas3r teachers run-student-temporal` as a diagnostic teacher-signal student loop; checkpoints and exported caches remain non-realtime, non-mapping, non-accuracy, and pseudo-label bounded. | Yes |
 
 Active cross-cutting constraints:
 

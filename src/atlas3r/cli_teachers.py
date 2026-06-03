@@ -96,6 +96,21 @@ def register_teachers_parser(subparsers: Any) -> None:
     map_parser.add_argument("--truncation-voxels", type=float, default=3.0)
     map_parser.set_defaults(handler=_run_map_signals)
 
+    student_parser = teacher_subparsers.add_parser(
+        "run-student-temporal",
+        help="Run a Phase 5D temporal checkpoint into a pseudo-label teacher-signal cache.",
+    )
+    student_parser.add_argument("--checkpoint", type=Path, required=True)
+    student_parser.add_argument("--clip-cache", type=Path, required=True)
+    student_parser.add_argument("--output", type=Path, required=True)
+    student_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="auto",
+    )
+    student_parser.add_argument("--max-clips", type=int, default=None)
+    student_parser.set_defaults(handler=_run_student_temporal)
+
 
 def _run_forge_measured_tum(args: argparse.Namespace) -> int:
     from atlas3r.teachers.measured_tum import (
@@ -224,6 +239,30 @@ def _run_map_signals(args: argparse.Namespace) -> int:
             )
         )
     except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_student_temporal(args: argparse.Namespace) -> int:
+    from atlas3r.teachers.student_temporal import (
+        StudentTemporalTeacherRunConfig,
+        run_student_temporal_teacher_signal_cache,
+    )
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_student_temporal_teacher_signal_cache(
+            StudentTemporalTeacherRunConfig(
+                checkpoint=args.checkpoint,
+                clip_cache=args.clip_cache,
+                output=args.output,
+                device=args.device,
+                max_clips=args.max_clips,
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))

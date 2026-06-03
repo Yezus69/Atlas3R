@@ -134,6 +134,55 @@ def register_train_parser(subparsers: Any) -> None:
     )
     temporal_parser.set_defaults(handler=_run_train_tum_rgbd_temporal)
 
+    teacher_temporal_parser = train_subparsers.add_parser(
+        "teacher-signals-temporal",
+        help="Train temporal-v1 from measured and pseudo teacher-signal caches.",
+    )
+    teacher_temporal_parser.add_argument(
+        "--teacher-cache",
+        type=Path,
+        action="append",
+        required=True,
+        help="Teacher-signal cache manifest or directory. May be supplied more than once.",
+    )
+    teacher_temporal_parser.add_argument(
+        "--val-teacher-cache",
+        type=Path,
+        action="append",
+        default=[],
+        help="Optional validation teacher-signal cache. May be supplied more than once.",
+    )
+    teacher_temporal_parser.add_argument("--output", type=Path, required=True)
+    teacher_temporal_parser.add_argument(
+        "--model",
+        choices=("temporal-v1",),
+        default="temporal-v1",
+    )
+    teacher_temporal_parser.add_argument("--steps", type=int, default=12000)
+    teacher_temporal_parser.add_argument("--batch-size", type=int, default=8)
+    teacher_temporal_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="cuda",
+    )
+    teacher_temporal_parser.add_argument("--num-workers", type=int, default=0)
+    teacher_temporal_parser.add_argument("--learning-rate", type=float, default=0.0003)
+    teacher_temporal_parser.add_argument("--log-every", type=int, default=50)
+    teacher_temporal_parser.add_argument("--val-every", type=int, default=500)
+    teacher_temporal_parser.add_argument("--checkpoint-every", type=int, default=1000)
+    teacher_temporal_parser.add_argument("--preview-every", type=int, default=1000)
+    teacher_temporal_parser.add_argument("--seed", type=int, default=0)
+    teacher_temporal_parser.add_argument("--amp", action="store_true")
+    teacher_temporal_parser.add_argument("--max-runtime-minutes", type=float, default=330.0)
+    teacher_temporal_parser.add_argument("--hidden-channels", type=int, default=24)
+    teacher_temporal_parser.add_argument("--bottleneck-channels", type=int, default=32)
+    teacher_temporal_parser.add_argument("--min-sigma-m", type=float, default=0.001)
+    teacher_temporal_parser.add_argument("--max-sigma-m", type=float, default=1.0)
+    teacher_temporal_parser.add_argument("--max-pixel-weight", type=float, default=100.0)
+    teacher_temporal_parser.add_argument("--measured-teacher-weight", type=float, default=1.0)
+    teacher_temporal_parser.add_argument("--pseudo-teacher-weight", type=float, default=0.25)
+    teacher_temporal_parser.set_defaults(handler=_run_train_teacher_signals_temporal)
+
 
 def _run_train_synthetic_overfit(args: argparse.Namespace) -> int:
     from atlas3r.training import SyntheticOverfitConfig, TorchDependencyError, run_synthetic_overfit
@@ -227,6 +276,51 @@ def _run_train_tum_rgbd_temporal(args: argparse.Namespace) -> int:
                 max_runtime_minutes=args.max_runtime_minutes,
                 hidden_channels=args.hidden_channels,
                 depth_loss=args.depth_loss,
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_train_teacher_signals_temporal(args: argparse.Namespace) -> int:
+    from atlas3r.training.teacher_signal_losses import TeacherSignalLossConfig
+    from atlas3r.training.teacher_signal_temporal_train import (
+        TeacherSignalTemporalTrainConfig,
+        run_teacher_signal_temporal_training,
+    )
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_teacher_signal_temporal_training(
+            TeacherSignalTemporalTrainConfig(
+                teacher_caches=tuple(args.teacher_cache),
+                val_teacher_caches=tuple(args.val_teacher_cache),
+                output=args.output,
+                model=args.model,
+                steps=args.steps,
+                batch_size=args.batch_size,
+                device=args.device,
+                num_workers=args.num_workers,
+                learning_rate=args.learning_rate,
+                log_every=args.log_every,
+                val_every=args.val_every,
+                checkpoint_every=args.checkpoint_every,
+                preview_every=args.preview_every,
+                seed=args.seed,
+                amp=args.amp,
+                max_runtime_minutes=args.max_runtime_minutes,
+                hidden_channels=args.hidden_channels,
+                bottleneck_channels=args.bottleneck_channels,
+                loss_config=TeacherSignalLossConfig(
+                    min_sigma_m=args.min_sigma_m,
+                    max_sigma_m=args.max_sigma_m,
+                    max_pixel_weight=args.max_pixel_weight,
+                    measured_teacher_weight=args.measured_teacher_weight,
+                    pseudo_teacher_weight=args.pseudo_teacher_weight,
+                ),
             )
         )
     except (TorchDependencyError, ValueError) as exc:
