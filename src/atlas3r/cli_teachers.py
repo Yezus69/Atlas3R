@@ -62,6 +62,12 @@ def register_teachers_parser(subparsers: Any) -> None:
         default=None,
         help="Optional output folder for the post-run inspect-signals diagnostic.",
     )
+    depth_pro_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="auto",
+        help="Depth Pro inference device.",
+    )
     depth_pro_parser.set_defaults(handler=_run_depth_pro)
 
     vggt_parser = teacher_subparsers.add_parser(
@@ -174,6 +180,7 @@ def _run_depth_pro(args: argparse.Namespace) -> int:
                 run_inspect=True,
                 inspect_output=args.inspect_output,
                 checkpoint_uri=args.checkpoint_uri,
+                device=args.device,
             )
         )
     except (ExternalTeacherError, ValueError) as exc:

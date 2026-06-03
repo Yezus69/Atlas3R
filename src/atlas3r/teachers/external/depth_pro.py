@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
-from contextlib import nullcontext
-from dataclasses import dataclass, replace
-from importlib import import_module
-from inspect import Parameter, signature
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -28,6 +25,15 @@ from atlas3r.teachers.external.contracts import (
     ExternalTeacherDependencyError,
     ExternalTeacherRunConfig,
     ExternalTeacherStatus,
+)
+from atlas3r.teachers.external.depth_pro_arrays import (
+    DepthProRunStats,
+    normalise_frame_prediction_arrays,
+)
+from atlas3r.teachers.external.depth_pro_model import load_depth_pro_predictor
+from atlas3r.teachers.external.depth_pro_types import (
+    DepthProFramePrediction,
+    DepthProFramePredictor,
 )
 from atlas3r.teachers.map_eval import TeacherSignalInspectConfig, inspect_teacher_signals
 
@@ -52,19 +58,19 @@ _SIGMA_HEURISTIC = (
 @dataclass(frozen=True)
 class DepthProRunConfig(ExternalTeacherRunConfig):
     checkpoint_uri: str | None = None
+    device: str = "auto"
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.device not in {"auto", "cuda", "mps", "cpu"}:
+            raise ValueError("device: must be one of auto, cuda, mps, or cpu")
 
 
 @dataclass(frozen=True)
-class DepthProFramePrediction:
-    depth_m: npt.NDArray[Any]
-    confidence: npt.NDArray[Any] | None = None
-    depth_sigma_m: npt.NDArray[Any] | None = None
-
-
-DepthProFramePredictor = Callable[
-    [npt.NDArray[np.uint8], npt.NDArray[np.float32]],
-    DepthProFramePrediction,
-]
+class _CachedFramePrediction:
+    rgb_u8: npt.NDArray[np.uint8]
+    K: npt.NDArray[np.float32]
+    arrays: dict[str, npt.NDArray[Any]]
 
 
 class DepthProExternalTeacherRunner:
@@ -96,7 +102,11 @@ class DepthProExternalTeacherRunner:
                     ),
                     status.install_hint,
                 )
-            predictor = _load_depth_pro_predictor(checkpoint_uri=checkpoint_uri)
+            predictor = load_depth_pro_predictor(
+                checkpoint_uri=checkpoint_uri,
+                device=_device_from_config(config),
+                install_hint=INSTALL_HINT,
+            )
         return run_depth_pro_teacher_signal_cache(config, predictor=predictor)
 
 
@@ -153,7 +163,11 @@ def run_depth_pro_teacher_signal_cache(
                 ),
                 INSTALL_HINT,
             )
-        predictor = _load_depth_pro_predictor(checkpoint_uri=checkpoint_uri)
+        predictor = load_depth_pro_predictor(
+            checkpoint_uri=checkpoint_uri,
+            device=_device_from_config(config),
+            install_hint=INSTALL_HINT,
+        )
     clip_manifest_path = manifest_path_from_input(config.clip_cache)
     clip_manifest = load_clip_cache_manifest(clip_manifest_path)
     clips = _clip_entries(clip_manifest)
@@ -162,6 +176,8 @@ def run_depth_pro_teacher_signal_cache(
         raise ValueError(f"{clip_manifest_path}: no clips selected for Depth Pro")
 
     payloads: list[ExternalSignalPayload] = []
+    stats = DepthProRunStats()
+    prediction_cache: dict[int, _CachedFramePrediction] = {}
     for clip_entry in selected:
         clip_payload = read_clip_payload_from_entry(clip_manifest_path.parent, clip_entry)
         validate_clip_payload(
@@ -173,10 +189,16 @@ def run_depth_pro_teacher_signal_cache(
         payloads.append(
             ExternalSignalPayload(
                 source_clip_id=_int_field(clip_entry, "clip_id"),
-                arrays=_payload_from_clip_payload(clip_payload, predictor=predictor),
+                arrays=_payload_from_clip_payload(
+                    clip_payload,
+                    predictor=predictor,
+                    prediction_cache=prediction_cache,
+                    stats=stats,
+                ),
             )
         )
 
+    run_metadata = stats.source_metadata()
     result = write_external_teacher_signal_cache(
         clip_cache=clip_manifest_path,
         output=config.output,
@@ -192,8 +214,10 @@ def run_depth_pro_teacher_signal_cache(
             "measured_geometry": False,
             "pseudo_label": True,
             "depth_sigma_m_heuristic": _SIGMA_HEURISTIC,
+            **run_metadata,
         },
     )
+    result.update(stats.result_fields())
     if config.run_inspect:
         inspect_output = config.inspect_output or config.output.with_name(
             f"{config.output.name}_inspect"
@@ -217,20 +241,29 @@ def _payload_from_clip_payload(
     clip_payload: Mapping[str, Any],
     *,
     predictor: DepthProFramePredictor,
+    prediction_cache: dict[int, _CachedFramePrediction],
+    stats: DepthProRunStats,
 ) -> dict[str, npt.NDArray[Any] | np.generic]:
     rgb = np.asarray(clip_payload["images_rgb_u8"], dtype=np.uint8)
     clip_length, height, width, _channels = rgb.shape
     K = np.asarray(clip_payload["K"], dtype=np.float32)
+    frame_ids = np.asarray(clip_payload["frame_ids"], dtype=np.int64)
+    stats.record_clip(clip_length)
     depth = np.zeros((clip_length, height, width), dtype=np.float32)
     sigma = np.zeros_like(depth, dtype=np.float32)
     confidence = np.zeros_like(depth, dtype=np.float32)
     valid_mask = np.zeros((clip_length, height, width), dtype=np.bool_)
     for frame_offset in range(clip_length):
-        frame_prediction = predictor(rgb[frame_offset], K[frame_offset])
-        frame_arrays = _normalise_frame_prediction(
-            frame_prediction,
+        frame_id = int(frame_ids[frame_offset])
+        frame_arrays = _cached_or_predict_frame(
+            frame_id=frame_id,
+            rgb_u8=rgb[frame_offset],
+            K=K[frame_offset],
+            predictor=predictor,
+            prediction_cache=prediction_cache,
             height=height,
             width=width,
+            stats=stats,
         )
         depth[frame_offset] = frame_arrays["depth_m"]
         sigma[frame_offset] = frame_arrays["depth_sigma_m"]
@@ -243,62 +276,56 @@ def _payload_from_clip_payload(
         "valid_mask": valid_mask,
         "K": K.astype(np.float32, copy=False),
         "T_world_camera": np.asarray(clip_payload["T_world_camera"], dtype=np.float32),
-        "frame_ids": np.asarray(clip_payload["frame_ids"], dtype=np.int32),
+        "frame_ids": frame_ids.astype(np.int32, copy=False),
         "timestamps_s": np.asarray(clip_payload["timestamps_s"], dtype=np.float64),
     }
 
 
-def _normalise_frame_prediction(
-    prediction: DepthProFramePrediction,
+def _cached_or_predict_frame(
     *,
+    frame_id: int,
+    rgb_u8: npt.NDArray[np.uint8],
+    K: npt.NDArray[np.float32],
+    predictor: DepthProFramePredictor,
+    prediction_cache: dict[int, _CachedFramePrediction],
     height: int,
     width: int,
+    stats: DepthProRunStats,
 ) -> dict[str, npt.NDArray[Any]]:
-    depth = _image_float32(prediction.depth_m, "depth_m", height, width)
-    valid = np.isfinite(depth) & (depth > 0.0)
-    depth = np.where(valid, depth, np.float32(0.0)).astype(np.float32, copy=False)
-    if prediction.confidence is None:
-        confidence = np.where(valid, np.float32(0.5), np.float32(0.0)).astype(np.float32)
-    else:
-        confidence = _image_float32(prediction.confidence, "confidence", height, width)
-        _validate_probability("confidence", confidence)
-        confidence = np.where(valid, confidence, np.float32(0.0)).astype(np.float32, copy=False)
-    valid = valid & (confidence > 0.0)
-    if prediction.depth_sigma_m is None:
-        sigma = _heuristic_sigma(
-            depth, confidence, valid, confidence_provided=prediction.confidence is not None
-        )
-    else:
-        sigma = _image_float32(prediction.depth_sigma_m, "depth_sigma_m", height, width)
-        if np.any(sigma < 0.0):
-            raise ValueError("depth_sigma_m: must be non-negative")
-        if np.any(sigma[valid] <= 0.0):
-            raise ValueError("depth_sigma_m: must be positive on valid pixels")
-        sigma = np.where(valid, sigma, np.float32(0.0)).astype(np.float32, copy=False)
-    return {
-        "depth_m": np.where(valid, depth, np.float32(0.0)).astype(np.float32, copy=False),
-        "depth_sigma_m": sigma,
-        "confidence": np.where(valid, confidence, np.float32(0.0)).astype(
-            np.float32,
-            copy=False,
-        ),
-        "valid_mask": valid.astype(np.bool_, copy=False),
-    }
+    cached = prediction_cache.get(frame_id)
+    if cached is not None:
+        _validate_duplicate_frame(frame_id, rgb_u8=rgb_u8, K=K, cached=cached)
+        stats.record_duplicate_reuse()
+        return cached.arrays
+    frame_prediction = predictor(rgb_u8, K)
+    stats.record_unique_prediction()
+    arrays = normalise_frame_prediction_arrays(
+        depth_m=frame_prediction.depth_m,
+        confidence=frame_prediction.confidence,
+        depth_sigma_m=frame_prediction.depth_sigma_m,
+        height=height,
+        width=width,
+        stats=stats,
+    )
+    prediction_cache[frame_id] = _CachedFramePrediction(
+        rgb_u8=rgb_u8.copy(),
+        K=K.astype(np.float32, copy=True),
+        arrays={key: np.asarray(value).copy() for key, value in arrays.items()},
+    )
+    return arrays
 
 
-def _heuristic_sigma(
-    depth: npt.NDArray[np.float32],
-    confidence: npt.NDArray[np.float32],
-    valid: npt.NDArray[np.bool_],
+def _validate_duplicate_frame(
+    frame_id: int,
     *,
-    confidence_provided: bool,
-) -> npt.NDArray[np.float32]:
-    sigma = np.zeros_like(depth, dtype=np.float32)
-    base = np.maximum(np.float32(0.05), depth * np.float32(0.05))
-    if confidence_provided:
-        base = base / np.maximum(confidence, np.float32(0.25))
-    sigma[valid] = base[valid]
-    return sigma
+    rgb_u8: npt.NDArray[np.uint8],
+    K: npt.NDArray[np.float32],
+    cached: _CachedFramePrediction,
+) -> None:
+    if not np.array_equal(rgb_u8, cached.rgb_u8):
+        raise ValueError(f"frame_id {frame_id}: duplicate RGB payload does not match")
+    if not np.allclose(K, cached.K, rtol=0.0, atol=0.0):
+        raise ValueError(f"frame_id {frame_id}: duplicate K metadata does not match")
 
 
 def _checkpoint_uri_from_config(config: ExternalTeacherRunConfig) -> str | None:
@@ -309,141 +336,11 @@ def _checkpoint_uri_from_config(config: ExternalTeacherRunConfig) -> str | None:
     return env_value if env_value else None
 
 
-def _load_depth_pro_predictor(*, checkpoint_uri: str) -> DepthProFramePredictor:
-    try:
-        depth_pro = import_module("depth_pro")
-    except ImportError as exc:
-        raise ExternalTeacherDependencyError("Depth Pro", str(exc), INSTALL_HINT) from exc
-    try:
-        model_config = _depth_pro_config_with_checkpoint(depth_pro, checkpoint_uri)
-        model, transform = depth_pro.create_model_and_transforms(config=model_config)
-    except AttributeError as exc:
-        raise ExternalTeacherDependencyError(
-            "Depth Pro",
-            "depth_pro.create_model_and_transforms is unavailable",
-            INSTALL_HINT,
-        ) from exc
-    if hasattr(model, "eval"):
-        model.eval()
-
-    def predict(
-        rgb_u8: npt.NDArray[np.uint8], K: npt.NDArray[np.float32]
-    ) -> DepthProFramePrediction:
-        image = _pil_image_from_rgb(rgb_u8)
-        model_input = transform(image) if transform is not None else image
-        prediction = _infer_depth_pro(model, model_input, K)
-        depth = _prediction_array(prediction, ("depth_m", "depth"))
-        confidence = _optional_prediction_array(
-            prediction,
-            ("confidence", "confidence_map", "valid_confidence"),
-        )
-        sigma = _optional_prediction_array(
-            prediction,
-            ("depth_sigma_m", "depth_uncertainty_m", "uncertainty"),
-        )
-        return DepthProFramePrediction(depth_m=depth, confidence=confidence, depth_sigma_m=sigma)
-
-    return predict
-
-
-def _depth_pro_config_with_checkpoint(depth_pro: Any, checkpoint_uri: str) -> Any:
-    config_class = getattr(depth_pro, "DepthProConfig", None)
-    if config_class is not None:
-        try:
-            return config_class(checkpoint_uri=checkpoint_uri)
-        except TypeError:
-            pass
-    create_model = getattr(depth_pro, "create_model_and_transforms", None)
-    if create_model is not None:
-        config_parameter = signature(create_model).parameters.get("config")
-        if config_parameter is not None and config_parameter.default is not Parameter.empty:
-            try:
-                return replace(config_parameter.default, checkpoint_uri=checkpoint_uri)
-            except (TypeError, ValueError):
-                pass
-    raise ExternalTeacherDependencyError(
-        "Depth Pro",
-        "DepthProConfig cannot be constructed with an external checkpoint_uri",
-        INSTALL_HINT,
-    )
-
-
-def _infer_depth_pro(model: Any, model_input: Any, K: npt.NDArray[np.float32]) -> Any:
-    f_px = float((float(K[0, 0]) + float(K[1, 1])) * 0.5)
-    torch = _optional_import("torch")
-    context = torch.no_grad() if torch is not None else nullcontext()
-    with context:
-        try:
-            return model.infer(model_input, f_px=f_px)
-        except TypeError:
-            return model.infer(model_input)
-
-
-def _pil_image_from_rgb(rgb_u8: npt.NDArray[np.uint8]) -> Any:
-    try:
-        image_module = import_module("PIL.Image")
-    except ImportError as exc:
-        raise ExternalTeacherDependencyError("Depth Pro", str(exc), INSTALL_HINT) from exc
-    return image_module.fromarray(np.asarray(rgb_u8, dtype=np.uint8), mode="RGB")
-
-
-def _prediction_array(prediction: Any, keys: tuple[str, ...]) -> npt.NDArray[Any]:
-    value = _prediction_value(prediction, keys)
-    if value is None:
-        raise ValueError(f"Depth Pro prediction: missing one of {keys}")
-    return _to_numpy(value)
-
-
-def _optional_prediction_array(prediction: Any, keys: tuple[str, ...]) -> npt.NDArray[Any] | None:
-    value = _prediction_value(prediction, keys)
-    return None if value is None else _to_numpy(value)
-
-
-def _prediction_value(prediction: Any, keys: tuple[str, ...]) -> Any | None:
-    if isinstance(prediction, Mapping):
-        for key in keys:
-            if key in prediction:
-                return prediction[key]
-        return None
-    for key in keys:
-        if hasattr(prediction, key):
-            return getattr(prediction, key)
-    return None
-
-
-def _to_numpy(value: Any) -> npt.NDArray[Any]:
-    if hasattr(value, "detach"):
-        value = value.detach().cpu().numpy()
-    array = np.asarray(value)
-    while array.ndim > 2 and array.shape[0] == 1:
-        array = array[0]
-    return array
-
-
-def _image_float32(
-    value: npt.NDArray[Any],
-    key: str,
-    height: int,
-    width: int,
-) -> npt.NDArray[np.float32]:
-    array = np.asarray(value, dtype=np.float32)
-    if array.shape != (height, width):
-        raise ValueError(f"{key}: expected shape {(height, width)}, got {array.shape}")
-    if not np.all(np.isfinite(array)):
-        raise ValueError(f"{key}: must contain finite values")
-    return array
-
-
-def _validate_probability(key: str, array: npt.NDArray[np.float32]) -> None:
-    if np.any((array < 0.0) | (array > 1.0)):
-        raise ValueError(f"{key}: must contain values in [0, 1]")
-
-
-def _optional_import(module_name: str) -> Any | None:
-    try:
-        return import_module(module_name)
-    except ImportError:
-        return None
+def _device_from_config(config: ExternalTeacherRunConfig) -> str:
+    value = getattr(config, "device", "auto")
+    if not isinstance(value, str):
+        raise ValueError("device: must be one of auto, cuda, mps, or cpu")
+    return value
 
 
 def _clip_entries(manifest: Mapping[str, object]) -> list[dict[str, object]]:

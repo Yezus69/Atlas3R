@@ -38,6 +38,7 @@ tests, and the contract docs.
 | D-0031 | External teachers | `atlas3r.teachers.external` runners produce only validated teacher-signal caches; optional model imports happen only inside real runs, Depth Pro needs an explicit external checkpoint URI, and VGGT support is local-output ingestion. | Yes |
 | D-0032 | Teacher-signal training | Phase 5D adds `TemporalMetricNetV1`, `atlas3r train teacher-signals-temporal`, and `atlas3r teachers run-student-temporal` as a diagnostic teacher-signal student loop; checkpoints and exported caches remain non-realtime, non-mapping, non-accuracy, and pseudo-label bounded. | Yes |
 | D-0033 | Student map runtime | Phase 5E adds `atlas3r runtime stream-student-map` as a diagnostic checkpoint-to-`DepthObservation`-to-CPU-TSDF path over unique clip-cache frames, with oracle and diagnostic student-relative pose modes plus PLY point-cloud, quality, and latency reports. | Yes |
+| D-0034 | Depth Pro pseudo labels | Phase 5F keeps Depth Pro external, device-selected, frame-deduped, and resized into the stable teacher-signal cache; mixed training treats optional pointmaps with per-sample validity so pseudo caches without pointmaps do not supervise zero pointmaps. | Yes |
 
 Active cross-cutting constraints:
 

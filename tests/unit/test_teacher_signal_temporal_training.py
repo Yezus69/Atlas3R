@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from atlas3r.teachers.map_eval import (
     TeacherSignalInspectConfig,
     TeacherSignalMapConfig,
@@ -18,7 +20,11 @@ from atlas3r.teachers.measured_tum import (
     forge_measured_tum_teacher_signal_cache,
     ingest_local_teacher_signal_cache,
 )
-from atlas3r.teachers.signals import load_teacher_signal_manifest
+from atlas3r.teachers.signals import (
+    load_teacher_signal_manifest,
+    read_teacher_signal_payload,
+    write_teacher_signal_payload,
+)
 from atlas3r.training.torch_runtime import torch_available
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +109,51 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
         self.assertEqual(pseudo["metadata"]["teacher_name"], "pseudo_fixture")
         self.assertEqual(summary["measured_record_count"], 1)
         self.assertEqual(summary["pseudo_record_count"], 1)
+
+    def test_dataset_collates_mixed_optional_pointmaps(self) -> None:
+        self._require_torch()
+        import torch
+
+        from atlas3r.training.teacher_signal_dataset import TeacherSignalTemporalDataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_test_clip_cache(root / "clip_cache")
+            measured_cache = root / "measured"
+            pseudo_cache = root / "pseudo"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=measured_cache)
+            )
+            measured_payload = read_teacher_signal_payload(measured_cache)
+            measured_payload["pointmap_camera_m"] = np.zeros((2, 4, 4, 3), dtype=np.float32)
+            write_teacher_signal_payload(
+                measured_cache / "signals" / "clip_000000.npz",
+                measured_payload,
+                clip_length=2,
+                height=4,
+                width=4,
+            )
+            raw_input = root / "raw"
+            raw_input.mkdir()
+            pseudo_payload = {
+                key: value for key, value in measured_payload.items() if key != "pointmap_camera_m"
+            }
+            np.savez_compressed(raw_input / "clip_000000.npz", **pseudo_payload)
+            ingest_local_teacher_signal_cache(
+                LocalTeacherIngestConfig(
+                    clip_cache=clip_manifest,
+                    input=raw_input,
+                    output=pseudo_cache,
+                    teacher_name="pseudo_without_pointmap",
+                    teacher_version="fixture-v1",
+                    pseudo_label=True,
+                )
+            )
+            dataset = TeacherSignalTemporalDataset([measured_cache, pseudo_cache])
+            batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=2)))
+
+        self.assertEqual(tuple(batch["target"]["pointmap_camera_m"].shape), (2, 2, 3, 4, 4))
+        self.assertEqual(batch["target"]["pointmap_camera_valid"].tolist(), [True, False])
 
     def test_weighted_loss_uses_confidence_sigma_and_rejects_all_invalid(self) -> None:
         self._require_torch()

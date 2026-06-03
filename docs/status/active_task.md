@@ -1,39 +1,37 @@
 # Active Task
 
-Goal: Phase 5E streaming student map runtime and quality/latency report.
+Goal: Phase 5F real Depth Pro teacher data, mixed teacher-signal training, and
+streaming student map comparison.
 
-Branch: `codex/phase5e-streaming-student-map-runtime`
+Branch: `codex/phase5f-real-depthpro-mixed-training-runtime`
 
 Checklist:
 
-- [x] Read Phase 5E goal, API contracts, current status docs, Phase 5D checkpoint
-  loader/exporter, clip-cache IO, runtime events, and CPU TSDF helpers.
-- [x] Create branch from `codex/phase5d-teacher-weighted-temporal-mapping-training`.
-- [x] Add chronological unique-frame stream/window builder for clip caches.
-- [x] Add checkpoint streaming inference to `DepthObservation` conversion.
-- [x] Fuse observations through existing CPU TSDF helpers and write sidecars.
-- [x] Export ASCII PLY point cloud and lightweight map preview.
-- [x] Write quality, per-frame quality, latency, observation, summary, and event logs.
-- [x] Add `atlas3r runtime stream-student-map`.
-- [x] Add focused tests for stream dedupe, padding, oracle pose, CLI help, fixture run,
-  truth flags, and PLY header/vertex count.
-- [x] Run required format, lint, typecheck, unit, and diff checks.
-- [x] Attempt the real local TUM Phase 5D runtime command; record missing inputs if any.
-- [x] Update progress, decisions, next task, API contracts, and Phase 5E report.
-
-Verification:
-
-- `python -m ruff format src tests`: passed, 142 files unchanged.
-- `python -m ruff format --check src tests`: passed, 142 files formatted.
-- `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed, 105 source files checked.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed, 186 tests.
-- `git diff --check`: passed with CRLF conversion warnings.
-- `where.exe make`: no `make` found in this Windows shell.
+- [x] Start from `codex/phase5e-streaming-student-map-runtime` and create the
+  Phase 5F branch.
+- [x] Read the Phase 5F goal and only the requested docs/source/tests.
+- [x] Preflight required local TUM and Phase 5D artifacts.
+- [x] Harden `teachers run-depth-pro` for device selection, real model tensor
+  device transfer, output resizing, and unique-frame prediction reuse.
+- [x] Add focused tests for Depth Pro dedupe, resize, CLI `--device`, and missing
+  optional dependency behavior.
+- [x] Run required format, lint, typecheck, unit, diff, and CLI help checks.
+- [x] Attempt real Depth Pro availability/install/checkpoint discovery without
+  vendoring code or weights.
+- [x] If available, generate real Depth Pro teacher-signal caches, inspect, and
+  map validation pseudo-labels.
+- [x] Apply quality gate before mixed measured+pseudo training.
+- [x] If gate passes, train mixed temporal student.
+- [x] Export student pseudo-label cache, inspect it, and run streaming map
+  comparison.
+- [x] Write Phase 5F evidence report and update compact status files.
+- [ ] Commit code/docs only after tests pass.
 
 Known constraints:
 
-- Runtime diagnostics remain non-realtime, non-mapping-ready, non-benchmark, and
-  non-accuracy reports.
-- `student-relative` pose is diagnostic only; if unsafe, report a blocker instead of
-  faking pose readiness.
+- Do not fake Depth Pro outputs or relabel measured TUM depth as external
+  pseudo-labels.
+- Generated datasets, runs, checkpoints, `.npz` payloads, PLY files, previews,
+  and downloaded weights stay ignored and uncommitted.
+- All outputs remain diagnostic unless an explicit evaluation report supports
+  stronger claims.

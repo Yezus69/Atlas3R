@@ -5,46 +5,61 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Current State
 
-- Current phase: Phase 5E streaming student map runtime implemented; Phase 5F
-  external teacher data generation and mixed teacher-signal training is next.
-- Branch: `codex/phase5e-streaming-student-map-runtime`.
-- Base commit before Phase 5E edits: `a1fafa2`.
-- Implementation commit: `a72f7f8`.
-- Latest implementation: `atlas3r runtime stream-student-map`, unique
-  chronological clip-cache stream builder, padded temporal windows,
-  Phase 5D checkpoint-to-`DepthObservation` conversion, oracle and diagnostic
-  student-relative pose modes, CPU TSDF fusion, TSDF sidecars, ASCII PLY point
-  cloud export, map preview HTML, runtime events, quality reports, and latency
-  reports.
-- Public commands now include `atlas3r runtime stream-student-map`.
+- Current phase: Phase 5F real Depth Pro pseudo-label generation and
+  measured+pseudo teacher-signal training completed as a diagnostic vertical
+  slice; Phase 5G pose-teacher work is next.
+- Branch: `codex/phase5f-real-depthpro-mixed-training-runtime`.
+- Base commit before Phase 5F edits: `499deb3`.
+- Latest implementation: hardened real `atlas3r teachers run-depth-pro` with
+  `--device`, selected-device model/input movement, installed Apple Depth Pro
+  focal-length tensor compatibility, prediction resizing, unique-frame
+  prediction reuse, and run-count metadata; fixed mixed teacher-signal batches
+  where only some caches contain pointmaps.
+- Public commands still include `atlas3r teachers run-depth-pro`,
+  `atlas3r train teacher-signals-temporal`, and
+  `atlas3r runtime stream-student-map`.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed with 142 files unchanged.
-- `python -m ruff format --check src tests`: passed with 142 files formatted.
+- `python -m ruff format src tests`: passed with 145 files unchanged.
+- `python -m ruff format --check src tests`: passed with 145 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 105 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: ran 186 tests and
-  passed. A pre-existing optional Torch/einops import warning appeared.
+- `python -m mypy src`: passed with no issues in 108 source files.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed 189 tests. A
+  pre-existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
-- `where.exe make`: no `make` found in this Windows shell.
+- `where.exe make`: no `make` found in this Windows shell, so `make test`,
+  `make lint`, and `make typecheck` were not run.
+- CLI help passed for `teachers run-depth-pro`, `train teacher-signals-temporal`,
+  and `runtime stream-student-map`.
 
 ## Real-Data Evidence
 
-- Required local Phase 5D/TUM artifacts existed:
-  `runs/phase5d_teacher_temporal_v1_tum/checkpoint_best.pt`,
-  `data/tum_rgbd/freiburg1_xyz_clip_cache_val`, and
-  `data/tum_rgbd/freiburg1_xyz_measured_teacher_val`.
-- CUDA was available with an NVIDIA GeForce RTX 4090.
-- Required run completed:
-  `runs/phase5e_stream_student_map_val`, max 60 unique frames, window 5, pose
-  mode `both`, voxel size `0.05` m.
-- Oracle diagnostics: RMSE `0.090826432` m, MAE `0.050450069` m,
-  AbsRel `0.046490420`, `8622` TSDF surface points, observed coverage `0.08431`.
-- Student-relative diagnostics: same depth metrics, `8732` TSDF surface points,
-  observed coverage `0.08583`; pose remains diagnostic only.
-- All Phase 5E reports set diagnostic/realtime/mapping/accuracy/performance
-  truth flags to avoid claims.
+- Required local artifacts existed: TUM train/val clip caches, measured
+  train/val teacher caches, and
+  `runs/phase5d_teacher_temporal_v1_tum/checkpoint_best.pt`.
+- Real `depth_pro` was importable from external local checkout
+  `C:\Users\Asav\source\repos\slam\external\ml-depth-pro`; checkpoint used was
+  that checkout's external `checkpoints/depth_pro.pt`.
+- Depth Pro validation cache: 56 clips, 280 frame slots, 60 unique predictions,
+  220 duplicate reuses, 0 resizes; inspection RMSE `0.167579472` m, MAE
+  `0.122303924` m, AbsRel `0.102098948`, valid overlap `74.452976%`,
+  confidence mean `0.5`.
+- Depth Pro train cache: 256 clips, 1,280 frame slots, 264 unique predictions,
+  1,016 duplicate reuses, 0 resizes.
+- Mixed training completed 20,000 steps with best validation RMSE
+  `0.132907202` m, MAE `0.092814473` m, AbsRel `0.087075680` over measured plus
+  Depth Pro pseudo validation records.
+- Student export inspection over measured validation: RMSE `0.091704673` m,
+  MAE `0.053628419` m, AbsRel `0.049205437`.
+- Phase 5F streaming runtime, oracle pose: RMSE `0.094295488` m, MAE
+  `0.054796543` m, AbsRel `0.050120890`, `8,892` surface points, coverage
+  `0.094852`.
+- Phase 5F streaming runtime, student-relative pose: same depth metrics,
+  `9,329` surface points, coverage `0.097579`; pose remains diagnostic only.
+- Compared with Phase 5E measured-only runtime RMSE `0.090826432` m, Phase 5F
+  slightly regressed measured depth quality but produced denser diagnostic maps.
+- Full evidence: `docs/status/phase5f_real_depthpro_mixed_training_report.md`.
 
 ## Compact Phase Ledger
 
@@ -60,6 +75,8 @@ Detailed history belongs in git commits, tests, and reports.
 - Phase 5D: teacher-signal temporal-v1 training, weighted losses, checkpoint
   export, and real measured TUM run/eval.
 - Phase 5E: streaming checkpoint-to-map runtime diagnostic over real TUM val.
+- Phase 5F: real Depth Pro pseudo-label cache generation, mixed measured+pseudo
+  training, student export, and runtime comparison.
 
 ## Current Known Gaps
 
@@ -67,4 +84,6 @@ Detailed history belongs in git commits, tests, and reports.
   mapping, triangle mesh extraction, or benchmark accuracy report exists.
 - `student-relative` pose is not mapping-ready; it keeps source rotation and
   applies diagnostic predicted translation only.
-- No real Depth Pro or VGGT pseudo-labels were generated in Phase 5E.
+- Phase 5F showed real Depth Pro integration is available, but single-frame
+  depth pseudo-label mixing at weight `0.15` did not improve measured validation
+  or runtime depth diagnostics over Phase 5E.

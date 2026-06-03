@@ -199,7 +199,19 @@ def _pointmap_loss(pred_depth: Any, target: Mapping[str, Any], weights: Any) -> 
         raise ValueError("pointmap_camera_m: must have shape B,T,3,H,W")
     predicted_pointmap = _unproject_depth_camera(pred_depth, intrinsics)
     point_error = _F.smooth_l1_loss(predicted_pointmap, target_pointmap, reduction="none")
-    point_weights = weights.expand_as(pred_depth).expand_as(point_error)
+    point_weights = weights
+    if "pointmap_camera_valid" in target:
+        pointmap_valid = _required_tensor(target, "pointmap_camera_valid").to(dtype=_TORCH.bool)
+        while pointmap_valid.ndim < point_weights.ndim:
+            pointmap_valid = pointmap_valid.unsqueeze(-1)
+        point_weights = _TORCH.where(
+            pointmap_valid,
+            point_weights,
+            _TORCH.zeros_like(point_weights),
+        )
+        if not bool((point_weights > 0.0).any()):
+            return pred_depth.new_tensor(0.0)
+    point_weights = point_weights.expand_as(pred_depth).expand_as(point_error)
     return _weighted_mean(point_error, point_weights)
 
 

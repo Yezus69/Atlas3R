@@ -139,6 +139,13 @@ class TeacherSignalTemporalDataset:
             target["pointmap_camera_m"] = torch.from_numpy(
                 np.transpose(pointmap, (0, 3, 1, 2)).copy()
             )
+            target["pointmap_camera_valid"] = torch.tensor(True)
+        else:
+            target["pointmap_camera_m"] = torch.zeros(
+                (self.clip_length, 3, self.height, self.width),
+                dtype=torch.float32,
+            )
+            target["pointmap_camera_valid"] = torch.tensor(False)
         return {
             "images_rgb": torch.from_numpy(images_chw.astype(np.float32, copy=False)),
             "intrinsics": torch.from_numpy(intrinsics.copy()),

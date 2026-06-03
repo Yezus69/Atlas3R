@@ -89,6 +89,72 @@ class ExternalTeacherTest(unittest.TestCase):
         self.assertEqual(float(payload["confidence"][0, 0, 0]), 0.75)
         self.assertGreater(int(map_result["map_summary"]["surface_point_count"]), 0)  # type: ignore[index]
 
+    def test_depth_pro_reuses_unique_frame_predictions_for_overlapping_clips(self) -> None:
+        calls: list[tuple[np.ndarray, np.ndarray]] = []
+
+        def predictor(rgb_u8: np.ndarray, K: np.ndarray) -> DepthProFramePrediction:
+            calls.append((rgb_u8.copy(), K.copy()))
+            depth_value = float(len(calls))
+            height, width = rgb_u8.shape[:2]
+            return DepthProFramePrediction(
+                depth_m=np.full((height, width), depth_value, dtype=np.float32),
+                confidence=np.full((height, width), 0.8, dtype=np.float32),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache", clip_count=2, overlap=True)
+            output = root / "depth_pro_teacher"
+            result = DepthProExternalTeacherRunner(predictor).run(
+                ExternalTeacherRunConfig(
+                    clip_cache=clip_manifest,
+                    output=output,
+                    max_clips=2,
+                    run_inspect=False,
+                )
+            )
+            first_payload = read_teacher_signal_payload(output, signal_index=0)
+            second_payload = read_teacher_signal_payload(output, signal_index=1)
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(result["clip_count"], 2)
+        self.assertEqual(result["clip_frame_slot_count"], 4)
+        self.assertEqual(result["unique_frame_prediction_count"], 3)
+        self.assertEqual(result["duplicate_prediction_reuse_count"], 1)
+        self.assertEqual(float(first_payload["depth_m"][1, 0, 0]), 2.0)
+        self.assertEqual(float(second_payload["depth_m"][0, 0, 0]), 2.0)
+
+    def test_depth_pro_resizes_prediction_arrays_to_clip_resolution(self) -> None:
+        def low_res_predictor(_rgb_u8: np.ndarray, _K: np.ndarray) -> DepthProFramePrediction:
+            return DepthProFramePrediction(
+                depth_m=np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
+                confidence=np.full((2, 2), 0.8, dtype=np.float32),
+                depth_sigma_m=np.full((2, 2), 0.2, dtype=np.float32),
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            output = root / "depth_pro_teacher"
+            result = DepthProExternalTeacherRunner(low_res_predictor).run(
+                ExternalTeacherRunConfig(
+                    clip_cache=clip_manifest,
+                    output=output,
+                    max_clips=1,
+                    run_inspect=False,
+                )
+            )
+            manifest = load_teacher_signal_manifest(output, validate_payloads=True)
+            payload = read_teacher_signal_payload(output)
+
+        source_metadata = manifest["source_metadata"]  # type: ignore[index]
+        resize_events = source_metadata["prediction_resize_events"]  # type: ignore[index]
+        self.assertEqual(tuple(payload["depth_m"].shape), (2, 4, 4))
+        self.assertEqual(tuple(payload["confidence"].shape), (2, 4, 4))
+        self.assertGreater(result["resized_prediction_array_count"], 0)
+        self.assertIn("depth_m", {event["array"] for event in resize_events})  # type: ignore[index]
+        self.assertIn("confidence", {event["array"] for event in resize_events})  # type: ignore[index]
+
     def test_vggt_local_ingest_writes_valid_cache_and_map_smoke(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -152,6 +218,8 @@ class ExternalTeacherTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
+                if command[1] == "run-depth-pro":
+                    self.assertIn("--device", result.stdout)
 
 
 def _fake_depth_pro_predictor(
