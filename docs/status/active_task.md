@@ -1,41 +1,44 @@
 # Active Task
 
-Goal: Phase 5C external teacher runner bootstrap.
+Goal: Phase 5D teacher-weighted temporal student training and mapping loop.
 
-Branch: `codex/phase5c-external-teacher-runner-bootstrap`
+Branch: `codex/phase5d-teacher-weighted-temporal-mapping-training`
+
+Implementation commit: `670aac8`
 
 Checklist:
 
-- [x] Read Phase 5C goal, relevant contract/status docs, teacher-signal code,
-  clip-cache IO, TUM data helpers, and adapter stubs.
-- [x] Create branch from committed Phase 5B.1 cleanup branch.
-- [x] Add dependency-safe external teacher runner contracts under
-  `atlas3r.teachers.external`.
-- [x] Add Depth Pro runner path with dependency-safe status, explicit external
-  checkpoint configuration, fake-test execution, validated signal writing, and
-  post-run inspect support.
-- [x] Add VGGT local-output ingestion scaffold for validated local arrays.
-- [x] Wire `atlas3r teachers run-depth-pro` and
-  `atlas3r teachers ingest-vggt-local`.
-- [x] Update external teacher runner API contract docs.
-- [x] Add focused tests for optional dependency safety, unavailable status,
-  fake runner cache writing, VGGT local ingest, inspect/map smoke, and CLI help.
-- [x] Run required format/lint/type/unit/diff checks.
-- [x] Record verification, known gaps, Phase 5D next task, and commit
-  code/docs/tests only.
+- [x] Read Phase 5D goal, required docs/status files, teacher-signal validators,
+  cache writer, map diagnostics, and existing temporal-v0 source.
+- [x] Create branch from `codex/phase5c-external-teacher-runner-bootstrap`.
+- [x] Add lazy teacher-signal temporal dataset aligned to source clip caches.
+- [x] Add confidence/uncertainty-weighted temporal losses and diagnostics.
+- [x] Add one small `TemporalMetricNetV1` model with per-frame
+  depth/sigma/confidence and relative translation outputs.
+- [x] Add `atlas3r train teacher-signals-temporal`.
+- [x] Add `atlas3r teachers run-student-temporal`.
+- [x] Add focused unit/smoke tests for dataset, losses, model shapes, CLI help,
+  CPU 1-step train, export, inspect, and map diagnostics.
+- [x] Run required format, lint, typecheck, unit, and diff checks.
+- [x] Attempt real TUM measured teacher training/eval on local CUDA data.
+- [x] Write Phase 5D report and update progress/decisions/next-task handoff.
+- [x] Commit code, tests, and docs only; generated runs/caches remain ignored.
 
 Verification:
 
-- `python -m ruff format src tests`: passed, 128 files unchanged.
-- `python -m ruff format --check src tests`: passed, 128 files formatted.
+- `python -m ruff format src tests`: passed, 134 files unchanged.
+- `python -m ruff format --check src tests`: passed, 134 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed, 93 source files checked.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed, 175 tests;
+- `python -m mypy src`: passed, 98 source files checked.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed, 181 tests;
   existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git emitted CRLF conversion warnings.
 - `where.exe make`: no `make` found in this Windows shell.
 
-Real-run note: local TUM validation clip cache exists and `depth_pro` imports
-from an external repo, but no external checkpoint URI is configured through
-`--checkpoint-uri` or `ATLAS3R_DEPTH_PRO_CHECKPOINT`; the real Depth Pro run was
-not attempted to avoid implicit weight loading.
+Real run:
+
+- Measured-only CUDA run completed 20,000 steps on local TUM teacher caches.
+- Student cache export, inspect-signals, and map-signals completed on 56 val
+  clips.
+- External Depth Pro was importable, but no explicit checkpoint URI/env var was
+  configured; no external pseudo-label run was faked.
