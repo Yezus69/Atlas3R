@@ -88,6 +88,51 @@ def register_train_parser(subparsers: Any) -> None:
     tum_train_parser.add_argument("--hidden-channels", type=int, default=32)
     tum_train_parser.add_argument("--min-valid-depth-pixels", type=int, default=1)
     tum_train_parser.set_defaults(handler=_run_train_tum_rgbd_depth_pose)
+    temporal_parser = train_subparsers.add_parser(
+        "tum-rgbd-temporal",
+        help="Train the tiny temporal debug model on forged TUM RGB-D clips.",
+    )
+    temporal_parser.add_argument(
+        "--clip-cache",
+        type=Path,
+        required=True,
+        help="Input clip-cache manifest JSON or cache directory.",
+    )
+    temporal_parser.add_argument(
+        "--val-clip-cache",
+        type=Path,
+        default=None,
+        help="Optional validation clip-cache manifest JSON or cache directory.",
+    )
+    temporal_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output run folder for metrics, checkpoints, and preview artifacts.",
+    )
+    temporal_parser.add_argument("--steps", type=int, default=12000)
+    temporal_parser.add_argument("--batch-size", type=int, default=8)
+    temporal_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="cuda",
+    )
+    temporal_parser.add_argument("--num-workers", type=int, default=4)
+    temporal_parser.add_argument("--learning-rate", type=float, default=0.0003)
+    temporal_parser.add_argument("--log-every", type=int, default=50)
+    temporal_parser.add_argument("--val-every", type=int, default=500)
+    temporal_parser.add_argument("--checkpoint-every", type=int, default=1000)
+    temporal_parser.add_argument("--preview-every", type=int, default=1000)
+    temporal_parser.add_argument("--seed", type=int, default=0)
+    temporal_parser.add_argument("--amp", action="store_true")
+    temporal_parser.add_argument("--max-runtime-minutes", type=float, default=330.0)
+    temporal_parser.add_argument("--hidden-channels", type=int, default=32)
+    temporal_parser.add_argument(
+        "--depth-loss",
+        choices=("metric_l1", "log_l1"),
+        default="metric_l1",
+    )
+    temporal_parser.set_defaults(handler=_run_train_tum_rgbd_temporal)
 
 
 def _run_train_synthetic_overfit(args: argparse.Namespace) -> int:
@@ -149,6 +194,42 @@ def _run_train_tum_rgbd_depth_pose(args: argparse.Namespace) -> int:
             )
         )
     except (PillowDependencyError, TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_train_tum_rgbd_temporal(args: argparse.Namespace) -> int:
+    from atlas3r.training.torch_runtime import TorchDependencyError
+    from atlas3r.training.tum_rgbd_temporal_train import (
+        TumRgbdTemporalTrainConfig,
+        run_tum_rgbd_temporal_training,
+    )
+
+    try:
+        result = run_tum_rgbd_temporal_training(
+            TumRgbdTemporalTrainConfig(
+                clip_cache=args.clip_cache,
+                val_clip_cache=args.val_clip_cache,
+                output=args.output,
+                steps=args.steps,
+                batch_size=args.batch_size,
+                device=args.device,
+                num_workers=args.num_workers,
+                learning_rate=args.learning_rate,
+                log_every=args.log_every,
+                val_every=args.val_every,
+                checkpoint_every=args.checkpoint_every,
+                preview_every=args.preview_every,
+                seed=args.seed,
+                amp=args.amp,
+                max_runtime_minutes=args.max_runtime_minutes,
+                hidden_channels=args.hidden_channels,
+                depth_loss=args.depth_loss,
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))

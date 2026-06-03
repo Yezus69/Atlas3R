@@ -32,6 +32,8 @@ tests, and the contract docs.
 | D-0025 | TUM eval | `atlas3r eval tum-rgbd-checkpoint` is a diagnostic real-RGBD checkpoint loop with depth, camera-center, preview, trajectory, and optional CPU TSDF point-set metrics; it is not an accuracy or performance report. | Yes |
 | D-0026 | TUM v2 | Phase 4D adds only `TinyMetricDepthNetV2`, using RGB plus intrinsics-derived ray channels, and keeps v1 checkpoint loading intact. | Yes |
 | D-0027 | TUM split | TUM manifests preserve `every10` splitting and add `block` tail validation to reduce temporal-neighbor leakage in new real-data runs. | Yes |
+| D-0028 | Clip forge | Phase 5A canonical multi-view clip caches use `atlas3r_clip_cache_manifest.json` plus relative `clips/clip_<id>.npz` payloads with TUM RGB-D sensor depth/pose truth flags. | Yes |
+| D-0029 | Temporal MVP | `TinyTemporalMetricNetV0` trains center-frame depth/sigma/confidence and relative translation only; rotation, mapping readiness, realtime, accuracy, and performance claims stay false. | Yes |
 
 Active cross-cutting constraints:
 

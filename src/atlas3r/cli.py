@@ -11,6 +11,7 @@ from typing import cast
 from atlas3r import __version__
 from atlas3r.cli_datasets import register_datasets_parser
 from atlas3r.cli_eval import register_eval_parser
+from atlas3r.cli_forge import register_forge_parser
 from atlas3r.cli_train import register_train_parser
 from atlas3r.data.synthetic_cube_room import write_synthetic_cube_room_session
 from atlas3r.io.session import validate_session
@@ -410,6 +411,7 @@ def build_parser() -> argparse.ArgumentParser:
     adapters_run_parser.set_defaults(handler=_run_adapters_run)
     register_datasets_parser(subparsers)
     register_eval_parser(subparsers)
+    register_forge_parser(subparsers)
     register_train_parser(subparsers)
     subparsers.add_parser("profile", help="Show the skeleton profiling command surface.")
     return parser

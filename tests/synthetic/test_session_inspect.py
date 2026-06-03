@@ -171,11 +171,11 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_4d(self) -> None:
+    def test_status_handoff_points_to_phase_5b(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Codex Prompt - Atlas3R Phase 4D", next_task)
-        self.assertIn("Run Real Eval, V2 Training, And Report", next_task)
+        self.assertIn("Phase 5B", next_task)
+        self.assertIn("External Teacher Forge Adapters", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

@@ -1,24 +1,25 @@
-# Codex Prompt - Atlas3R Phase 5A: Real Multi-View Clip Forge + Temporal TUM
+# Codex Prompt - Atlas3R Phase 5B: External Teacher Forge Adapters
 
-Start on a non-main branch after Phase 4D is committed. Build the reusable TUM
-RGB-D multi-view clip cache and tiny temporal geometry training path. Do not add
-external model repositories. Keep generated `data/`, `runs/`, checkpoints, NPZs,
-previews, and cache payloads ignored.
+Phase 5B - External Teacher Forge Adapters: dependency-isolated Depth
+Pro/VGGT/LingBot-Map output ingestion into the same clip-cache/teacher-signal
+format. Start with output-ingestion contracts and one local-folder adapter; do
+not vendor model repos or weights.
 
-Required endpoints:
+Required boundaries:
 
-- `atlas3r forge tum-rgbd-clips`
-- `atlas3r train tum-rgbd-temporal`
+- Do not work on `main`.
+- Do not vendor external model repos or weights.
+- Do not commit generated data, checkpoints, NPZ files, previews, or runs.
+- Keep optional model dependencies isolated behind adapters or local-folder
+  ingestion paths with clear dependency errors.
+- Preserve truth flags: no benchmark accuracy, millimeter, realtime, or mapping
+  readiness claims without a named evaluation report.
 
-Required code:
+Starting context:
 
-- `src/atlas3r/forge/clip_cache.py`
-- `src/atlas3r/forge/tum_rgbd_clips.py`
-- `src/atlas3r/training/tum_clip_dataset.py`
-- `src/atlas3r/training/tiny_temporal_geometry_model.py`
-- `src/atlas3r/training/temporal_losses.py`
-
-Verify with ruff format/check, mypy, unittest, and `git diff --check`. If TUM
-data and CUDA are available, forge train/val clip caches and run temporal-v0.
-Write `docs/status/phase5a_real_multiview_forge_temporal_report.md`, update this
-file to Phase 5B, and commit code/docs only.
+- Reload `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`, and
+  `docs/status/*`.
+- Use the Phase 5A clip cache and temporal training contracts as the shared
+  ingestion target.
+- Begin with contracts/tests for output ingestion before adding any external
+  model runner.
