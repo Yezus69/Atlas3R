@@ -153,12 +153,10 @@ sigma, confidence in `[0, 1]`, optional HxW bool/probability `static_mask`,
 optional HxW integer `object_id`, optional HxWx3 uint8 `rgb_u8`, and non-empty
 `source`.
 
-Related public helpers: `atlas3r.data.synthetic_observations.depth_observation_from_synthetic_frame(frame)`,
-`atlas3r.mapping.tsdf_grid.compute_tsdf_grid_shape(...)`, and
-`atlas3r.mapping.tsdf_grid.voxel_centers_world(...)`.
+Related helpers: `depth_observation_from_synthetic_frame(frame)`,
+`compute_tsdf_grid_shape(...)`, and `voxel_centers_world(...)`.
 
 ## Teacher Adapter And Cache Contracts
-
 Third-party models stay external and are isolated behind dependency-safe
 adapters under `atlas3r.models.adapters`.
 
@@ -180,19 +178,11 @@ class TeacherPrediction:
     metadata: Mapping[str, Any]
 ```
 
-`AdapterCapabilities` fields are `predicts_camera`, `predicts_pose`,
-`predicts_depth`, `predicts_normals`, `predicts_points`,
-`predicts_dense_matches`, `predicts_objects`, `supports_batch`,
-`supports_streaming`, and `notes`.
-
-`AdapterStatus` fields are `name`, `display_name`, `availability`
-(`available|unavailable|stub-only`), `capabilities`, `install_hint`, and
-`reason`.
-
+`AdapterCapabilities` records predicted modalities plus batch/streaming support.
+`AdapterStatus` records name/display name, availability
+(`available|unavailable|stub-only`), capabilities, install hint, and reason.
 Known stubs include `VGGTAdapter` and `DepthProAdapter`; missing optional
-dependencies raise `AdapterDependencyError` at construction or prediction time.
-`fixture-cube-room` is an available synthetic-only adapter for plumbing tests
-and cache writing.
+dependencies raise `AdapterDependencyError`.
 
 `atlas3r.data.teacher_frame_batch_from_frame_packets(frames, ...)` and
 `teacher_frame_batch_from_rgb_source(source, ...)` build ordered `FrameBatch`
@@ -200,26 +190,36 @@ records from existing `FramePacket` / `RGBFrameSource` inputs. They preserve
 input order, reject empty/non-packet/duplicate-frame-id inputs, keep compact
 deterministic metadata, and do not run inference or touch mapper/runtime/TSDF
 paths.
-Teacher cache layout: `metadata.json`, `frame_summaries.jsonl`, and optional
-`arrays/` per-frame `.npz` payloads.
+Teacher prediction cache layout remains `metadata.json`,
+`frame_summaries.jsonl`, and optional `arrays/frame_<frame_id:06d>.npz` payloads
+enabled by `--store-arrays`. Metadata records
+`format_name=atlas3r_teacher_prediction_cache`, `format_version=1`, adapter
+status/capabilities, coordinate frame, frame IDs, scale sources, summaries path,
+and array storage state.
 
-`metadata.json` records `format_name=atlas3r_teacher_prediction_cache`,
-`format_version=1`, adapter status/capabilities, prediction metadata,
-coordinate frame/convention, frame count/IDs, scale sources, summary path, and
-array storage state. `frame_summaries.jsonl` is sorted by `frame_id` and records
-frame/timestamp, coordinate frame, scale source, camera fields, pose fields,
-confidence summaries, uncertainty summaries, tensor shape/dtype summaries, dense
-match summary, and `arrays_path`.
+Teacher-signal caches use
+`atlas3r_teacher_signal_manifest.json` plus `signals/clip_<id>.npz`. Manifest
+fields include `format_name=atlas3r_teacher_signal_cache`, `format_version=1`,
+source clip-cache manifest path, dataset/sequence, split, clip length, width,
+height, teacher name/version/source type, `signal_count`, relative payload
+paths, per-signal source clip IDs, frame IDs, timestamps, and truth boundary
+flags: `diagnostic_only=true`, `accuracy_report=false`,
+`performance_report=false`, `teacher_source`, `measured_geometry`, and
+`pseudo_label`.
 
-Optional payloads are written only with `--store-arrays` or `store_arrays=True`
-as `arrays/frame_<frame_id:06d>.npz`. Required keys are `depth_m`,
-`depth_sigma_m`, `normal_camera`, `point_world`, `confidence`, and
-`static_mask`; optional keys are `object_embeddings` and `object_mask_logits`.
-Payload validation checks shapes, dtypes, finite values, probability ranges, and
-non-negative depth/uncertainty.
+Teacher-signal payload required arrays are `depth_m`, `depth_sigma_m`,
+`confidence`, `valid_mask`, `K`, `T_world_camera`, `frame_ids`, and
+`timestamps_s` with shapes `T,H,W`, `T,3,3`, `T,4,4`, `T`, and `T`. Optional
+arrays are `pointmap_camera_m`, `pointmap_world_m`, `normal_camera`,
+`object_mask_ids`, `object_confidence`, and `dynamic_probability`. Validation
+checks finite arrays, non-negative depth/sigma, positive sigma on valid pixels,
+probabilities in `[0,1]`, valid intrinsics/transforms, safe relative paths, and
+matching source clip metadata.
 
-Public commands: `atlas3r adapters list`; `atlas3r adapters run --adapter <name>
---input <session.atlas3r> --output <cache_dir> [--store-arrays]`; `atlas3r inspect teacher-cache --input <cache_dir>`.
+Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`;
+`atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`;
+`atlas3r teachers ingest-local`; `atlas3r teachers inspect-signals`; and
+`atlas3r teachers map-signals`.
 
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 

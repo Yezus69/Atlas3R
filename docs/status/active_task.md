@@ -1,28 +1,41 @@
 # Active task
 
-Goal: Phase 5A real multi-view TUM RGB-D clip forge plus tiny temporal geometry
-training path.
+Goal: Phase 5B teacher-signal forge plus mapping bridge.
+
+Preflight audit:
+
+- `git status --short`: clean.
+- `git branch --show-current`: `codex/phase5b-teacher-signal-forge-mapping-bridge`.
+- `git diff --stat codex/phase4d-tum-eval-v2-training...HEAD`: Phase 5A diff
+  spans clip-cache forge, temporal training, tests, and status docs.
+- Source line audit over `src/**/*.py` found existing files above 450 lines:
+  `api/contracts.py` 453, `data/synthetic_cube_room.py` 553,
+  `data/tum_rgbd.py` 522, mapping sidecar/inspection helpers 459-498,
+  `runtime/_fixture_inspection_helpers.py` 462,
+  `training/checkpoint_inference.py` 469, and
+  `training/tum_rgbd_temporal_train.py` 470.
 
 Checklist:
 
-- [x] Finish pending Phase 4D report and branch from a non-main Phase 4D
-  closeout commit.
-- [x] Read the Phase 5A goal, compact status docs, API contracts, and relevant
-  TUM/CLI/training/test modules.
-- [x] Add `atlas3r.forge` with canonical multi-view clip-cache manifest,
-  payload writer/reader validation, pointmap, and normal helpers.
-- [x] Add `atlas3r forge tum-rgbd-clips` with deterministic JSON output.
-- [x] Add lazy Torch clip-cache dataset with center-frame targets and
-  `relative_T_center_camera`.
-- [x] Add `TinyTemporalMetricNetV0` plus masked temporal losses and diagnostic
-  metrics.
-- [x] Add `atlas3r train tum-rgbd-temporal` with run artifacts, checkpoints,
-  preview, summary, and truth-boundary metadata.
-- [x] Add focused unit/CLI/optional Torch smoke tests and update API/status docs.
-- [x] Forge real train/val TUM clip caches and complete the temporal-v0 CUDA
-  run without committing generated artifacts.
-- [x] Write the Phase 5A report and replace `next_task.md` with Phase 5B.
+- [x] Read Phase 5B goal, compact status docs, API contracts, and Phase 5A
+  clip-cache/temporal context.
+- [x] Create/use non-main branch
+  `codex/phase5b-teacher-signal-forge-mapping-bridge`.
+- [x] Add `atlas3r.teachers` signal-cache contracts and validation.
+- [x] Add measured TUM clip-cache forge and local-folder ingest commands.
+- [x] Add teacher-vs-clip inspection diagnostics.
+- [x] Add teacher-signal to CPU TSDF mapping diagnostic.
+- [x] Add focused fixture tests and CLI help coverage.
+- [x] Run required format/lint/type/unit/diff checks plus make checks if
+  available.
+- [x] Attempt real Phase 5A clip-cache teacher forge/inspect/map runs if local
+  caches exist, keeping outputs ignored.
+- [x] Update API contracts, progress, Phase 5B report, and Phase 5C next task.
 
-Result: Phase 5A implementation, diagnostic real-data run, verification, and
-Phase 5B handoff docs are complete on
-`codex/phase5a-real-multiview-forge-temporal`. Code/docs-only commit is pending.
+Scope note: the over-450-line audit is pre-existing repository shape, not
+generated artifacts. Phase 5B will avoid adding monolithic files and will split
+new implementation files before they approach the threshold.
+
+Result: Phase 5B code, tests, real-data diagnostic attempts, compact report,
+and Phase 5C handoff are complete. `make` targets were unavailable because
+`make` is not installed in this Windows shell.
