@@ -5,15 +5,16 @@ Detailed history belongs in git commits, tests, and older revisions.
 
 ## Current State
 
-- Current phase: Phase 5B complete; Phase 5C is next.
-- Latest implementation: `atlas3r.teachers` teacher-signal cache contracts,
-  measured TUM forge, local-folder ingest, teacher-vs-clip inspection, and
-  teacher-signal CPU TSDF mapping diagnostics.
+- Current phase: Phase 5B.1 cleanup complete; Phase 5C is next.
+- Latest implementation: `atlas3r.teachers` teacher-signal cache hardening,
+  measured TUM forge, explicit raw local ingest, JSON-only inspection, and
+  deduplicated teacher-signal CPU TSDF mapping diagnostics.
 - Public teacher commands: `atlas3r teachers forge-measured-tum`,
   `ingest-local`, `inspect-signals`, and `map-signals`.
 - Teacher-signal caches carry confidence, uncertainty, source clip metadata,
-  and measured/pseudo-label truth flags. Generated caches and runs remain
-  ignored under `data/` and `runs/`.
+  and measured/pseudo-label truth flags. Raw NPZ ingest maps filenames to source
+  clip IDs. `map-signals` deduplicates overlapping frames by `frame_id`.
+  Generated caches and runs remain ignored under `data/` and `runs/`.
 
 ## Latest Verified Test State
 
@@ -21,7 +22,7 @@ Detailed history belongs in git commits, tests, and older revisions.
 - `python -m ruff format --check src tests`: passed with 122 files formatted.
 - `python -m ruff check src tests`: passed.
 - `python -m mypy src`: passed with no issues in 88 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: ran 164 tests and
+- `python -m unittest discover -s tests -p "test_*.py"`: ran 170 tests and
   passed. A pre-existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
 - `make test`, `make lint`, and `make typecheck`: not run because `make` is not
@@ -57,6 +58,10 @@ Detailed history belongs in git commits, tests, and older revisions.
   center-frame depth and relative-translation training path.
 - Phase 5B: stable teacher-signal cache plus measured forge, local ingest,
   source-clip inspection, and CPU TSDF map diagnostic bridge.
+- Phase 5B.1: removed teacher-signal HTML/SVG previews, fixed raw NPZ filename
+  mapping and cache-local source manifest resolution, rejected invalid manifest
+  entries, deduplicated overlapping `map-signals` frames, and kept teacher
+  source under budget at 1,359 lines with no file over 400.
 
 ## Current Known Gaps
 

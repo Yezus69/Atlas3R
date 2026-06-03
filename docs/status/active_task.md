@@ -1,41 +1,53 @@
-# Active task
+# Active Task
 
-Goal: Phase 5B teacher-signal forge plus mapping bridge.
+Goal: Phase 5B.1 repo slimming and teacher-signal hardening.
 
-Preflight audit:
+Branch: `codex/phase5b1-repo-slim-teacher-hardening`
 
-- `git status --short`: clean.
-- `git branch --show-current`: `codex/phase5b-teacher-signal-forge-mapping-bridge`.
-- `git diff --stat codex/phase4d-tum-eval-v2-training...HEAD`: Phase 5A diff
-  spans clip-cache forge, temporal training, tests, and status docs.
-- Source line audit over `src/**/*.py` found existing files above 450 lines:
-  `api/contracts.py` 453, `data/synthetic_cube_room.py` 553,
-  `data/tum_rgbd.py` 522, mapping sidecar/inspection helpers 459-498,
-  `runtime/_fixture_inspection_helpers.py` 462,
-  `training/checkpoint_inference.py` 469, and
-  `training/tum_rgbd_temporal_train.py` 470.
+Source inventory before cleanup:
+
+- `src/atlas3r/teachers/*.py`: 1,365 total lines.
+- Teacher files over 400 lines: none.
+- `tests/unit/test_teacher_signals.py`: 271 lines.
+
+Source inventory after cleanup:
+
+- `src/atlas3r/teachers/*.py`: 1,359 total lines, net -6.
+- Teacher files over 400 lines: none.
+- `tests/unit/test_teacher_signals.py`: 436 lines, net +165.
 
 Checklist:
 
-- [x] Read Phase 5B goal, compact status docs, API contracts, and Phase 5A
-  clip-cache/temporal context.
-- [x] Create/use non-main branch
-  `codex/phase5b-teacher-signal-forge-mapping-bridge`.
-- [x] Add `atlas3r.teachers` signal-cache contracts and validation.
-- [x] Add measured TUM clip-cache forge and local-folder ingest commands.
-- [x] Add teacher-vs-clip inspection diagnostics.
-- [x] Add teacher-signal to CPU TSDF mapping diagnostic.
-- [x] Add focused fixture tests and CLI help coverage.
-- [x] Run required format/lint/type/unit/diff checks plus make checks if
+- [x] Read requested Phase 5B.1 goal, compact docs/status files, teacher signal
+  source files, CLI registration, and focused tests.
+- [x] Create non-main cleanup branch from Phase 5B branch.
+- [x] Remove teacher-signal inspection HTML/SVG preview outputs while keeping
+  JSON and JSONL diagnostics.
+- [x] Deduplicate `map-signals` observations by `frame_id`, reject conflicting
+  duplicate payloads, and report before/after counts.
+- [x] Make raw local NPZ ingest map `clip_<source_clip_id:06d>.npz` explicitly
+  and reject bad, duplicate, out-of-range, or mismatched payloads.
+- [x] Resolve relative source clip-cache manifest paths from the teacher cache
+  root and reject invalid manifest entries with field paths.
+- [x] Update focused tests and concise API/status docs; keep Phase 5C as the
+  next handoff without executing it.
+- [x] Run required format/lint/type/unit/diff checks plus `make` targets if
   available.
-- [x] Attempt real Phase 5A clip-cache teacher forge/inspect/map runs if local
-  caches exist, keeping outputs ignored.
-- [x] Update API contracts, progress, Phase 5B report, and Phase 5C next task.
+- [x] Record after-inventory, verification results, and commit
+  `Slim and harden teacher signal bridge`.
 
-Scope note: the over-450-line audit is pre-existing repository shape, not
-generated artifacts. Phase 5B will avoid adding monolithic files and will split
-new implementation files before they approach the threshold.
+Verification:
 
-Result: Phase 5B code, tests, real-data diagnostic attempts, compact report,
-and Phase 5C handoff are complete. `make` targets were unavailable because
-`make` is not installed in this Windows shell.
+- `python -m ruff format src tests`: passed, 122 files unchanged.
+- `python -m ruff format --check src tests`: passed.
+- `python -m ruff check src tests`: passed.
+- `python -m mypy src`: passed, 88 files checked.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed, 170 tests;
+  existing optional Torch/einops import warning appeared.
+- `git diff --check`: passed; Git emitted CRLF conversion warnings.
+- `make test`, `make lint`, `make typecheck`: not run; `make` is not installed
+  in this Windows shell.
+
+Scope guard: no external teacher runners, model downloads, datasets, training,
+new mapping algorithms, or new public feature surfaces beyond the cleanup
+contracts above.

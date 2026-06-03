@@ -34,10 +34,9 @@ from atlas3r.teachers._diagnostic_helpers import (
     within_percent,
     write_json,
     write_jsonl,
-    write_preview_html,
-    write_preview_svg,
 )
 from atlas3r.teachers._map_bridge_helpers import (
+    dedupe_observations_by_frame_id,
     map_metrics,
     map_summary,
     with_teacher_surface_metadata,
@@ -117,14 +116,10 @@ def inspect_teacher_signals(config: TeacherSignalInspectConfig) -> dict[str, obj
     )
     write_json(config.output / "summary.json", summary)
     write_jsonl(config.output / "per_clip_metrics.jsonl", metrics)
-    write_preview_html(config.output / "preview.html", summary, metrics)
-    write_preview_svg(config.output / "preview.svg", metrics)
     return {
         "format_name": "atlas3r_teacher_signal_inspection_result",
         "summary_path": str(config.output / "summary.json"),
         "per_clip_metrics_path": str(config.output / "per_clip_metrics.jsonl"),
-        "preview_html_path": str(config.output / "preview.html"),
-        "preview_svg_path": str(config.output / "preview.svg"),
         "summary": summary,
     }
 
@@ -139,11 +134,12 @@ def map_teacher_signals(config: TeacherSignalMapConfig) -> dict[str, object]:
     selected = signal_entries[: min(config.max_clips, len(signal_entries))]
     if not selected:
         raise ValueError(f"{teacher_manifest_path}: no teacher signals selected for mapping")
-    observations = _observations_from_signals(
+    observations_before_dedupe = _observations_from_signals(
         teacher_manifest_path=teacher_manifest_path,
         teacher_manifest=teacher_manifest,
         signal_entries=selected,
     )
+    observations, dedupe_summary = dedupe_observations_by_frame_id(observations_before_dedupe)
     truncation_distance_m = config.voxel_size_m * config.truncation_voxels
     grid_min, grid_max = grid_bounds_from_observations(
         observations,
@@ -170,6 +166,16 @@ def map_teacher_signals(config: TeacherSignalMapConfig) -> dict[str, object]:
         observations=observations,
         tsdf_dir=tsdf_dir,
         unique_source_frame_ids=unique_ints([obs.frame_id for obs in observations]),
+        observation_count_before_dedupe=cast(
+            int,
+            dedupe_summary["observation_count_before_dedupe"],
+        ),
+        observation_count_after_dedupe=cast(
+            int,
+            dedupe_summary["observation_count_after_dedupe"],
+        ),
+        duplicate_frame_count=cast(int, dedupe_summary["duplicate_frame_count"]),
+        dedupe_policy=str(dedupe_summary["dedupe_policy"]),
     )
     write_json(config.output / "map_summary.json", summary)
     return {
@@ -407,7 +413,12 @@ def _entries(manifest: dict[str, object], key: str) -> list[dict[str, object]]:
     value = manifest.get(key)
     if not isinstance(value, list):
         raise ValueError(f"manifest.{key}: must be a list")
-    return [cast(dict[str, object], item) for item in value if isinstance(item, dict)]
+    entries: list[dict[str, object]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"manifest.{key}[{index}]: must be a mapping")
+        entries.append(cast(dict[str, object], item))
+    return entries
 
 
 def _validate_inspect_config(config: TeacherSignalInspectConfig) -> None:
@@ -429,11 +440,3 @@ def _int_field(mapping: dict[str, object], key: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{key}: must be an integer")
     return value
-
-
-__all__ = [
-    "TeacherSignalInspectConfig",
-    "TeacherSignalMapConfig",
-    "inspect_teacher_signals",
-    "map_teacher_signals",
-]

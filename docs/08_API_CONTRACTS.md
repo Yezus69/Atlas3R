@@ -215,12 +215,12 @@ arrays are `pointmap_camera_m`, `pointmap_world_m`, `normal_camera`,
 checks finite arrays, non-negative depth/sigma, positive sigma on valid pixels,
 probabilities in `[0,1]`, valid intrinsics/transforms, safe relative paths, and
 matching source clip metadata.
-
+Raw `teachers ingest-local` NPZ inputs must be named `clip_<source_clip_id:06d>.npz` or `source_clip_<source_clip_id:06d>.npz`; parsed IDs select source clips, and duplicate/out-of-range IDs, bad filenames, or frame ID/timestamp mismatches are rejected.
+`teachers inspect-signals` writes only `summary.json` and `per_clip_metrics.jsonl`. `teachers map-signals` deduplicates by `frame_id` before CPU TSDF integration; first occurrence wins in signal order then frame offset, duplicates must match depth/K/`T_world_camera`, and `map_summary.json` records before/after counts, duplicate count, and policy.
 Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`;
 `atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`;
 `atlas3r teachers ingest-local`; `atlas3r teachers inspect-signals`; and
 `atlas3r teachers map-signals`.
-
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 
 `atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic NumPy CPU

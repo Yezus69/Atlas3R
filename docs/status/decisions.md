@@ -34,7 +34,7 @@ tests, and the contract docs.
 | D-0027 | TUM split | TUM manifests preserve `every10` splitting and add `block` tail validation to reduce temporal-neighbor leakage in new real-data runs. | Yes |
 | D-0028 | Clip forge | Phase 5A canonical multi-view clip caches use `atlas3r_clip_cache_manifest.json` plus relative `clips/clip_<id>.npz` payloads with TUM RGB-D sensor depth/pose truth flags. | Yes |
 | D-0029 | Temporal MVP | `TinyTemporalMetricNetV0` trains center-frame depth/sigma/confidence and relative translation only; rotation, mapping readiness, realtime, accuracy, and performance claims stay false. | Yes |
-| D-0030 | Teacher signals | Phase 5B teacher-signal caches use `atlas3r_teacher_signal_manifest.json` plus relative `signals/clip_<id>.npz` payloads with confidence, uncertainty, source metadata, and explicit measured/pseudo-label truth flags. | Yes |
+| D-0030 | Teacher signals | Teacher-signal caches use `atlas3r_teacher_signal_manifest.json` plus relative `signals/clip_<id>.npz` payloads with confidence, uncertainty, source metadata, explicit measured/pseudo-label truth flags, explicit raw NPZ source-clip filename mapping, JSON-only inspection, and deduped map replay. | Yes |
 
 Active cross-cutting constraints:
 

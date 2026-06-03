@@ -76,10 +76,10 @@ class TeacherSignalTest(unittest.TestCase):
                 source_clip_manifest=None,
             )
 
-    def test_local_ingest_copies_raw_npz_payloads(self) -> None:
+    def test_local_raw_ingest_maps_payload_by_source_clip_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            clip_manifest = _write_clip_cache(root / "clip_cache")
+            clip_manifest = _write_clip_cache(root / "clip_cache", clip_count=2)
             source_teacher = root / "source_teacher"
             forge_measured_tum_teacher_signal_cache(
                 MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=source_teacher)
@@ -87,8 +87,8 @@ class TeacherSignalTest(unittest.TestCase):
             raw_input = root / "raw_input"
             raw_input.mkdir()
             shutil.copyfile(
-                source_teacher / "signals" / "clip_000000.npz",
-                raw_input / "clip_000000.npz",
+                source_teacher / "signals" / "clip_000001.npz",
+                raw_input / "clip_000001.npz",
             )
 
             output = root / "ingested"
@@ -105,8 +105,154 @@ class TeacherSignalTest(unittest.TestCase):
             manifest = load_teacher_signal_manifest(output, validate_payloads=True)
 
         self.assertEqual(result["teacher_name"], "external_fixture_depth")
+        self.assertEqual(result["signal_count"], 1)
         self.assertEqual(manifest["teacher_source_type"], "local_folder")
+        self.assertEqual(manifest["signals"][0]["source_clip_id"], 1)  # type: ignore[index]
+        self.assertEqual(manifest["signals"][0]["frame_ids"], [20, 21])  # type: ignore[index]
         self.assertTrue(manifest["truth_boundary"]["pseudo_label"])  # type: ignore[index]
+
+    def test_local_raw_ingest_rejects_bad_filename(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            source_teacher = root / "source_teacher"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=source_teacher)
+            )
+            raw_input = root / "raw_input"
+            raw_input.mkdir()
+            shutil.copyfile(
+                source_teacher / "signals" / "clip_000000.npz",
+                raw_input / "bad_name.npz",
+            )
+
+            with self.assertRaisesRegex(ValueError, "raw NPZ filename"):
+                ingest_local_teacher_signal_cache(
+                    LocalTeacherIngestConfig(
+                        clip_cache=clip_manifest,
+                        input=raw_input,
+                        output=root / "ingested",
+                        teacher_name="external_fixture_depth",
+                        teacher_version="fixture-v1",
+                        pseudo_label=True,
+                    )
+                )
+
+    def test_local_raw_ingest_rejects_duplicate_source_clip_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            source_teacher = root / "source_teacher"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=source_teacher)
+            )
+            raw_input = root / "raw_input"
+            raw_input.mkdir()
+            source_payload = source_teacher / "signals" / "clip_000000.npz"
+            shutil.copyfile(source_payload, raw_input / "clip_000000.npz")
+            shutil.copyfile(source_payload, raw_input / "source_clip_000000.npz")
+
+            with self.assertRaisesRegex(ValueError, "duplicate source clip id 0"):
+                ingest_local_teacher_signal_cache(
+                    LocalTeacherIngestConfig(
+                        clip_cache=clip_manifest,
+                        input=raw_input,
+                        output=root / "ingested",
+                        teacher_name="external_fixture_depth",
+                        teacher_version="fixture-v1",
+                        pseudo_label=True,
+                    )
+                )
+
+    def test_local_raw_ingest_rejects_out_of_range_source_clip_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            source_teacher = root / "source_teacher"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=source_teacher)
+            )
+            raw_input = root / "raw_input"
+            raw_input.mkdir()
+            shutil.copyfile(
+                source_teacher / "signals" / "clip_000000.npz",
+                raw_input / "clip_000001.npz",
+            )
+
+            with self.assertRaisesRegex(ValueError, "outside the source clip-cache range"):
+                ingest_local_teacher_signal_cache(
+                    LocalTeacherIngestConfig(
+                        clip_cache=clip_manifest,
+                        input=raw_input,
+                        output=root / "ingested",
+                        teacher_name="external_fixture_depth",
+                        teacher_version="fixture-v1",
+                        pseudo_label=True,
+                    )
+                )
+
+    def test_local_raw_ingest_rejects_payload_metadata_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache", clip_count=2)
+            source_teacher = root / "source_teacher"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=source_teacher)
+            )
+            raw_input = root / "raw_input"
+            raw_input.mkdir()
+            shutil.copyfile(
+                source_teacher / "signals" / "clip_000000.npz",
+                raw_input / "clip_000001.npz",
+            )
+
+            with self.assertRaisesRegex(ValueError, "frame_ids: must match payload"):
+                ingest_local_teacher_signal_cache(
+                    LocalTeacherIngestConfig(
+                        clip_cache=clip_manifest,
+                        input=raw_input,
+                        output=root / "ingested",
+                        teacher_name="external_fixture_depth",
+                        teacher_version="fixture-v1",
+                        pseudo_label=True,
+                    )
+                )
+
+    def test_manifest_relative_source_clip_path_resolves_from_cache_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            teacher_cache = root / "teacher_cache"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=teacher_cache)
+            )
+            manifest = load_teacher_signal_manifest(teacher_cache, validate_payloads=True)
+            manifest["source_clip_cache_manifest_path"] = (
+                "../clip_cache/atlas3r_clip_cache_manifest.json"
+            )
+            write_json_file(teacher_cache / "atlas3r_teacher_signal_manifest.json", manifest)
+            other_cwd = root / "other_cwd"
+            other_cwd.mkdir()
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(other_cwd)
+                loaded = load_teacher_signal_manifest(teacher_cache, validate_payloads=True)
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(loaded["signal_count"], 1)
+
+    def test_manifest_rejects_non_dict_signal_entries(self) -> None:
+        manifest = _valid_teacher_manifest()
+        manifest["signals"] = ["not-a-mapping"]
+
+        with self.assertRaisesRegex(ValueError, r"manifest\.signals\[0\]: must be a mapping"):
+            validate_teacher_signal_manifest(
+                manifest,
+                cache_root=".",
+                validate_payloads=False,
+                source_clip_manifest=None,
+            )
 
     def test_inspect_signals_reports_zero_measured_depth_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,8 +275,10 @@ class TeacherSignalTest(unittest.TestCase):
             summary = result["summary"]
             self.assertTrue((output / "summary.json").is_file())
             self.assertTrue((output / "per_clip_metrics.jsonl").is_file())
-            self.assertTrue((output / "preview.html").is_file())
-            self.assertTrue((output / "preview.svg").is_file())
+            self.assertFalse((output / "preview.html").exists())
+            self.assertFalse((output / "preview.svg").exists())
+            self.assertNotIn("preview_html_path", result)
+            self.assertNotIn("preview_svg_path", result)
 
         aggregate = summary["aggregate"]  # type: ignore[index]
         self.assertLessEqual(float(aggregate["depth_rmse_m"]), 1e-8)  # type: ignore[index]
@@ -139,7 +287,7 @@ class TeacherSignalTest(unittest.TestCase):
     def test_map_signals_writes_tsdf_outputs_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            clip_manifest = _write_clip_cache(root / "clip_cache")
+            clip_manifest = _write_clip_cache(root / "clip_cache", clip_count=2, overlap=True)
             teacher_cache = root / "teacher_cache"
             forge_measured_tum_teacher_signal_cache(
                 MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=teacher_cache)
@@ -150,7 +298,7 @@ class TeacherSignalTest(unittest.TestCase):
                 TeacherSignalMapConfig(
                     teacher_cache=teacher_cache,
                     output=output,
-                    max_clips=1,
+                    max_clips=2,
                     voxel_size_m=0.25,
                     truncation_voxels=3.0,
                 )
@@ -162,6 +310,11 @@ class TeacherSignalTest(unittest.TestCase):
 
         self.assertGreater(int(summary["surface_point_count"]), 0)  # type: ignore[index]
         self.assertEqual(summary["voxel_size_m"], 0.25)  # type: ignore[index]
+        self.assertEqual(summary["observation_count_before_dedupe"], 4)  # type: ignore[index]
+        self.assertEqual(summary["observation_count_after_dedupe"], 3)  # type: ignore[index]
+        self.assertEqual(summary["duplicate_frame_count"], 1)  # type: ignore[index]
+        self.assertEqual(summary["source_frame_ids"], [10, 11, 12])  # type: ignore[index]
+        self.assertIn("first occurrence wins", summary["dedupe_policy"])  # type: ignore[index]
 
     def test_teachers_cli_help_works(self) -> None:
         env = os.environ.copy()
@@ -192,24 +345,39 @@ class TeacherSignalTest(unittest.TestCase):
         self.assertIn("VGGT", text)
 
 
-def _write_clip_cache(root: Path) -> Path:
+def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:
     root.mkdir(parents=True)
     clips_dir = root / "clips"
     clips_dir.mkdir()
-    payload = _clip_payload()
-    write_clip_payload(
-        clips_dir / "clip_000000.npz",
-        payload,
-        clip_length=2,
-        height=4,
-        width=4,
-    )
-    manifest = _clip_manifest(root)
+    for clip_id in range(clip_count):
+        frame_ids, timestamps = _clip_frame_metadata(clip_id, overlap=overlap)
+        payload = _clip_payload(frame_ids=frame_ids, timestamps=timestamps)
+        write_clip_payload(
+            clips_dir / f"clip_{clip_id:06d}.npz",
+            payload,
+            clip_length=2,
+            height=4,
+            width=4,
+        )
+    manifest = _clip_manifest(root, clip_count=clip_count, overlap=overlap)
     write_json_file(root / "atlas3r_clip_cache_manifest.json", manifest)
     return root / "atlas3r_clip_cache_manifest.json"
 
 
-def _clip_manifest(root: Path) -> dict[str, object]:
+def _clip_manifest(root: Path, *, clip_count: int, overlap: bool) -> dict[str, object]:
+    clips: list[dict[str, object]] = []
+    for clip_id in range(clip_count):
+        frame_ids, timestamps = _clip_frame_metadata(clip_id, overlap=overlap)
+        clips.append(
+            {
+                "clip_id": clip_id,
+                "payload_path": f"clips/clip_{clip_id:06d}.npz",
+                "frame_ids": list(frame_ids),
+                "timestamps_s": list(timestamps),
+                "center_index": 1,
+                "center_frame_id": frame_ids[1],
+            }
+        )
     return {
         "format_name": CLIP_CACHE_FORMAT_NAME,
         "format_version": CLIP_CACHE_FORMAT_VERSION,
@@ -222,17 +390,8 @@ def _clip_manifest(root: Path) -> dict[str, object]:
         "image_width": 4,
         "image_height": 4,
         "max_frame_gap_s": 0.1,
-        "clip_count": 1,
-        "clips": [
-            {
-                "clip_id": 0,
-                "payload_path": "clips/clip_000000.npz",
-                "frame_ids": [10, 11],
-                "timestamps_s": [1.0, 1.033],
-                "center_index": 1,
-                "center_frame_id": 11,
-            }
-        ],
+        "clip_count": clip_count,
+        "clips": clips,
         "teacher_source_metadata": {"fixture": True},
         "truth_boundary": {
             "diagnostic_only": True,
@@ -243,12 +402,32 @@ def _clip_manifest(root: Path) -> dict[str, object]:
     }
 
 
-def _clip_payload() -> dict[str, np.ndarray]:
+def _clip_frame_metadata(
+    clip_id: int,
+    *,
+    overlap: bool,
+) -> tuple[tuple[int, int], tuple[float, float]]:
+    if overlap:
+        frame_start = 10 + clip_id
+        time_start = 1.0 + clip_id * 0.033
+    else:
+        frame_start = 10 + clip_id * 10
+        time_start = 1.0 + clip_id
+    return (frame_start, frame_start + 1), (time_start, time_start + 0.033)
+
+
+def _clip_payload(
+    *,
+    frame_ids: tuple[int, int] = (10, 11),
+    timestamps: tuple[float, float] = (1.0, 1.033),
+) -> dict[str, np.ndarray]:
     K = np.array([[4.0, 0.0, 1.5], [0.0, 4.0, 1.5], [0.0, 0.0, 1.0]], dtype=np.float32)
     depth = np.ones((2, 4, 4), dtype=np.float32)
     valid = np.ones((2, 4, 4), dtype=np.bool_)
-    depth[0, 0, 0] = 0.0
-    valid[0, 0, 0] = False
+    if 10 in frame_ids:
+        invalid_index = frame_ids.index(10)
+        depth[invalid_index, 0, 0] = 0.0
+        valid[invalid_index, 0, 0] = False
     transforms = np.repeat(np.eye(4, dtype=np.float32)[np.newaxis, :, :], 2, axis=0)
     return {
         "images_rgb_u8": np.zeros((2, 4, 4, 3), dtype=np.uint8),
@@ -256,8 +435,8 @@ def _clip_payload() -> dict[str, np.ndarray]:
         "valid_depth_mask": valid,
         "K": np.repeat(K[np.newaxis, :, :], 2, axis=0),
         "T_world_camera": transforms,
-        "frame_ids": np.array([10, 11], dtype=np.int32),
-        "timestamps_s": np.array([1.0, 1.033], dtype=np.float64),
+        "frame_ids": np.array(frame_ids, dtype=np.int32),
+        "timestamps_s": np.array(timestamps, dtype=np.float64),
         "center_index": np.array(1, dtype=np.int32),
     }
 

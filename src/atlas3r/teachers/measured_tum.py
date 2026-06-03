@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -19,12 +20,19 @@ from atlas3r.teachers.signals import (
     TEACHER_SIGNAL_FORMAT_NAME,
     TEACHER_SIGNAL_FORMAT_VERSION,
     TEACHER_SIGNAL_MANIFEST_FILENAME,
+    _non_negative_int,
+    _positive_int,
     load_teacher_signal_manifest,
     validate_payload_matches_signal_entry,
     validate_teacher_signal_manifest,
     validate_teacher_signal_payload,
     write_teacher_signal_manifest,
     write_teacher_signal_payload,
+)
+
+_RAW_NPZ_FILENAME_PATTERNS = (
+    re.compile(r"^clip_(?P<source_clip_id>\d{6})\.npz$"),
+    re.compile(r"^source_clip_(?P<source_clip_id>\d{6})\.npz$"),
 )
 
 
@@ -280,15 +288,29 @@ def _raw_npz_payload_sources(
     input_root: Path,
     clip_manifest: dict[str, object],
 ) -> list[dict[str, object]]:
-    paths = sorted(input_root.glob("clip_*.npz"))
+    paths = sorted(input_root.glob("*.npz"))
     clips = _clip_entries(clip_manifest)
-    if len(paths) > len(clips):
-        raise ValueError(f"{input_root}: more NPZ payloads than source clip-cache clips")
+    clips_by_id = {_non_negative_int(clip, "clip_id"): clip for clip in clips}
+    seen_source_clip_ids: dict[int, Path] = {}
     sources: list[dict[str, object]] = []
-    for signal_id, payload_path in enumerate(paths):
+    for payload_path in paths:
+        source_clip_id = _source_clip_id_from_raw_npz_filename(payload_path)
+        if source_clip_id in seen_source_clip_ids:
+            first_path = seen_source_clip_ids[source_clip_id]
+            raise ValueError(
+                f"{payload_path.name}: duplicate source clip id {source_clip_id} "
+                f"already provided by {first_path.name}"
+            )
+        seen_source_clip_ids[source_clip_id] = payload_path
+        clip_entry = clips_by_id.get(source_clip_id)
+        if clip_entry is None:
+            raise ValueError(
+                f"{payload_path.name}: source clip id {source_clip_id} "
+                "is outside the source clip-cache range"
+            )
         with np.load(payload_path, allow_pickle=False) as data:
             arrays = {key: data[key] for key in data.files}
-        sources.append({"entry": _signal_entry(signal_id, clips[signal_id]), "arrays": arrays})
+        sources.append({"entry": _signal_entry(len(sources), clip_entry), "arrays": arrays})
     return sources
 
 
@@ -300,7 +322,9 @@ def _signal_entry(signal_id: int, clip_entry: dict[str, object]) -> dict[str, ob
         "payload_path": f"signals/clip_{signal_id:06d}.npz",
         "frame_ids": list(_int_sequence(clip_entry, "frame_ids")),
         "timestamps_s": list(_float_sequence(clip_entry, "timestamps_s")),
-        "center_index": _optional_non_negative_int(clip_entry, "center_index", default=0),
+        "center_index": _non_negative_int(clip_entry, "center_index")
+        if "center_index" in clip_entry
+        else 0,
     }
 
 
@@ -313,7 +337,7 @@ def _entry_for_output(signal_id: int, input_entry: dict[str, object]) -> dict[st
         "timestamps_s": list(_float_sequence(input_entry, "timestamps_s")),
     }
     if "center_index" in input_entry:
-        entry["center_index"] = _optional_non_negative_int(input_entry, "center_index", default=0)
+        entry["center_index"] = _non_negative_int(input_entry, "center_index")
     return entry
 
 
@@ -321,7 +345,23 @@ def _clip_entries(manifest: dict[str, object]) -> list[dict[str, object]]:
     value = manifest.get("clips")
     if not isinstance(value, list):
         raise ValueError("clip manifest clips: must be a list")
-    return [cast(dict[str, object], entry) for entry in value if isinstance(entry, dict)]
+    entries: list[dict[str, object]] = []
+    for index, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            raise ValueError(f"clip manifest.clips[{index}]: must be a mapping")
+        entries.append(cast(dict[str, object], entry))
+    return entries
+
+
+def _source_clip_id_from_raw_npz_filename(path: Path) -> int:
+    for pattern in _RAW_NPZ_FILENAME_PATTERNS:
+        match = pattern.match(path.name)
+        if match is not None:
+            return int(match.group("source_clip_id"))
+    raise ValueError(
+        f"{path.name}: raw NPZ filename must be "
+        "clip_<source_clip_id:06d>.npz or source_clip_<source_clip_id:06d>.npz"
+    )
 
 
 def _result(output: Path, manifest_path: Path, manifest: dict[str, object]) -> dict[str, object]:
@@ -352,31 +392,6 @@ def _validate_ingest_config(config: LocalTeacherIngestConfig) -> None:
         raise ValueError(f"{config.input}: local teacher input must be a directory")
 
 
-def _positive_int(mapping: dict[str, object], key: str) -> int:
-    value = mapping.get(key)
-    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
-        raise ValueError(f"{key}: must be a positive integer")
-    return value
-
-
-def _non_negative_int(mapping: dict[str, object], key: str) -> int:
-    value = mapping.get(key)
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValueError(f"{key}: must be a non-negative integer")
-    return value
-
-
-def _optional_non_negative_int(
-    mapping: dict[str, object],
-    key: str,
-    *,
-    default: int,
-) -> int:
-    if key not in mapping:
-        return default
-    return _non_negative_int(mapping, key)
-
-
 def _int_sequence(mapping: dict[str, object], key: str) -> tuple[int, ...]:
     value = mapping.get(key)
     if not isinstance(value, list) or not all(
@@ -393,11 +408,3 @@ def _float_sequence(mapping: dict[str, object], key: str) -> tuple[float, ...]:
     ):
         raise ValueError(f"{key}: must be a list of numbers")
     return tuple(float(item) for item in value)
-
-
-__all__ = [
-    "LocalTeacherIngestConfig",
-    "MeasuredTumTeacherForgeConfig",
-    "forge_measured_tum_teacher_signal_cache",
-    "ingest_local_teacher_signal_cache",
-]

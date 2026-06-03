@@ -13,6 +13,47 @@ from atlas3r.mapping.observations import DepthObservation
 TEACHER_FORMAT_NOTE = "atlas3r_teacher_signal_cache_v1"
 
 
+def dedupe_observations_by_frame_id(
+    observations: tuple[DepthObservation, ...],
+) -> tuple[tuple[DepthObservation, ...], dict[str, object]]:
+    kept: list[DepthObservation] = []
+    first_by_frame_id: dict[int, DepthObservation] = {}
+    duplicate_count = 0
+    for observation in observations:
+        if observation.frame_id not in first_by_frame_id:
+            first_by_frame_id[observation.frame_id] = observation
+            kept.append(observation)
+            continue
+        duplicate_count += 1
+        first = first_by_frame_id[observation.frame_id]
+        checks = (
+            ("depth_m", first.depth_m, observation.depth_m),
+            ("K", first.camera.K, observation.camera.K),
+            ("T_world_camera", first.pose.T_world_camera, observation.pose.T_world_camera),
+        )
+        for field, first_array, duplicate_array in checks:
+            if first_array.shape != duplicate_array.shape or not np.allclose(
+                first_array,
+                duplicate_array,
+                rtol=1e-5,
+                atol=1e-5,
+            ):
+                raise ValueError(
+                    f"duplicate frame_id {observation.frame_id}: "
+                    f"{field} differs from the first occurrence"
+                )
+    return tuple(kept), {
+        "observation_count_before_dedupe": len(observations),
+        "observation_count_after_dedupe": len(kept),
+        "duplicate_frame_count": duplicate_count,
+        "dedupe_policy": (
+            "frame_id first occurrence wins in signal order then frame offset; "
+            "duplicates must match depth_m, K, and T_world_camera within allclose "
+            "rtol=1e-5 atol=1e-5"
+        ),
+    }
+
+
 def with_teacher_surface_metadata(
     surface: Any,
     teacher_manifest: dict[str, object],
@@ -74,6 +115,10 @@ def map_summary(
     observations: tuple[DepthObservation, ...],
     tsdf_dir: Path,
     unique_source_frame_ids: list[int],
+    observation_count_before_dedupe: int,
+    observation_count_after_dedupe: int,
+    duplicate_frame_count: int,
+    dedupe_policy: str,
 ) -> dict[str, object]:
     metadata = cast(dict[str, object], surface.metadata)
     return {
@@ -85,6 +130,10 @@ def map_summary(
         "surface_point_count": int(surface.points_world_m.shape[0]),
         "source_frame_ids": [obs.frame_id for obs in observations],
         "unique_source_frame_ids": unique_source_frame_ids,
+        "observation_count_before_dedupe": observation_count_before_dedupe,
+        "observation_count_after_dedupe": observation_count_after_dedupe,
+        "duplicate_frame_count": duplicate_frame_count,
+        "dedupe_policy": dedupe_policy,
         "voxel_size_m": _float_metadata(metadata, "voxel_size_m"),
         "observed_coverage_estimate": _float_metadata(metadata, "observed_coverage_estimate"),
         "uncertainty_summary_m": dict(cast(dict[str, object], metadata["uncertainty_summary_m"])),
@@ -99,10 +148,3 @@ def _float_metadata(metadata: dict[str, object], key: str) -> float:
     if not isinstance(value, int | float) or isinstance(value, bool):
         raise ValueError(f"surface.metadata.{key}: must be numeric")
     return float(value)
-
-
-__all__ = [
-    "map_metrics",
-    "map_summary",
-    "with_teacher_surface_metadata",
-]
