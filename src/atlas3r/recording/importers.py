@@ -1,7 +1,8 @@
-"""Import existing Atlas3R/TUM data into the Phase 6A recording format."""
+"""Import existing Atlas3R/TUM data into the recording format."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -18,6 +19,12 @@ from atlas3r.recording.schema import (
     Atlas3RRecording,
     recording_truth_boundary,
     write_recording_files,
+)
+from atlas3r.recording.sensor_folder import (
+    SENSOR_CAPTURE_FORMAT_NAME,
+    SENSOR_CAPTURE_FORMAT_VERSION,
+    SensorFolderRecordingImportConfig,
+    recording_from_sensor_folder,
 )
 from atlas3r.runtime.student_stream import load_unique_frame_stream
 
@@ -288,28 +295,28 @@ def _validate_tum_config(config: TumRecordingImportConfig) -> None:
         raise ValueError("max_frames: must be positive when provided")
 
 
-def _mapping_field(mapping: dict[str, object], key: str) -> dict[str, object]:
+def _mapping_field(mapping: Mapping[str, object], key: str) -> dict[str, object]:
     value = mapping.get(key)
     if not isinstance(value, dict):
         raise ValueError(f"{key}: must be a mapping")
     return value
 
 
-def _string_field(mapping: dict[str, object], key: str) -> str:
+def _string_field(mapping: Mapping[str, object], key: str) -> str:
     value = mapping.get(key)
     if not isinstance(value, str) or not value:
         raise ValueError(f"{key}: must be a non-empty string")
     return value
 
 
-def _int_field(mapping: dict[str, object], key: str) -> int:
+def _int_field(mapping: Mapping[str, object], key: str) -> int:
     value = mapping.get(key)
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{key}: must be an integer")
     return value
 
 
-def _float_field(mapping: dict[str, object], key: str) -> float:
+def _float_field(mapping: Mapping[str, object], key: str) -> float:
     value = mapping.get(key)
     if not isinstance(value, int | float) or isinstance(value, bool):
         raise ValueError(f"{key}: must be numeric")
@@ -325,7 +332,11 @@ def _array_list(value: object, shape: tuple[int, ...]) -> npt.NDArray[np.float32
 
 __all__ = [
     "ClipCacheRecordingImportConfig",
+    "SENSOR_CAPTURE_FORMAT_NAME",
+    "SENSOR_CAPTURE_FORMAT_VERSION",
+    "SensorFolderRecordingImportConfig",
     "TumRecordingImportConfig",
     "recording_from_clip_cache",
+    "recording_from_sensor_folder",
     "recording_from_tum_manifest",
 ]

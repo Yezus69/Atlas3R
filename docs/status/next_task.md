@@ -1,33 +1,37 @@
-Phase 6B - Live/Video Input and Calibration Capture
+Phase 6C - Accelerated Incremental Mapper Prototype
 
-Goal: add a practical live/video input boundary and apartment capture path that
-produces validated `atlas3r_recording` folders for Phase 6A fusion. This is not
-another training run or teacher-wrapper task.
+Goal: create a bounded incremental mapper prototype that replaces the
+diagnostic CPU TSDF rebuild-per-keyframe path for measured RGB-D/pose
+observations.
 
-Start from branch `codex/phase6a-product-slice-mapper-recording-mesh`. Reload
+Start from branch `codex/phase6b-real-capture-incremental-mapper`. Reload
 `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`,
 `docs/status/progress.md`, `docs/status/decisions.md`,
 `docs/status/active_task.md`, and
-`docs/status/phase6a_product_slice_mapper_recording_mesh_report.md`.
+`docs/status/phase6b_real_capture_incremental_mapper_report.md`.
 
 Required work:
 
-- Add a dependency-safe video/local-camera ingestion boundary that can emit
-  RGB frames plus calibration metadata into the recording schema.
-- Add a clear calibration capture path for intrinsics and metric scale; do not
-  claim metric accuracy without a named calibration/evaluation report.
-- Support an apartment capture workflow that writes `atlas3r_recording.json`
-  and `frames.jsonl`, then calls `atlas3r recording validate`.
-- Keep optional camera/video dependencies isolated with clear install errors.
-- Add a smoke fixture for video-like input and tests for calibration metadata,
-  path safety, timestamp ordering, and failure modes.
-- Run `runtime fuse-recording` only when measured depth+pose or an explicitly
-  configured sensor source is available; do not fake depth, pose, or hidden
-  geometry.
+- Keep the measured-input boundary: no RGB-only fake depth, fake pose, hidden
+  surface completion, realtime claim, or millimeter accuracy claim.
+- Add a mapper interface that can support true incremental updates behind the
+  current `DepthObservation` contract.
+- Prototype either a vectorized CPU block update, GPU/Metal/CUDA TSDF path, or
+  a small bounded-volume mapper; isolate optional acceleration dependencies.
+- Preserve `runtime fuse-recording --mode batch|incremental` and add a new mode
+  or backend selector only if the report names the backend honestly.
+- Emit the same artifacts as Phase 6B: TSDF outputs, `surface_points.ply`,
+  mesh status/optional mesh, `per_frame_events.jsonl`, latency, memory,
+  quality, summary, and preview reports.
+- Compare against the Phase 6B TUM evidence path and report p50/p95/max update
+  latency plus deterministic array-byte counters.
+- Add focused tests for backend selection, bounded state, report truth flags,
+  and fallback behavior when optional acceleration is unavailable.
+- Run the required format, lint, typecheck, unit, diff, and available `make`
+  verification commands.
 
 Expected output:
 
-- Validated recording folders from live/video-like inputs.
-- A short capture report with commands, calibration source, missing sensors, and
-  exact blockers for measured depth/pose if unavailable.
-- Updated compact status docs and API contracts.
+- A measured-recording incremental mapper backend with honest timing evidence.
+- A compact report stating whether acceleration reduced the Phase 6B CPU TSDF
+  rebuild bottleneck and what remains before live apartment mapping.

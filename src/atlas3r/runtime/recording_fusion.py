@@ -42,12 +42,17 @@ class FuseRecordingConfig:
     truncation_voxels: float = 3.0
     export_point_cloud: bool = False
     export_mesh: str = "auto"
+    mode: str = "batch"
 
 
 def run_fuse_recording(config: FuseRecordingConfig) -> dict[str, object]:
     """Fuse measured recording depth+pose through the existing CPU TSDF path."""
 
     _validate_config(config)
+    if config.mode == "incremental":
+        from atlas3r.runtime.recording_fusion_incremental import IncrementalRecordingFusion
+
+        return IncrementalRecordingFusion(config).run()
     output = config.output
     output.mkdir(parents=True, exist_ok=True)
     recording = load_recording(config.recording)
@@ -59,6 +64,7 @@ def run_fuse_recording(config: FuseRecordingConfig) -> dict[str, object]:
         metadata={
             **DIAGNOSTIC_TRUTH_FLAGS,
             "depth_source": config.depth_source,
+            "mode": config.mode,
             "pose_source": config.pose_source,
             "recording": str(config.recording),
         },
@@ -106,9 +112,18 @@ def run_fuse_recording(config: FuseRecordingConfig) -> dict[str, object]:
     recorder.add("total_pipeline", time.perf_counter_ns() - run_start_ns)
 
     latency_report = recorder.report()
-    latency_report["format_name"] = "atlas3r_phase6a_latency_report"
+    latency_report["format_name"] = "atlas3r_phase6b_latency_report"
+    latency_report["mode"] = config.mode
+    latency_report["known_limitations"] = [
+        "This is a wall-clock diagnostic profile, not a performance report.",
+        "No realtime claim is made from these measurements.",
+        "CPU TSDF is the diagnostic reference mapper, not the final accelerated mapper.",
+        "No object-aware fusion is performed.",
+    ]
     memory_report = _memory_report(observations, surface, tsdf_dir)
+    memory_report["mode"] = config.mode
     quality_report = _quality_report(observations, surface)
+    quality_report["mode"] = config.mode
     summary = _summary(
         config=config,
         recording=recording,
@@ -165,7 +180,9 @@ def _write_tsdf_outputs(
     )
     surface = _with_recording_metadata(extract_tsdf_surface(volume), recording, observations)
     tsdf_dir = output / "tsdf"
-    write_tsdf_outputs(tsdf_dir, volume, surface, _tsdf_metrics(surface))
+    metrics = _tsdf_metrics(surface)
+    metrics["mode"] = config.mode
+    write_tsdf_outputs(tsdf_dir, volume, surface, metrics)
     write_tsdf_surface_mesh_sidecar_from_artifacts(
         tsdf_dir,
         chunk_id="phase6a_recording_cpu_tsdf_surface",
@@ -202,8 +219,8 @@ def _with_recording_metadata(
     metadata.update(
         {
             **DIAGNOSTIC_TRUTH_FLAGS,
-            "accuracy_note": "Phase 6A measured recording fusion is diagnostic, not a benchmark.",
-            "artifact_type": "phase6a_recording_cpu_tsdf_surface_points",
+            "accuracy_note": "Measured recording fusion is diagnostic, not a benchmark.",
+            "artifact_type": "phase6b_recording_cpu_tsdf_surface_points",
             "recording": str(recording.root),
             "truth_boundary": dict(cast(dict[str, object], recording.manifest["truth_boundary"])),
         }
@@ -211,7 +228,7 @@ def _with_recording_metadata(
     metadata["flags"] = _stable_strings(
         [
             *[str(flag) for flag in metadata.get("flags", [])],
-            "phase6a_product_slice",
+            "phase6b_measured_recording_fusion",
             "cpu_tsdf_not_realtime",
             "observed_surface_points",
             "not_completed_surface",
@@ -235,6 +252,7 @@ def _tsdf_metrics(surface: TSDFSurface) -> dict[str, object]:
         "known_limitations": [
             "CPU TSDF is a diagnostic reference path and is not realtime.",
             "Only observed depth samples are fused; hidden geometry is not completed.",
+            "No object-aware fusion is performed.",
         ],
         "metric_family": "phase6a_recording_cpu_tsdf_diagnostic",
         "surface_point_count": int(surface.points_world_m.shape[0]),
@@ -258,11 +276,12 @@ def _quality_report(
     )
     return {
         **DIAGNOSTIC_TRUTH_FLAGS,
-        "format_name": "atlas3r_phase6a_quality_report",
+        "format_name": "atlas3r_phase6b_quality_report",
         "format_version": 1,
         "known_limitations": [
             "Quality report summarizes measured input coverage; it is not a prediction benchmark.",
             "No millimeter, realtime, or mapping-readiness claim is made.",
+            "No hidden surface completion or object fusion is performed.",
         ],
         "measured_depth_available": True,
         "observation_count": len(observations),
@@ -292,11 +311,12 @@ def _memory_report(
     )
     return {
         **DIAGNOSTIC_TRUTH_FLAGS,
-        "format_name": "atlas3r_phase6a_memory_report",
+        "format_name": "atlas3r_phase6b_memory_report",
         "format_version": 1,
         "known_limitations": [
             "Counters are deterministic NumPy array byte counts, not process RSS telemetry.",
             "CPU TSDF is not a bounded GPU mapper.",
+            "No object-fusion state is tracked.",
         ],
         "observation_array_bytes": int(observation_bytes),
         "surface_array_bytes": int(
@@ -333,7 +353,7 @@ def _summary(
             "tsdf": tsdf_dir.name,
         },
         "cpu_tsdf_note": "CPU TSDF is diagnostic and not the final realtime GPU mapper.",
-        "format_name": "atlas3r_phase6a_fuse_recording_summary",
+        "format_name": "atlas3r_phase6b_fuse_recording_summary",
         "format_version": 1,
         "frame_count": len(observations),
         "keyframe_stride": config.keyframe_stride,
@@ -341,10 +361,12 @@ def _summary(
             "Measured depth+pose are fused; no learned geometry is generated in this path.",
             "Hidden or unobserved geometry is not emitted as measured geometry.",
             "CPU TSDF is not realtime and not the final GPU mapper.",
+            "No object-aware fusion is performed.",
         ],
         "latency": cast(dict[str, object], latency_report["segments"]),
         "memory": memory_report,
         "mesh": mesh_status,
+        "mode": config.mode,
         "output": str(config.output),
         "quality": quality_report,
         "recording": str(recording.root),
@@ -436,9 +458,9 @@ class _RuntimeEventRecorder:
 
 def _validate_config(config: FuseRecordingConfig) -> None:
     if config.pose_source != "recording":
-        raise ValueError("pose_source: only 'recording' is supported in Phase 6A")
+        raise ValueError("pose_source: only 'recording' is supported in Phase 6B")
     if config.depth_source != "recording":
-        raise ValueError("depth_source: only 'recording' is supported in Phase 6A")
+        raise ValueError("depth_source: only 'recording' is supported in Phase 6B")
     if config.max_frames is not None and config.max_frames <= 0:
         raise ValueError("max_frames: must be positive when provided")
     if config.keyframe_stride <= 0:
@@ -449,6 +471,8 @@ def _validate_config(config: FuseRecordingConfig) -> None:
         raise ValueError("truncation_voxels: must be positive")
     if config.export_mesh not in {"off", "auto", "required"}:
         raise ValueError("export_mesh: must be off, auto, or required")
+    if config.mode not in {"batch", "incremental"}:
+        raise ValueError("mode: must be batch or incremental")
 
 
 def _stable_strings(values: list[str]) -> list[str]:

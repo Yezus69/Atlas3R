@@ -44,6 +44,7 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("validate", recording_result.stdout)
         self.assertIn("from-tum", recording_result.stdout)
         self.assertIn("from-clip-cache", recording_result.stdout)
+        self.assertIn("from-sensor-folder", recording_result.stdout)
 
         fuse_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "runtime", "fuse-recording", "--help"],
@@ -56,6 +57,7 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertEqual(fuse_result.returncode, 0, fuse_result.stderr)
         self.assertIn("--recording", fuse_result.stdout)
         self.assertIn("--export-mesh", fuse_result.stdout)
+        self.assertIn("--mode", fuse_result.stdout)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ def register_runtime_parser(subparsers: Any) -> None:
     fuse_parser.add_argument("--truncation-voxels", type=float, default=3.0)
     fuse_parser.add_argument("--export-point-cloud", action="store_true")
     fuse_parser.add_argument("--export-mesh", choices=("off", "auto", "required"), default="auto")
+    fuse_parser.add_argument("--mode", choices=("batch", "incremental"), default="batch")
     fuse_parser.set_defaults(handler=_run_fuse_recording)
 
 
@@ -100,6 +101,7 @@ def _run_fuse_recording(args: argparse.Namespace) -> int:
                 truncation_voxels=args.truncation_voxels,
                 export_point_cloud=args.export_point_cloud,
                 export_mesh=args.export_mesh,
+                mode=args.mode,
             )
         )
     except ValueError as exc:

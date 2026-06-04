@@ -10,8 +10,10 @@ from typing import Any
 
 from atlas3r.recording.importers import (
     ClipCacheRecordingImportConfig,
+    SensorFolderRecordingImportConfig,
     TumRecordingImportConfig,
     recording_from_clip_cache,
+    recording_from_sensor_folder,
     recording_from_tum_manifest,
 )
 from atlas3r.recording.schema import validate_recording_folder
@@ -54,6 +56,14 @@ def register_recording_parser(subparsers: Any) -> None:
     clip_parser.add_argument("--dedupe-frame-id", action="store_true")
     clip_parser.set_defaults(handler=_run_from_clip_cache)
 
+    sensor_parser = recording_subparsers.add_parser(
+        "from-sensor-folder",
+        help="Import a generic measured RGB-D/pose sensor folder into a recording.",
+    )
+    sensor_parser.add_argument("--input", type=Path, required=True)
+    sensor_parser.add_argument("--output", type=Path, required=True)
+    sensor_parser.set_defaults(handler=_run_from_sensor_folder)
+
 
 def _run_validate(args: argparse.Namespace) -> int:
     try:
@@ -91,6 +101,21 @@ def _run_from_clip_cache(args: argparse.Namespace) -> int:
                 clip_cache=args.clip_cache,
                 output=args.output,
                 dedupe_frame_id=args.dedupe_frame_id,
+            )
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_from_sensor_folder(args: argparse.Namespace) -> int:
+    try:
+        result = recording_from_sensor_folder(
+            SensorFolderRecordingImportConfig(
+                input=args.input,
+                output=args.output,
             )
         )
     except ValueError as exc:

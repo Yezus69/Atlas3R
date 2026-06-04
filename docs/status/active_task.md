@@ -1,29 +1,27 @@
-# Active Task - Phase 6A Product-Slice Mapper Recording Mesh
+# Active Task - Phase 6B Real Capture Incremental Mapper
 
-Goal: add a validated Atlas3R recording format, import measured TUM/clip-cache
-streams, fuse recording depth+pose through CPU TSDF in chronological order, and
-export inspectable point-cloud/optional real mesh artifacts with diagnostic
-latency, memory, and quality reports.
+Goal: add a dependency-light real sensor-folder import boundary and expose
+incremental measured recording fusion timing without claiming realtime,
+accuracy, hidden geometry completion, or mesh quality beyond measured artifacts.
 
-Branch: `codex/phase6a-product-slice-mapper-recording-mesh`
+Branch: `codex/phase6b-real-capture-incremental-mapper`
 
 Checklist:
 
-- [x] Start from `codex/phase5h-vggt-pose-pointmap-teacher` and create the
-  Phase 6A branch.
-- [x] Read the goal file, API contracts, status docs, TUM/clip-cache code,
-  CPU TSDF path, and runtime report/export helpers.
-- [x] Add dependency-light recording schema, frame validation, and
-  `atlas3r recording validate`.
-- [x] Add `recording from-tum` and `recording from-clip-cache` importers.
-- [x] Add measured recording-to-`DepthObservation` streaming fusion runtime.
-- [x] Export `surface_points.ply`, optional real marching-cubes mesh, TSDF
-  artifacts, preview HTML, runtime events, and reports.
-- [x] Add focused tests for validation, path traversal, importers, runtime,
-  PLY, optional mesh behavior, CLI help, and status handoff.
+- [x] Start from `codex/phase6a-product-slice-mapper-recording-mesh` and create
+  the Phase 6B branch.
+- [x] Read the Phase 6B goal file and constrained repo context.
+- [x] Add `atlas3r recording from-sensor-folder` with strict input validation
+  and conversion to the existing `atlas3r_recording` format.
+- [x] Add deterministic tiny sensor-capture fixture support for tests only.
+- [x] Add `runtime fuse-recording --mode batch|incremental`; keep batch
+  behavior and report incremental per-frame load/update timings honestly.
+- [x] Preserve optional mesh export behavior and clear missing-dependency
+  status for `scikit-image`.
+- [x] Add focused importer, validation, runtime, mesh fallback, and CLI tests.
 - [x] Run required format, lint, typecheck, unit, diff, and available make
   verification commands.
-- [x] Run real TUM evidence if local data exists; otherwise record the
-  missing-data blocker and fixture evidence.
-- [x] Update compact progress, decisions, API contracts, Phase 6A report, and
-  next task.
+- [x] Run Phase 6A local TUM recording incremental fusion if the recording
+  exists; otherwise record the missing-data blocker.
+- [x] Update compact progress, decisions, API contracts, Phase 6B report, and
+  next-task handoff.

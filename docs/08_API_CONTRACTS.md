@@ -425,18 +425,18 @@ rejected. Import commands:
 ```bash
 atlas3r recording from-tum --manifest <tum_manifest.json> --output <recording_dir> --split val --max-frames N --width W --height H
 atlas3r recording from-clip-cache --clip-cache <manifest-or-folder> --output <recording_dir> --dedupe-frame-id
+atlas3r recording from-sensor-folder --input <sensor_capture_dir> --output <recording_dir>
 ```
-`from-tum` references measured RGB/depth through an external TUM root and
-writes scaled `K` plus measured `T_world_camera`; `from-clip-cache` writes
-local per-frame NPZ RGB/depth payloads from unique chronological clip-cache
-frames.
+`from-tum` references external TUM RGB/depth and measured poses;
+`from-clip-cache` writes local NPZ RGB/depth payloads. `from-sensor-folder`
+references an external `sensor_capture.json`/`frames.jsonl` folder with Atlas3R
+coordinate frame, calibration metadata, safe relative RGB/depth paths, finite
+K/poses/timestamps, image dimensions, positive PNG depth scale, and no-claim
+truth flags including `realtime_claim=false`.
 ### Recording Fusion Runtime
-`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams
-chronological measured depth+pose to `DepthObservation`, CPU TSDF, and
-`runtime_events.jsonl`, `summary.json`, latency/memory/quality reports,
-`tsdf/`, `surface_points.ply`, `mesh_status.json`, optional `mesh.obj`, and
-`map_preview.html`. Phase 6A supports recording pose/depth sources only. CPU
-TSDF is diagnostic, not realtime or a benchmark performance report.
+`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, CPU TSDF, events/reports, `tsdf/`, `surface_points.ply`, mesh status/optional OBJ, and preview HTML.
+`--mode batch|incremental` defaults to `batch`; `incremental` writes `per_frame_events.jsonl` and honestly reports CPU TSDF full rebuilds.
+Reports include `mode`, diagnostic/no-accuracy/no-performance/no-realtime flags.
 `--export-mesh auto` uses optional `scikit-image` marching cubes or writes
 `mesh_exported=false` with an install hint.
 ### `.atlas3r` Session Folder
