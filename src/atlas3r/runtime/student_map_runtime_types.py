@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-POSE_MODES = ("oracle", "student-relative", "both")
+POSE_MODES = ("oracle", "student-relative", "student-odometry", "both")
 
 
 @dataclass(frozen=True)

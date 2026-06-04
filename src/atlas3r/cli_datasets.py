@@ -25,6 +25,16 @@ def register_datasets_parser(subparsers: Any) -> None:
     )
     tum_download_parser.add_argument("--sequence", default="freiburg1_xyz")
     tum_download_parser.add_argument(
+        "--archive-url",
+        default=None,
+        help="Optional TUM RGB-D TGZ URL override for mirrors or verified URL changes.",
+    )
+    tum_download_parser.add_argument(
+        "--groundtruth-url",
+        default=None,
+        help="Optional TUM RGB-D ground-truth trajectory URL override.",
+    )
+    tum_download_parser.add_argument(
         "--output",
         type=Path,
         required=True,
@@ -73,7 +83,12 @@ def _run_datasets_tum_rgbd_download(args: argparse.Namespace) -> int:
     from atlas3r.data.tum_rgbd import download_tum_rgbd_sequence
 
     try:
-        written_paths = download_tum_rgbd_sequence(args.sequence, args.output)
+        written_paths = download_tum_rgbd_sequence(
+            args.sequence,
+            args.output,
+            archive_url=args.archive_url,
+            groundtruth_url=args.groundtruth_url,
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

@@ -113,9 +113,11 @@ def run_student_temporal_teacher_signal_cache(
             "loss_config": dict(checkpoint["loss_config"]),
             "truth_boundary": dict(checkpoint["truth_boundary"]),
             "pose_source": "source_clip_cache_T_world_camera",
+            "pose_source_type": "source_clip_cache_pose_not_external_teacher",
+            "pose_confidence": 1.0,
             "pose_note": (
-                "Predicted relative translations are diagnostic only; exported "
-                "T_world_camera comes from the source clip cache."
+                "Predicted relative SE(3) is diagnostic only for runtime; exported "
+                "teacher-signal T_world_camera comes from the source clip cache."
             ),
         },
     )

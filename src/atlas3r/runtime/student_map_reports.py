@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import html
-import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -14,30 +12,13 @@ import numpy.typing as npt
 
 from atlas3r.mapping.cpu_tsdf import TSDFSurface
 from atlas3r.mapping.observations import DepthObservation
-
-DIAGNOSTIC_TRUTH_FLAGS: dict[str, bool] = {
-    "diagnostic_only": True,
-    "accuracy_report": False,
-    "performance_report": False,
-    "realtime_claim": False,
-    "mapping_ready": False,
-}
-
-
-@dataclass(frozen=True)
-class TeacherReferenceFrame:
-    """One measured/reference teacher frame for runtime quality comparison."""
-
-    frame_id: int
-    timestamp_s: float
-    depth_m: npt.NDArray[np.float32]
-    valid_mask: npt.NDArray[np.bool_]
-    K: npt.NDArray[np.float32]
-    T_world_camera: npt.NDArray[np.float32]
-    confidence: npt.NDArray[np.float32]
-    depth_sigma_m: npt.NDArray[np.float32]
-    teacher_name: str
-    measured_geometry: bool
+from atlas3r.runtime.student_map_pose_reports import write_pose_quality_reports
+from atlas3r.runtime.student_map_report_common import (
+    DIAGNOSTIC_TRUTH_FLAGS,
+    TeacherReferenceFrame,
+    write_json,
+    write_jsonl,
+)
 
 
 class LatencyRecorder:
@@ -56,7 +37,7 @@ class LatencyRecorder:
 
     def report(self) -> dict[str, object]:
         return {
-            "format_name": "atlas3r_phase5e_latency_report",
+            "format_name": "atlas3r_phase5g_latency_report",
             "format_version": 1,
             **DIAGNOSTIC_TRUTH_FLAGS,
             "latency_units": "milliseconds",
@@ -104,8 +85,14 @@ def write_quality_reports(
         for observation in observations
     ]
     aggregate = _aggregate_record(accumulator)
+    pose_quality = write_pose_quality_reports(
+        output,
+        observations=observations,
+        references_by_frame_id=references_by_frame_id,
+        pose_mode=pose_mode,
+    )
     report: dict[str, object] = {
-        "format_name": "atlas3r_phase5e_quality_report",
+        "format_name": "atlas3r_phase5g_quality_report",
         "format_version": 1,
         **DIAGNOSTIC_TRUTH_FLAGS,
         "pose_mode": pose_mode,
@@ -113,6 +100,7 @@ def write_quality_reports(
         "reference_frame_count": len(references_by_frame_id),
         "compared_frame_count": cast(int, accumulator["compared_frames"]),
         "aggregate": aggregate,
+        "pose_quality": pose_quality,
         "cpu_tsdf": dict(tsdf_summary),
         "map_point_set_comparison": (
             None if map_point_set_comparison is None else dict(map_point_set_comparison)
@@ -142,7 +130,7 @@ def write_point_cloud_ply(path: Path, surface: TSDFSurface) -> Path:
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         handle.write("ply\n")
         handle.write("format ascii 1.0\n")
-        handle.write("comment Atlas3R Phase 5E diagnostic point cloud, not a triangle mesh\n")
+        handle.write("comment Atlas3R Phase 5G diagnostic point cloud, not a triangle mesh\n")
         handle.write(f"element vertex {points.shape[0]}\n")
         handle.write("property float x\n")
         handle.write("property float y\n")
@@ -177,10 +165,10 @@ def write_map_preview(
         "\n".join(
             [
                 "<!doctype html>",
-                '<html><head><meta charset="utf-8"><title>Atlas3R Phase 5E</title>',
+                '<html><head><meta charset="utf-8"><title>Atlas3R Phase 5G</title>',
                 "<style>body{font-family:system-ui,sans-serif;margin:2rem;max-width:900px}"
                 "code{background:#eee;padding:.1rem .25rem}</style></head><body>",
-                f"<h1>Atlas3R Phase 5E {html.escape(pose_mode)}</h1>",
+                f"<h1>Atlas3R Phase 5G {html.escape(pose_mode)}</h1>",
                 "<p>Diagnostic streaming student map runtime output.</p>",
                 "<ul>",
                 f"<li>Surface points: {surface_points}</li>",
@@ -226,21 +214,6 @@ def point_set_comparison(
             (np.mean(student_to_teacher) + np.mean(teacher_to_student)) / 2.0
         ),
     }
-
-
-def write_json(path: Path, record: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(dict(record), handle, indent=2, sort_keys=True)
-        handle.write("\n")
-
-
-def write_jsonl(path: Path, records: Sequence[Mapping[str, object]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        for record in records:
-            json.dump(dict(record), handle, sort_keys=True)
-            handle.write("\n")
 
 
 def _quality_record(
@@ -412,6 +385,12 @@ def _mean_or_none(values: npt.NDArray[np.float64]) -> float | None:
     return float(np.mean(values))
 
 
+def _percentile_or_none(values: npt.NDArray[np.float64], percentile: float) -> float | None:
+    if values.size == 0:
+        return None
+    return float(np.percentile(values, percentile))
+
+
 def _within(values: npt.NDArray[np.float64], threshold: float) -> float | None:
     if values.size == 0:
         return None
@@ -434,6 +413,7 @@ __all__ = [
     "write_latency_report",
     "write_map_preview",
     "write_observation_summaries",
+    "write_pose_quality_reports",
     "write_point_cloud_ply",
     "write_quality_reports",
 ]

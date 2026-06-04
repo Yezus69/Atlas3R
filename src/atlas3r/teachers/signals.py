@@ -107,6 +107,7 @@ def validate_teacher_signal_manifest(
     _required_string(manifest, "teacher_version")
     _required_string(manifest, "teacher_source_type")
     _validate_truth_boundary(manifest)
+    _validate_source_metadata(manifest)
 
     signals_value = manifest.get("signals")
     if not isinstance(signals_value, list):
@@ -380,6 +381,23 @@ def _validate_truth_boundary(manifest: Mapping[str, object]) -> None:
             raise ValueError(f"truth_boundary.{key}: must be a bool")
     if bool(truth["measured_geometry"]) and bool(truth["pseudo_label"]):
         raise ValueError("truth_boundary: measured_geometry and pseudo_label cannot both be true")
+
+
+def _validate_source_metadata(manifest: Mapping[str, object]) -> None:
+    metadata = manifest.get("source_metadata")
+    if metadata is None:
+        return
+    if not isinstance(metadata, Mapping):
+        raise ValueError("source_metadata: must be a mapping")
+    pose_source = metadata.get("pose_source")
+    if pose_source is not None and (not isinstance(pose_source, str) or not pose_source):
+        raise ValueError("source_metadata.pose_source: must be a non-empty string when provided")
+    pose_confidence = metadata.get("pose_confidence")
+    if pose_confidence is not None:
+        if not isinstance(pose_confidence, int | float) or isinstance(pose_confidence, bool):
+            raise ValueError("source_metadata.pose_confidence: must be numeric when provided")
+        if float(pose_confidence) < 0.0 or float(pose_confidence) > 1.0:
+            raise ValueError("source_metadata.pose_confidence: must be in [0, 1]")
 
 
 def _array(

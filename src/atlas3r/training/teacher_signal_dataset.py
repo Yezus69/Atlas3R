@@ -133,6 +133,9 @@ class TeacherSignalTemporalDataset:
             "relative_translation_center_from_camera": torch.from_numpy(
                 _relative_translation_center_from_camera(transforms)
             ),
+            "relative_rotation_6d_center_from_camera": torch.from_numpy(
+                _relative_rotation_6d_center_from_camera(transforms)
+            ),
         }
         if "pointmap_camera_m" in teacher_payload:
             pointmap = np.asarray(teacher_payload["pointmap_camera_m"], dtype=np.float32)
@@ -266,6 +269,19 @@ def _relative_translation_center_from_camera(
         for index in range(T_world_camera.shape[0])
     ]
     return cast(npt.NDArray[np.float32], np.stack(relative).astype(np.float32, copy=False))
+
+
+def _relative_rotation_6d_center_from_camera(
+    T_world_camera: npt.NDArray[np.float32],
+) -> npt.NDArray[np.float32]:
+    center_index = T_world_camera.shape[0] // 2
+    T_center_world = invert_transform(T_world_camera[center_index])
+    rotations = [
+        compose_transforms(T_center_world, T_world_camera[index])[:3, :3]
+        for index in range(T_world_camera.shape[0])
+    ]
+    encoded = [np.concatenate([rotation[:, 0], rotation[:, 1]], axis=0) for rotation in rotations]
+    return cast(npt.NDArray[np.float32], np.stack(encoded).astype(np.float32, copy=False))
 
 
 def _teacher_is_measured(manifest: dict[str, object]) -> bool:

@@ -1,4 +1,4 @@
-"""TSDF metadata and summary helpers for Phase 5E student runtime."""
+"""TSDF metadata and summary helpers for Phase 5G student runtime."""
 
 from __future__ import annotations
 
@@ -29,13 +29,13 @@ def with_runtime_surface_metadata(
     metadata = dict(surface.metadata)
     metadata.update(
         {
-            "artifact_type": "phase_5e_streaming_student_cpu_tsdf_surface_points",
+            "artifact_type": "phase_5g_streaming_student_cpu_tsdf_surface_points",
             "pose_mode": pose_mode,
             "checkpoint_path": str(checkpoint_path),
             "checkpoint_step": int(checkpoint["step"]),
             "truth_boundary": dict(cast(dict[str, object], checkpoint["truth_boundary"])),
             "accuracy_report_path": None,
-            "accuracy_note": "Phase 5E runtime output is diagnostic, not an accuracy report.",
+            "accuracy_note": "Phase 5G runtime output is diagnostic, not an accuracy report.",
             "observation_sources": stable_strings([obs.source for obs in observations]),
             **DIAGNOSTIC_TRUTH_FLAGS,
         }
@@ -43,7 +43,7 @@ def with_runtime_surface_metadata(
     metadata["flags"] = stable_strings(
         [
             *[str(flag) for flag in metadata.get("flags", [])],
-            "phase_5e_streaming_student_runtime",
+            "phase_5g_streaming_student_runtime",
             "observed_surface_points",
             "not_completed_surface",
             "not_accuracy_report",
@@ -92,7 +92,7 @@ def teacher_map_comparison(
 
 def tsdf_metrics(surface: TSDFSurface, pose_mode: str) -> dict[str, object]:
     return {
-        "metric_family": "phase_5e_streaming_student_tsdf_diagnostic",
+        "metric_family": "phase_5g_streaming_student_tsdf_diagnostic",
         **DIAGNOSTIC_TRUTH_FLAGS,
         "pose_mode": pose_mode,
         "surface_point_count": int(surface.points_world_m.shape[0]),
@@ -137,7 +137,7 @@ def summary_record(
     ply_path: Path,
 ) -> dict[str, object]:
     return {
-        "format_name": "atlas3r_phase5e_stream_student_map_summary",
+        "format_name": "atlas3r_phase5g_stream_student_map_summary",
         "format_version": 1,
         **DIAGNOSTIC_TRUTH_FLAGS,
         "pose_mode": pose_mode,
@@ -156,6 +156,10 @@ def summary_record(
             "latency_report": _rel(output, output / "latency_report.json"),
             "quality_report": _rel(output, output / "quality_report.json"),
             "per_frame_quality": _rel(output, output / "per_frame_quality.jsonl"),
+            "pose_quality_report": _rel(output, output / "pose_quality_report.json"),
+            "per_frame_pose_quality": _rel(output, output / "per_frame_pose_quality.jsonl"),
+            "trajectory_estimate_tum": _rel(output, output / "trajectory_estimate_tum.txt"),
+            "trajectory_groundtruth_tum": _rel(output, output / "trajectory_groundtruth_tum.txt"),
             "tsdf": _rel(output, output / "tsdf"),
             "point_cloud": _rel(output, ply_path),
             "map_preview": _rel(output, output / "map_preview.html"),
@@ -163,14 +167,13 @@ def summary_record(
         "cpu_tsdf": dict(tsdf_summary_record),
         "quality_aggregate": dict(cast(dict[str, object], quality_report["aggregate"])),
         "latency": dict(cast(dict[str, object], latency_report["fps_equivalent"])),
-        "student_relative_pose_note": (
-            "student-relative pose is diagnostic only and keeps source rotation"
-            if pose_mode == "student-relative"
-            else None
-        ),
+        "pose_mode_note": _pose_mode_note(pose_mode),
         "known_blockers_for_realtime_mapping": [
             "No realtime scheduler or bounded GPU mapper is implemented in this phase.",
-            "Student-relative pose is not validated as a mapping-ready tracker.",
+            (
+                "Student-relative and student-odometry poses are not validated as "
+                "mapping-ready trackers."
+            ),
             "Quality is compared only against the provided teacher cache, not a benchmark.",
         ],
     }
@@ -198,6 +201,17 @@ def _int_field(mapping: Mapping[str, object], key: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{key}: must be an integer")
     return value
+
+
+def _pose_mode_note(pose_mode: str) -> str | None:
+    if pose_mode == "student-relative":
+        return "student-relative pose is diagnostic only and keeps source rotation"
+    if pose_mode == "student-odometry":
+        return (
+            "student-odometry anchors the first frame to the source pose and rolls out "
+            "learned relative SE(3); diagnostic only"
+        )
+    return None
 
 
 def _rel(root: Path, path: Path) -> str:

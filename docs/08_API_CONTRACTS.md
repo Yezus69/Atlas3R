@@ -190,12 +190,10 @@ records from existing `FramePacket` / `RGBFrameSource` inputs. They preserve
 input order, reject empty/non-packet/duplicate-frame-id inputs, keep compact
 deterministic metadata, and do not run inference or touch mapper/runtime/TSDF
 paths.
-Teacher prediction cache layout remains `metadata.json`,
-`frame_summaries.jsonl`, and optional `arrays/frame_<frame_id:06d>.npz` payloads
-enabled by `--store-arrays`. Metadata records
-`format_name=atlas3r_teacher_prediction_cache`, `format_version=1`, adapter
-status/capabilities, coordinate frame, frame IDs, scale sources, summaries path,
-and array storage state.
+Teacher prediction caches remain `metadata.json`, `frame_summaries.jsonl`, and
+optional `arrays/frame_<frame_id:06d>.npz` payloads enabled by `--store-arrays`.
+Metadata records format/version, adapter status/capabilities, coordinate frame,
+frame IDs, scale sources, summaries path, and array storage state.
 
 Teacher-signal caches use
 `atlas3r_teacher_signal_manifest.json` plus `signals/clip_<id>.npz`. Manifest
@@ -215,6 +213,11 @@ arrays are `pointmap_camera_m`, `pointmap_world_m`, `normal_camera`,
 checks finite arrays, non-negative depth/sigma, positive sigma on valid pixels,
 probabilities in `[0,1]`, valid intrinsics/transforms, safe relative paths, and
 matching source clip metadata.
+`source_metadata.pose_source` is optional but must be a non-empty string when
+present; `source_metadata.pose_confidence` is optional but must be in `[0,1]`
+when present. Measured TUM teacher caches mark measured geometry true and
+pseudo-label false; pseudo/external caches do the inverse and must not relabel
+measured TUM pose as an external teacher.
 Raw `teachers ingest-local` NPZ inputs must be named `clip_<source_clip_id:06d>.npz` or `source_clip_<source_clip_id:06d>.npz`; parsed IDs select source clips, and duplicate/out-of-range IDs, bad filenames, or frame ID/timestamp mismatches are rejected.
 `teachers inspect-signals` writes only `summary.json` and `per_clip_metrics.jsonl`. `teachers map-signals` deduplicates by `frame_id` before CPU TSDF integration; first occurrence wins in signal order then frame offset, duplicates must match depth/K/`T_world_camera`, and `map_summary.json` records before/after counts, duplicate count, and policy.
 External teacher runners under `atlas3r.teachers.external` expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`, and `ExternalTeacherRunner`; must not import external model packages at module import time; `status()` reports availability/install/input/output/local-run capability; and `run(...)` writes a validated signal cache or raises an explicit error.
@@ -294,10 +297,15 @@ artifact paths, and a truth boundary. `atlas3r inspect runtime-fixture --input
 teacher cache, and nested complete TSDF output inspection.
 
 `atlas3r runtime stream-student-map --checkpoint ... --clip-cache ... --teacher-cache ... --output ...`
-runs a Phase 5D checkpoint over unique frames, emits `DepthObservation`s, fuses
-CPU TSDF, and writes per-mode logs, reports, TSDF sidecars, `point_cloud.ply`,
-and preview HTML. Pose modes are `oracle`, diagnostic-only `student-relative`,
-or `both`; all truth-claim flags stay false.
+runs a temporal checkpoint over unique frames, emits `DepthObservation`s, fuses
+CPU TSDF, and writes per-mode reports, TSDF sidecars, PLY, and preview HTML.
+Pose modes are `oracle`, diagnostic-only `student-relative`,
+`student-odometry`, or `both`; `student-odometry` anchors only the first frame
+to source pose, then rolls out learned relative SE(3) from each window's
+previous-frame slot. Per-mode outputs include `quality_report.json`,
+`per_frame_quality.jsonl`, `pose_quality_report.json`,
+`per_frame_pose_quality.jsonl`, TUM estimate/ground-truth trajectories,
+`latency_report.json`, `tsdf/`, and `point_cloud.ply`; truth-claim flags stay false.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.
@@ -340,12 +348,10 @@ arrays with `learned_inference=false`, `usable_for_mapping=false`,
 `accuracy_report=false`, and `performance_report=false`.
 
 ### FramePacket -> StudentClipInput Bridge
-`atlas3r.data.student_clip_from_frame_packets(frames, batch_id=...)` converts a
-non-empty ordered `FramePacket` sequence into one `StudentClipInput` with
-`images_rgb` shaped `1,T,3,H,W`, `intrinsics` shaped `1,T,3,3`, preserved
-`frame_ids`, compact source metadata, and no inference or mapper/TSDF use. It
-rejects non-packets, duplicate frame IDs, mismatched/non-`3,H,W` `rgb_model`
-shapes, and invalid intrinsics.
+`atlas3r.data.student_clip_from_frame_packets(frames, batch_id=...)` converts
+ordered `FramePacket`s into one `StudentClipInput` with `images_rgb 1,T,3,H,W`,
+`intrinsics 1,T,3,3`, preserved frame IDs, compact metadata, and no inference or
+mapper use. It rejects non-packets, duplicate IDs, bad RGB shapes, and invalid K.
 
 ## Training And Checkpoint-Inference MVP Contracts
 Optional Torch/Pillow paths must not load through base `import atlas3r`; missing
@@ -375,7 +381,7 @@ checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
 synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 
 ### TUM RGB-D Real-Data Debug Training, Eval, And Temporal Clips
-Commands: `atlas3r datasets tum-rgbd download|prepare`, `atlas3r train tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `atlas3r eval tum-rgbd-checkpoint [--write-tsdf]`, `atlas3r forge tum-rgbd-clips`, `atlas3r train tum-rgbd-temporal`, and `atlas3r train teacher-signals-temporal`. Download uses stdlib networking and safe tar extraction.
+Commands: `atlas3r datasets tum-rgbd download|prepare`, `atlas3r train tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `atlas3r eval tum-rgbd-checkpoint [--write-tsdf]`, `atlas3r forge tum-rgbd-clips`, `atlas3r train tum-rgbd-temporal`, and `atlas3r train teacher-signals-temporal`. Download uses stdlib networking and safe tar extraction. Supported sequence specs include `freiburg1_xyz`, `freiburg1_desk`, `freiburg2_xyz`, and `freiburg3_long_office_household`; `download` accepts paired `--archive-url` and `--groundtruth-url` overrides for verified mirrors or URL changes.
 
 The TUM manifest is `format_name=atlas3r_tum_rgbd_manifest`, `format_version=1`,
 and records RGB/depth metadata, ROS default `K`, `depth_raw/5000.0`, split
@@ -383,29 +389,23 @@ metadata, frame IDs, timestamps, paths, `T_world_camera`, camera center, and
 truth boundary. `every10` preserves the original split; `block` uses the
 selected-frame tail as validation.
 
-Single-frame real-RGBD datasets return `images_rgb 3,H,W`, scaled
-`intrinsics 3,3`, `target.depth_m`, `target.valid_depth_mask`,
-`target.confidence`, `target.camera_center_world_m`, `target.T_world_camera`,
-and metadata. `TinyDepthPoseNet` is RGB-only; `TinyMetricDepthNetV2` adds
-intrinsics ray channels and keeps depth/sigma/confidence/camera-center outputs.
+Single-frame real-RGBD datasets return `images_rgb 3,H,W`, scaled `intrinsics`,
+depth/mask/confidence/camera-center/`T_world_camera` targets, and metadata.
+`TinyDepthPoseNet` is RGB-only; `TinyMetricDepthNetV2` adds intrinsics rays.
 
-Clip caches use `atlas3r_clip_cache_manifest.json` with
-`format_name=atlas3r_multiview_clip_cache`, `format_version=1`, split,
-clip/image sizes, frame IDs, timestamps, relative payload paths, source metadata,
-and truth flags `diagnostic_only=true`, `accuracy_report=false`,
-`performance_report=false`, `teacher_source=tum_rgbd_sensor_depth_pose`.
-Payloads are `clips/clip_<id>.npz` with `images_rgb_u8 T,H,W,3`, `depth_m T,H,W`,
-`valid_depth_mask T,H,W`, `K T,3,3`, `T_world_camera T,4,4`, `frame_ids T`,
-`timestamps_s T`, `center_index`, and optional `pointmap_camera_m`,
-`pointmap_world_m`, `normal_camera` as `T,H,W,3`.
+Clip caches use `atlas3r_clip_cache_manifest.json` with format/version, split,
+clip/image sizes, frame IDs, timestamps, payload paths, source metadata, and
+diagnostic TUM sensor depth/pose truth flags. Payloads are `clips/clip_<id>.npz`
+with RGB/depth/mask/K/`T_world_camera`/frame/timestamp arrays, `center_index`,
+and optional pointmap/normal arrays.
 
 `TumRgbdClipCacheDataset` returns `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, center depth/mask/confidence targets, and `relative_T_center_camera T,4,4` where `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`. `TinyTemporalMetricNetV0` predicts center depth/sigma/confidence and `relative_translation_center_from_camera B,T,3`; rotation is not learned in Phase 5A. Temporal runs write config, train/validation JSONL, summary, last/best checkpoints, NPZ sample, and HTML/SVG preview. All metrics are diagnostic.
 
 `TeacherSignalTemporalDataset` lazily aligns one or more validated teacher-signal caches to source clip RGB, intrinsics, `T_world_camera`, frame IDs, and timestamps. Samples expose `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, `frame_ids T`, `timestamps_s T`, targets `depth_m/depth_sigma_m/confidence/valid_mask T,1,H,W`, `teacher_is_measured`, teacher metadata, and `pointmap_camera_m T,3,H,W` plus `pointmap_camera_valid` (false with zero pointmaps when absent); mixed caches must share dataset, sequence, split, clip length, and image size.
 
-`TemporalMetricNetV1` is the only Phase 5D trainable model addition: RGB plus ray channels, shared 2D encoder, small ConvGRU bottleneck, `depth_m/depth_sigma_m/confidence B,T,1,H,W`, and `relative_translation_center_from_camera B,T,3`. `atlas3r train teacher-signals-temporal` writes config/metrics/validation/summary/last+best checkpoints and a compact preview; checkpoints use `format_name=atlas3r_teacher_signal_temporal_checkpoint` and include model/loss config, teacher cache lists, step, metrics, optimizer state, and truth flags with mapping/realtime/accuracy/performance/final-SMGT false.
+`TemporalMetricNetV1` is the Phase 5D/5G trainable teacher-signal model: RGB plus ray channels, shared 2D encoder, small ConvGRU bottleneck, `depth_m/depth_sigma_m/confidence B,T,1,H,W`, `relative_translation_center_from_camera B,T,3`, and `relative_rotation_6d_center_from_camera B,T,6` using the first two columns of `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`. Older Phase 5D/5F checkpoints without rotation-head weights still load for depth and `student-relative` diagnostics, but `student-odometry` requires trained rotation-head weights. `atlas3r train teacher-signals-temporal` writes config/metrics/validation/summary/last+best checkpoints and a compact preview; checkpoints use `format_name=atlas3r_teacher_signal_temporal_checkpoint` and include model/loss config, teacher cache lists, step, metrics, optimizer state, and truth flags with mapping/realtime/accuracy/performance/final-SMGT false.
 
-Teacher-signal losses weight valid pixels by `confidence / clamp(depth_sigma_m^2, min_sigma^2, max_sigma^2)`, clamp and normalize weights per batch, and default to measured teacher weight `1.0` and pseudo teacher weight `0.25`. `atlas3r teachers run-student-temporal` loads a Phase 5D checkpoint and writes `teacher_name=atlas3r_temporal_v1_student` pseudo-label caches; exported `T_world_camera` comes from the source clip cache unless a later phase upgrades pose export.
+Teacher-signal losses weight valid pixels by `confidence / clamp(depth_sigma_m^2, min_sigma^2, max_sigma^2)`, clamp and normalize weights per batch, and default to measured teacher weight `1.0` and pseudo teacher weight `0.25`. Pose losses include relative translation SmoothL1 in meters, 6D-to-SO(3) geodesic rotation loss in radians, and an optional `se3_pose_weight`. Metrics include depth RMSE/MAE/AbsRel, relative translation mean/median/p95, relative rotation mean/median/p95 in degrees, ATE-like camera-center rollout error, and RPE-like consecutive transform error. `atlas3r teachers run-student-temporal` loads a temporal checkpoint and writes `teacher_name=atlas3r_temporal_v1_student` pseudo-label caches; exported `T_world_camera` comes from the source clip cache unless a later phase upgrades pose export.
 
 ## Map Object Contracts
 `ObjectInstance` fields: `object_id`, `label_candidates`, `T_world_object 4,4`,

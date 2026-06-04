@@ -181,6 +181,9 @@ def register_train_parser(subparsers: Any) -> None:
     teacher_temporal_parser.add_argument("--max-pixel-weight", type=float, default=100.0)
     teacher_temporal_parser.add_argument("--measured-teacher-weight", type=float, default=1.0)
     teacher_temporal_parser.add_argument("--pseudo-teacher-weight", type=float, default=0.25)
+    teacher_temporal_parser.add_argument("--relative-translation-weight", type=float, default=0.1)
+    teacher_temporal_parser.add_argument("--relative-rotation-weight", type=float, default=0.1)
+    teacher_temporal_parser.add_argument("--se3-pose-weight", type=float, default=1.0)
     teacher_temporal_parser.set_defaults(handler=_run_train_teacher_signals_temporal)
 
 
@@ -320,6 +323,9 @@ def _run_train_teacher_signals_temporal(args: argparse.Namespace) -> int:
                     max_pixel_weight=args.max_pixel_weight,
                     measured_teacher_weight=args.measured_teacher_weight,
                     pseudo_teacher_weight=args.pseudo_teacher_weight,
+                    relative_translation_weight=args.relative_translation_weight,
+                    relative_rotation_weight=args.relative_rotation_weight,
+                    se3_pose_weight=args.se3_pose_weight,
                 ),
             )
         )

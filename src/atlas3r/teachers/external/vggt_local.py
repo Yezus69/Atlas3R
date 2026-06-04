@@ -140,6 +140,8 @@ def ingest_vggt_local_teacher_signal_cache(config: VGGTLocalIngestConfig) -> dic
                 "pointmap_world_m",
             ],
             "depth_sigma_m_heuristic": _SIGMA_HEURISTIC,
+            "pose_source": "local external geometry teacher T_world_camera arrays",
+            "pose_source_type": "local_external_geometry_teacher",
             "measured_geometry": False,
             "pseudo_label": True,
         },

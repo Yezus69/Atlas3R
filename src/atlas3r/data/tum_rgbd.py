@@ -7,6 +7,7 @@ import math
 import shutil
 import tarfile
 import urllib.error
+import urllib.parse
 import urllib.request
 from bisect import bisect_left
 from dataclasses import dataclass
@@ -18,33 +19,82 @@ TUM_RGBD_MANIFEST_VERSION = 1
 TUM_RGBD_COORDINATE_FRAME = "x_right_y_down_z_forward"
 TUM_RGBD_SPLIT_POLICIES = ("every10", "block")
 
-_FREIBURG1_XYZ_ARCHIVE = "rgbd_dataset_freiburg1_xyz.tgz"
-_FREIBURG1_XYZ_GROUNDTRUTH = "rgbd_dataset_freiburg1_xyz-groundtruth.txt"
+_TUM_RGBD_URL_ROOT = "https://cvg.cit.tum.de/rgbd/dataset"
+_ROS_DEFAULT_INTRINSICS = {
+    "fx": 525.0,
+    "fy": 525.0,
+    "cx": 319.5,
+    "cy": 239.5,
+}
 
 TUM_RGBD_SEQUENCES: dict[str, dict[str, object]] = {
     "freiburg1_xyz": {
         "sequence_name": "freiburg1_xyz",
         "dataset_name": "TUM RGB-D freiburg1_xyz",
-        "archive_name": _FREIBURG1_XYZ_ARCHIVE,
-        "archive_url": (
-            "https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_xyz.tgz"
-        ),
-        "groundtruth_name": _FREIBURG1_XYZ_GROUNDTRUTH,
+        "archive_name": "rgbd_dataset_freiburg1_xyz.tgz",
+        "archive_url": f"{_TUM_RGBD_URL_ROOT}/freiburg1/rgbd_dataset_freiburg1_xyz.tgz",
+        "groundtruth_name": "rgbd_dataset_freiburg1_xyz-groundtruth.txt",
         "groundtruth_url": (
-            "https://cvg.cit.tum.de/rgbd/dataset/freiburg1/"
-            "rgbd_dataset_freiburg1_xyz-groundtruth.txt"
+            f"{_TUM_RGBD_URL_ROOT}/freiburg1/rgbd_dataset_freiburg1_xyz-groundtruth.txt"
         ),
         "extracted_dir": "rgbd_dataset_freiburg1_xyz",
         "width": 640,
         "height": 480,
-        "intrinsics": {
-            "fx": 525.0,
-            "fy": 525.0,
-            "cx": 319.5,
-            "cy": 239.5,
-        },
+        "intrinsics": _ROS_DEFAULT_INTRINSICS,
+        "intrinsics_source": "TUM RGB-D ROS default intrinsics",
         "depth_scale": 5000.0,
-    }
+    },
+    "freiburg1_desk": {
+        "sequence_name": "freiburg1_desk",
+        "dataset_name": "TUM RGB-D freiburg1_desk",
+        "archive_name": "rgbd_dataset_freiburg1_desk.tgz",
+        "archive_url": f"{_TUM_RGBD_URL_ROOT}/freiburg1/rgbd_dataset_freiburg1_desk.tgz",
+        "groundtruth_name": "rgbd_dataset_freiburg1_desk-groundtruth.txt",
+        "groundtruth_url": (
+            f"{_TUM_RGBD_URL_ROOT}/freiburg1/rgbd_dataset_freiburg1_desk-groundtruth.txt"
+        ),
+        "extracted_dir": "rgbd_dataset_freiburg1_desk",
+        "width": 640,
+        "height": 480,
+        "intrinsics": _ROS_DEFAULT_INTRINSICS,
+        "intrinsics_source": "TUM RGB-D ROS default intrinsics",
+        "depth_scale": 5000.0,
+    },
+    "freiburg2_xyz": {
+        "sequence_name": "freiburg2_xyz",
+        "dataset_name": "TUM RGB-D freiburg2_xyz",
+        "archive_name": "rgbd_dataset_freiburg2_xyz.tgz",
+        "archive_url": f"{_TUM_RGBD_URL_ROOT}/freiburg2/rgbd_dataset_freiburg2_xyz.tgz",
+        "groundtruth_name": "rgbd_dataset_freiburg2_xyz-groundtruth.txt",
+        "groundtruth_url": (
+            f"{_TUM_RGBD_URL_ROOT}/freiburg2/rgbd_dataset_freiburg2_xyz-groundtruth.txt"
+        ),
+        "extracted_dir": "rgbd_dataset_freiburg2_xyz",
+        "width": 640,
+        "height": 480,
+        "intrinsics": _ROS_DEFAULT_INTRINSICS,
+        "intrinsics_source": "TUM RGB-D ROS default intrinsics",
+        "depth_scale": 5000.0,
+    },
+    "freiburg3_long_office_household": {
+        "sequence_name": "freiburg3_long_office_household",
+        "dataset_name": "TUM RGB-D freiburg3_long_office_household",
+        "archive_name": "rgbd_dataset_freiburg3_long_office_household.tgz",
+        "archive_url": (
+            f"{_TUM_RGBD_URL_ROOT}/freiburg3/rgbd_dataset_freiburg3_long_office_household.tgz"
+        ),
+        "groundtruth_name": "rgbd_dataset_freiburg3_long_office_household-groundtruth.txt",
+        "groundtruth_url": (
+            f"{_TUM_RGBD_URL_ROOT}/freiburg3/"
+            "rgbd_dataset_freiburg3_long_office_household-groundtruth.txt"
+        ),
+        "extracted_dir": "rgbd_dataset_freiburg3_long_office_household",
+        "width": 640,
+        "height": 480,
+        "intrinsics": _ROS_DEFAULT_INTRINSICS,
+        "intrinsics_source": "TUM RGB-D ROS default intrinsics",
+        "depth_scale": 5000.0,
+    },
 }
 
 _T = TypeVar("_T")
@@ -75,10 +125,16 @@ class TumAssociatedFrame:
     pose: TumPoseEntry
 
 
-def download_tum_rgbd_sequence(sequence: str, output: str | Path) -> tuple[Path, ...]:
+def download_tum_rgbd_sequence(
+    sequence: str,
+    output: str | Path,
+    *,
+    archive_url: str | None = None,
+    groundtruth_url: str | None = None,
+) -> tuple[Path, ...]:
     """Download and safely extract the supported TUM RGB-D sequence files."""
 
-    spec = _sequence_spec(sequence)
+    spec = _sequence_spec(sequence, archive_url=archive_url, groundtruth_url=groundtruth_url)
     output_path = Path(output)
     output_path.mkdir(parents=True, exist_ok=True)
     archive_path = output_path / str(spec["archive_name"])
@@ -169,7 +225,7 @@ def prepare_tum_rgbd_manifest(
         },
         "intrinsics": {
             "K": _intrinsics_matrix(spec),
-            "source": "TUM RGB-D ROS default freiburg1 intrinsics",
+            "source": str(spec.get("intrinsics_source", "TUM RGB-D ROS default intrinsics")),
         },
         "depth": {
             "scale": _float_spec(spec, "depth_scale"),
@@ -192,7 +248,7 @@ def prepare_tum_rgbd_manifest(
         },
         "frame_count": len(records),
         "frames": records,
-        "truth_boundary": _truth_boundary(),
+        "truth_boundary": _truth_boundary(str(spec["dataset_name"])),
     }
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -437,13 +493,42 @@ def _float_spec(spec: dict[str, object], field_name: str) -> float:
     return float(value)
 
 
-def _sequence_spec(sequence: str) -> dict[str, object]:
+def _sequence_spec(
+    sequence: str,
+    *,
+    archive_url: str | None = None,
+    groundtruth_url: str | None = None,
+) -> dict[str, object]:
     if sequence not in TUM_RGBD_SEQUENCES:
         supported = ", ".join(sorted(TUM_RGBD_SEQUENCES))
         raise ValueError(
             f"sequence: unsupported TUM RGB-D sequence {sequence!r}; supported: {supported}"
         )
-    return TUM_RGBD_SEQUENCES[sequence]
+    if (archive_url is None) != (groundtruth_url is None):
+        raise ValueError("archive_url and groundtruth_url: override URLs must be supplied together")
+    spec = dict(TUM_RGBD_SEQUENCES[sequence])
+    if archive_url is not None and groundtruth_url is not None:
+        spec["archive_url"] = _validated_download_url("archive_url", archive_url)
+        spec["groundtruth_url"] = _validated_download_url("groundtruth_url", groundtruth_url)
+        spec["archive_name"] = _filename_from_url("archive_url", archive_url, suffix=".tgz")
+        spec["groundtruth_name"] = _filename_from_url(
+            "groundtruth_url", groundtruth_url, suffix=".txt"
+        )
+    return spec
+
+
+def _validated_download_url(field_name: str, url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or not parsed.path:
+        raise ValueError(f"{field_name}: must be an http(s) URL with a filename path")
+    return url
+
+
+def _filename_from_url(field_name: str, url: str, *, suffix: str) -> str:
+    name = Path(urllib.parse.urlparse(url).path).name
+    if not name or not name.endswith(suffix):
+        raise ValueError(f"{field_name}: URL path must end with {suffix!r}")
+    return name
 
 
 def _validate_prepare_args(
@@ -488,11 +573,11 @@ def _split_notes(split_policy: str) -> str:
     return "unknown split policy"
 
 
-def _truth_boundary() -> dict[str, object]:
+def _truth_boundary(dataset_name: str) -> dict[str, object]:
     return {
         "training_mvp": True,
         "trained_on_real_rgbd": True,
-        "dataset": "TUM RGB-D freiburg1_xyz",
+        "dataset": dataset_name,
         "synthetic_only": False,
         "real_capture_debug_model": True,
         "usable_for_realtime_mapping": False,
@@ -508,6 +593,7 @@ __all__ = [
     "TUM_RGBD_COORDINATE_FRAME",
     "TUM_RGBD_MANIFEST_FORMAT",
     "TUM_RGBD_MANIFEST_VERSION",
+    "TUM_RGBD_SEQUENCES",
     "TUM_RGBD_SPLIT_POLICIES",
     "TumAssociatedFrame",
     "TumImageEntry",

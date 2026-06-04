@@ -24,6 +24,8 @@ class TeacherSignalLossConfig:
     confidence_weight: float = 0.02
     pointmap_weight: float = 0.05
     relative_translation_weight: float = 0.1
+    relative_rotation_weight: float = 0.1
+    se3_pose_weight: float = 1.0
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -37,6 +39,8 @@ class TeacherSignalLossConfig:
             "confidence_weight": self.confidence_weight,
             "pointmap_weight": self.pointmap_weight,
             "relative_translation_weight": self.relative_translation_weight,
+            "relative_rotation_weight": self.relative_rotation_weight,
+            "se3_pose_weight": self.se3_pose_weight,
         }
 
 
@@ -50,15 +54,19 @@ def teacher_signal_temporal_loss(
 
     cfg = config or TeacherSignalLossConfig()
     _validate_config(cfg)
-    pred_depth = _required_tensor(prediction, "depth_m").clamp(min=1e-4)
-    pred_sigma = _required_tensor(prediction, "depth_sigma_m").clamp(
-        min=cfg.min_sigma_m,
-        max=cfg.max_sigma_m,
+    pred_depth = _required_tensor(prediction, "depth_m").float().clamp(min=1e-4)
+    pred_sigma = (
+        _required_tensor(prediction, "depth_sigma_m")
+        .clamp(
+            min=cfg.min_sigma_m,
+            max=cfg.max_sigma_m,
+        )
+        .float()
     )
-    pred_confidence = _required_tensor(prediction, "confidence").clamp(0.0, 1.0)
-    target_depth = _required_tensor(target, "depth_m").clamp(min=1e-4)
-    target_sigma = _required_tensor(target, "depth_sigma_m")
-    target_confidence = _required_tensor(target, "confidence").clamp(0.0, 1.0)
+    pred_confidence = _required_tensor(prediction, "confidence").float().clamp(0.0, 1.0)
+    target_depth = _required_tensor(target, "depth_m").float().clamp(min=1e-4)
+    target_sigma = _required_tensor(target, "depth_sigma_m").float()
+    target_confidence = _required_tensor(target, "confidence").float().clamp(0.0, 1.0)
     valid_mask = _required_tensor(target, "valid_mask").to(dtype=_TORCH.bool)
     teacher_is_measured = _required_tensor(target, "teacher_is_measured").to(dtype=_TORCH.bool)
     _validate_pixel_shapes(
@@ -116,23 +124,67 @@ def teacher_signal_temporal_loss(
         pointmap_loss = _pointmap_loss(pred_depth, target, weights)
 
     translation_loss = pred_depth.new_tensor(0.0)
+    rotation_loss = pred_depth.new_tensor(0.0)
     translation_error = pred_depth.new_zeros((teacher_is_measured.shape[0],))
+    rotation_error_rad = pred_depth.new_zeros((teacher_is_measured.shape[0],))
+    ate_error_m = pred_depth.new_zeros((teacher_is_measured.shape[0],))
+    rpe_translation_error_m = pred_depth.new_zeros((teacher_is_measured.shape[0],))
+    rpe_rotation_error_deg = pred_depth.new_zeros((teacher_is_measured.shape[0],))
     if "relative_translation_center_from_camera" in prediction and (
         "relative_translation_center_from_camera" in target
     ):
-        pred_translation = _required_tensor(prediction, "relative_translation_center_from_camera")
-        target_translation = _required_tensor(target, "relative_translation_center_from_camera")
+        pred_translation = _required_tensor(
+            prediction, "relative_translation_center_from_camera"
+        ).float()
+        target_translation = _required_tensor(
+            target, "relative_translation_center_from_camera"
+        ).float()
         if pred_translation.shape != target_translation.shape:
             raise ValueError("relative_translation_center_from_camera: shapes must match")
         translation_loss = _F.smooth_l1_loss(pred_translation, target_translation)
         translation_error = _TORCH.linalg.norm(pred_translation - target_translation, dim=-1)
+        if "relative_rotation_6d_center_from_camera" in prediction and (
+            "relative_rotation_6d_center_from_camera" in target
+        ):
+            pred_rotation_6d = _required_tensor(
+                prediction, "relative_rotation_6d_center_from_camera"
+            ).float()
+            target_rotation_6d = _required_tensor(
+                target, "relative_rotation_6d_center_from_camera"
+            ).float()
+            if pred_rotation_6d.shape != target_rotation_6d.shape:
+                raise ValueError("relative_rotation_6d_center_from_camera: shapes must match")
+            pred_rotation = _rotation_matrix_from_6d(pred_rotation_6d)
+            target_rotation = _rotation_matrix_from_6d(target_rotation_6d)
+            rotation_error_rad = _geodesic_rotation_error_rad(pred_rotation, target_rotation)
+            rotation_loss = _geodesic_rotation_error_rad(
+                pred_rotation,
+                target_rotation,
+                eps=1e-6,
+            ).mean()
+            ate_error_m = _ate_like_error_m(
+                pred_translation=pred_translation,
+                target_translation=target_translation,
+                pred_rotation=pred_rotation,
+                target_rotation=target_rotation,
+            )
+            rpe_translation_error_m, rpe_rotation_error_deg = _rpe_like_errors(
+                pred_translation=pred_translation,
+                target_translation=target_translation,
+                pred_rotation=pred_rotation,
+                target_rotation=target_rotation,
+            )
 
     loss_total = (
         cfg.log_depth_weight * log_depth_loss
         + cfg.sigma_nll_weight * sigma_nll
         + cfg.confidence_weight * confidence_loss
         + cfg.pointmap_weight * pointmap_loss
-        + cfg.relative_translation_weight * translation_loss
+        + cfg.se3_pose_weight
+        * (
+            cfg.relative_translation_weight * translation_loss
+            + cfg.relative_rotation_weight * rotation_loss
+        )
     )
     _raise_if_not_finite("loss_total", loss_total)
     abs_error = (pred_depth - target_depth).abs()[valid_mask]
@@ -145,6 +197,7 @@ def teacher_signal_temporal_loss(
         "loss_confidence": _float_item(confidence_loss),
         "loss_pointmap_camera": _float_item(pointmap_loss),
         "loss_relative_translation": _float_item(translation_loss),
+        "loss_relative_rotation_rad": _float_item(rotation_loss),
         "depth_rmse_m": _float_item(_TORCH.sqrt(abs_error.square().mean())),
         "depth_mae_m": _float_item(abs_error.mean()),
         "depth_absrel": _float_item((abs_error / target_valid_depth.clamp(min=1e-6)).mean()),
@@ -159,6 +212,27 @@ def teacher_signal_temporal_loss(
         "measured_batch_count": float(int(teacher_is_measured.sum().detach().cpu().item())),
         "pseudo_batch_count": float(int((~teacher_is_measured).sum().detach().cpu().item())),
         "relative_translation_mean_m": _float_item(translation_error.mean()),
+        "relative_translation_median_m": _float_item(translation_error.flatten().median()),
+        "relative_translation_p95_m": _quantile_float(translation_error.flatten(), 0.95),
+        "relative_rotation_mean_deg": _float_item(
+            rotation_error_rad.mean() * (180.0 / 3.141592653589793)
+        ),
+        "relative_rotation_median_deg": _float_item(
+            rotation_error_rad.flatten().median() * (180.0 / 3.141592653589793)
+        ),
+        "relative_rotation_p95_deg": _quantile_float(
+            rotation_error_rad.flatten() * (180.0 / 3.141592653589793),
+            0.95,
+        ),
+        "ate_like_camera_center_mean_m": _float_item(ate_error_m.mean()),
+        "ate_like_camera_center_median_m": _float_item(ate_error_m.flatten().median()),
+        "ate_like_camera_center_p95_m": _quantile_float(ate_error_m.flatten(), 0.95),
+        "rpe_like_translation_mean_m": _float_item(rpe_translation_error_m.mean()),
+        "rpe_like_translation_median_m": _float_item(rpe_translation_error_m.flatten().median()),
+        "rpe_like_translation_p95_m": _quantile_float(rpe_translation_error_m.flatten(), 0.95),
+        "rpe_like_rotation_mean_deg": _float_item(rpe_rotation_error_deg.mean()),
+        "rpe_like_rotation_median_deg": _float_item(rpe_rotation_error_deg.flatten().median()),
+        "rpe_like_rotation_p95_deg": _quantile_float(rpe_rotation_error_deg.flatten(), 0.95),
     }
     for key, value in metrics.items():
         if not _TORCH.isfinite(_TORCH.tensor(value)):
@@ -193,8 +267,8 @@ def _normalized_pixel_weights(
 
 
 def _pointmap_loss(pred_depth: Any, target: Mapping[str, Any], weights: Any) -> Any:
-    target_pointmap = _required_tensor(target, "pointmap_camera_m")
-    intrinsics = _required_tensor(target, "intrinsics")
+    target_pointmap = _required_tensor(target, "pointmap_camera_m").float()
+    intrinsics = _required_tensor(target, "intrinsics").float()
     if target_pointmap.shape[:3] != (pred_depth.shape[0], pred_depth.shape[1], 3):
         raise ValueError("pointmap_camera_m: must have shape B,T,3,H,W")
     predicted_pointmap = _unproject_depth_camera(pred_depth, intrinsics)
@@ -233,6 +307,94 @@ def _unproject_depth_camera(depth: Any, intrinsics: Any) -> Any:
     return pointmap.reshape(batch_size, clip_length, 3, height, width)
 
 
+def _rotation_matrix_from_6d(rotation_6d: Any) -> Any:
+    if rotation_6d.shape[-1] != 6:
+        raise ValueError("relative_rotation_6d_center_from_camera: last dimension must be 6")
+    first = rotation_6d[..., 0:3]
+    second = rotation_6d[..., 3:6]
+    basis_0 = _F.normalize(first, dim=-1, eps=1e-6)
+    second_orthogonal = second - (basis_0 * second).sum(dim=-1, keepdim=True) * basis_0
+    basis_1 = _F.normalize(second_orthogonal, dim=-1, eps=1e-6)
+    basis_2 = _TORCH.cross(basis_0, basis_1, dim=-1)
+    return _TORCH.stack((basis_0, basis_1, basis_2), dim=-1)
+
+
+def _geodesic_rotation_error_rad(pred_rotation: Any, target_rotation: Any, eps: float = 0.0) -> Any:
+    relative = _TORCH.matmul(pred_rotation.transpose(-1, -2), target_rotation)
+    trace = relative[..., 0, 0] + relative[..., 1, 1] + relative[..., 2, 2]
+    cos_theta = (trace - 1.0) * 0.5
+    cos_theta = cos_theta.clamp(min=-1.0, max=1.0)
+    skew_vector = _TORCH.stack(
+        (
+            relative[..., 2, 1] - relative[..., 1, 2],
+            relative[..., 0, 2] - relative[..., 2, 0],
+            relative[..., 1, 0] - relative[..., 0, 1],
+        ),
+        dim=-1,
+    )
+    sin_theta = 0.5 * _TORCH.linalg.norm(skew_vector, dim=-1)
+    if eps > 0.0:
+        sin_theta = _TORCH.sqrt(sin_theta.square() + eps * eps)
+    return _TORCH.atan2(sin_theta, cos_theta)
+
+
+def _ate_like_error_m(
+    *,
+    pred_translation: Any,
+    target_translation: Any,
+    pred_rotation: Any,
+    target_rotation: Any,
+) -> Any:
+    pred_rollout = _rollout_translations_from_first_anchor(pred_translation, pred_rotation)
+    target_rollout = _rollout_translations_from_first_anchor(target_translation, target_rotation)
+    return _TORCH.linalg.norm(pred_rollout - target_rollout, dim=-1)
+
+
+def _rollout_translations_from_first_anchor(translation: Any, rotation: Any) -> Any:
+    first_rotation = rotation[:, 0]
+    first_translation = translation[:, 0]
+    return _TORCH.matmul(
+        first_rotation.transpose(-1, -2).unsqueeze(1),
+        (translation - first_translation.unsqueeze(1)).unsqueeze(-1),
+    ).squeeze(-1)
+
+
+def _rpe_like_errors(
+    *,
+    pred_translation: Any,
+    target_translation: Any,
+    pred_rotation: Any,
+    target_rotation: Any,
+) -> tuple[Any, Any]:
+    if int(pred_translation.shape[1]) <= 1:
+        zeros = pred_translation.new_zeros((pred_translation.shape[0],))
+        return zeros, zeros
+    pred_rel_rotation, pred_rel_translation = _consecutive_relative_transforms(
+        pred_rotation, pred_translation
+    )
+    target_rel_rotation, target_rel_translation = _consecutive_relative_transforms(
+        target_rotation, target_translation
+    )
+    translation_error = _TORCH.linalg.norm(pred_rel_translation - target_rel_translation, dim=-1)
+    rotation_error_deg = _geodesic_rotation_error_rad(pred_rel_rotation, target_rel_rotation) * (
+        180.0 / 3.141592653589793
+    )
+    return translation_error, rotation_error_deg
+
+
+def _consecutive_relative_transforms(rotation: Any, translation: Any) -> tuple[Any, Any]:
+    left_rotation = rotation[:, :-1]
+    right_rotation = rotation[:, 1:]
+    left_translation = translation[:, :-1]
+    right_translation = translation[:, 1:]
+    relative_rotation = _TORCH.matmul(left_rotation.transpose(-1, -2), right_rotation)
+    relative_translation = _TORCH.matmul(
+        left_rotation.transpose(-1, -2),
+        (right_translation - left_translation).unsqueeze(-1),
+    ).squeeze(-1)
+    return relative_rotation, relative_translation
+
+
 def _weighted_mean(values: Any, weights: Any) -> Any:
     return (values * weights).sum() / weights.sum().clamp(min=1e-12)
 
@@ -244,6 +406,17 @@ def _validate_config(config: TeacherSignalLossConfig) -> None:
         raise ValueError("max_pixel_weight: must be positive")
     if config.measured_teacher_weight <= 0.0 or config.pseudo_teacher_weight <= 0.0:
         raise ValueError("teacher weights: must be positive")
+    for field_name in (
+        "log_depth_weight",
+        "sigma_nll_weight",
+        "confidence_weight",
+        "pointmap_weight",
+        "relative_translation_weight",
+        "relative_rotation_weight",
+        "se3_pose_weight",
+    ):
+        if getattr(config, field_name) < 0.0:
+            raise ValueError(f"{field_name}: must be non-negative")
 
 
 def _validate_pixel_shapes(*tensors: Any) -> None:
@@ -277,6 +450,12 @@ def _raise_if_not_finite(field_name: str, tensor: Any) -> None:
 
 def _float_item(tensor: Any) -> float:
     return float(tensor.detach().cpu().item())
+
+
+def _quantile_float(tensor: Any, quantile: float) -> float:
+    if int(tensor.numel()) <= 0:
+        return 0.0
+    return _float_item(_TORCH.quantile(tensor, quantile))
 
 
 __all__ = [

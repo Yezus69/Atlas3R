@@ -1,4 +1,4 @@
-"""Phase 5E streaming temporal-student to CPU TSDF runtime."""
+"""Phase 5G streaming temporal-student to CPU TSDF runtime."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from atlas3r.mapping.observations import DepthObservation
 from atlas3r.mapping.world_map_sidecar import write_tsdf_world_map_sidecar_from_artifacts
 from atlas3r.runtime.events import BoundedMemoryCounters, RuntimeEvent
 from atlas3r.runtime.student_map_observations import (
+    StudentOdometryState,
     load_teacher_reference_frames,
     observation_from_prediction,
     window_arrays,
@@ -55,7 +56,7 @@ from atlas3r.training.torch_runtime import require_torch
 
 
 def run_stream_student_map(config: StudentMapRuntimeConfig) -> dict[str, object]:
-    """Run the Phase 5E streaming student map diagnostic."""
+    """Run the Phase 5G streaming student map diagnostic."""
 
     _validate_config(config)
     loaded = load_teacher_signal_temporal_checkpoint(config.checkpoint, device=config.device)
@@ -76,7 +77,7 @@ def run_stream_student_map(config: StudentMapRuntimeConfig) -> dict[str, object]
         for mode in modes
     ]
     root_summary = {
-        "format_name": "atlas3r_phase5e_stream_student_map_run",
+        "format_name": "atlas3r_phase5g_stream_student_map_run",
         "format_version": 1,
         **DIAGNOSTIC_TRUTH_FLAGS,
         "checkpoint": str(config.checkpoint),
@@ -103,6 +104,12 @@ def _run_single_pose_mode(
     torch = require_torch()
     model = loaded_checkpoint["model"]
     checkpoint = cast(dict[str, Any], loaded_checkpoint["checkpoint"])
+    if pose_mode == "student-odometry" and not bool(
+        loaded_checkpoint.get("has_trained_rotation_head", False)
+    ):
+        raise ValueError(
+            "student-odometry: checkpoint does not contain trained SE(3) rotation-head weights"
+        )
     resolved_device = str(loaded_checkpoint["device"])
     output = config.output / pose_mode
     output.mkdir(parents=True, exist_ok=True)
@@ -122,6 +129,7 @@ def _run_single_pose_mode(
 
     observations: list[DepthObservation] = []
     observation_records: list[dict[str, object]] = []
+    odometry_state = StudentOdometryState() if pose_mode == "student-odometry" else None
     model.eval()
     with torch.no_grad():
         for stream_index in range(len(stream)):
@@ -134,6 +142,7 @@ def _run_single_pose_mode(
                 pose_mode=pose_mode,
                 checkpoint=checkpoint,
                 recorder=recorder,
+                odometry_state=odometry_state,
             )
             observations.append(observation)
             observation_records.append(record)
@@ -233,6 +242,7 @@ def _run_frame_window(
     pose_mode: str,
     checkpoint: Mapping[str, Any],
     recorder: LatencyRecorder,
+    odometry_state: StudentOdometryState | None,
 ) -> tuple[DepthObservation, dict[str, object], int]:
     torch = require_torch()
     frame_start_ns = time.perf_counter_ns()
@@ -258,6 +268,7 @@ def _run_frame_window(
         pose_mode=pose_mode,
         checkpoint_path=config.checkpoint,
         checkpoint=checkpoint,
+        odometry_state=odometry_state,
     )
     recorder.add("observation_construction", time.perf_counter_ns() - observation_start_ns)
     return observation, record, time.perf_counter_ns() - frame_start_ns

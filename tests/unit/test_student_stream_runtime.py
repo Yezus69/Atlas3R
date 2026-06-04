@@ -78,7 +78,63 @@ class StudentStreamRuntimeTest(unittest.TestCase):
 
         np.testing.assert_allclose(observation.pose.T_world_camera, window.output.T_world_camera)
         self.assertEqual(observation.frame_id, window.output.frame_id)
-        self.assertEqual(observation.source, "phase5e_temporal_student_checkpoint")
+        self.assertEqual(observation.source, "phase5g_temporal_student_checkpoint")
+
+    def test_student_odometry_rolls_out_previous_frame_relative_transform(self) -> None:
+        self._require_torch()
+        import torch
+
+        from atlas3r.runtime.student_map_observations import StudentOdometryState
+
+        with tempfile.TemporaryDirectory() as tmp:
+            clip_manifest = _write_test_clip_cache(
+                Path(tmp) / "clip_cache", clip_count=2, overlap=True
+            )
+            stream = load_unique_frame_stream(clip_manifest)
+            state = StudentOdometryState()
+            first_window = build_stream_window(stream, stream_index=0, window_size=3)
+            second_window = build_stream_window(stream, stream_index=1, window_size=3)
+            prediction_first = _prediction(
+                translation=torch.zeros((1, 3, 3), dtype=torch.float32),
+                rotation_6d=torch.tensor(
+                    [[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]] * 3],
+                    dtype=torch.float32,
+                ),
+            )
+            previous_slot_translation = torch.zeros((1, 3, 3), dtype=torch.float32)
+            previous_slot_translation[0, 0, 0] = -0.2
+            prediction_second = _prediction(
+                translation=previous_slot_translation,
+                rotation_6d=torch.tensor(
+                    [[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]] * 3],
+                    dtype=torch.float32,
+                ),
+            )
+            first_observation, _first_record = observation_from_prediction(
+                prediction=prediction_first,
+                window=first_window,
+                pose_mode="student-odometry",
+                checkpoint_path=Path("checkpoint_best.pt"),
+                checkpoint=_checkpoint_record(),
+                odometry_state=state,
+            )
+            second_observation, _second_record = observation_from_prediction(
+                prediction=prediction_second,
+                window=second_window,
+                pose_mode="student-odometry",
+                checkpoint_path=Path("checkpoint_best.pt"),
+                checkpoint=_checkpoint_record(),
+                odometry_state=state,
+            )
+
+        np.testing.assert_allclose(
+            first_observation.pose.T_world_camera,
+            first_window.output.T_world_camera,
+        )
+        self.assertGreater(
+            float(second_observation.pose.T_world_camera[0, 3]),
+            float(first_observation.pose.T_world_camera[0, 3]),
+        )
 
     def test_runtime_command_help_works(self) -> None:
         env = os.environ.copy()
@@ -95,6 +151,7 @@ class StudentStreamRuntimeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--checkpoint", result.stdout)
         self.assertIn("--pose-mode", result.stdout)
+        self.assertIn("student-odometry", result.stdout)
 
     def test_fixture_checkpoint_stream_map_run_writes_reports_and_ply(self) -> None:
         self._require_torch()
@@ -135,6 +192,10 @@ class StudentStreamRuntimeTest(unittest.TestCase):
                     "observations_summary.jsonl",
                     "quality_report.json",
                     "per_frame_quality.jsonl",
+                    "pose_quality_report.json",
+                    "per_frame_pose_quality.jsonl",
+                    "trajectory_estimate_tum.txt",
+                    "trajectory_groundtruth_tum.txt",
                     "latency_report.json",
                     "summary.json",
                     "tsdf/metadata.json",
@@ -159,6 +220,49 @@ class StudentStreamRuntimeTest(unittest.TestCase):
         self.assertEqual(ply_lines[0], "ply")
         self.assertEqual(ply_lines[1], "format ascii 1.0")
         self.assertGreater(vertex_count, 0)
+
+    def test_fixture_checkpoint_student_odometry_runtime_writes_pose_reports(self) -> None:
+        self._require_torch()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_test_clip_cache(root / "clip_cache", clip_count=2, overlap=True)
+            teacher_cache = root / "teacher_cache"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_manifest, output=teacher_cache)
+            )
+            checkpoint = _write_test_checkpoint(root / "checkpoint_best.pt")
+            output = root / "runtime"
+
+            result = run_stream_student_map(
+                StudentMapRuntimeConfig(
+                    checkpoint=checkpoint,
+                    clip_cache=clip_manifest,
+                    teacher_cache=teacher_cache,
+                    output=output,
+                    device="cpu",
+                    max_frames=3,
+                    window_size=3,
+                    pose_mode="student-odometry",
+                    voxel_size_m=0.25,
+                )
+            )
+            mode_dir = output / "student-odometry"
+            pose_quality = json.loads(
+                (mode_dir / "pose_quality_report.json").read_text(encoding="utf-8")
+            )
+            files_exist = {
+                relative: (mode_dir / relative).is_file()
+                for relative in (
+                    "trajectory_estimate_tum.txt",
+                    "trajectory_groundtruth_tum.txt",
+                    "per_frame_pose_quality.jsonl",
+                )
+            }
+
+        self.assertEqual(result["requested_pose_mode"], "student-odometry")
+        self.assertEqual(pose_quality["pose_mode"], "student-odometry")
+        for relative, exists in files_exist.items():
+            self.assertTrue(exists, relative)
 
     def _require_torch(self) -> None:
         if not torch_available():
@@ -186,6 +290,18 @@ def _checkpoint_record() -> dict[str, object]:
     }
 
 
+def _prediction(translation: object, rotation_6d: object) -> dict[str, object]:
+    import torch
+
+    return {
+        "depth_m": torch.ones((1, 3, 1, 4, 4), dtype=torch.float32),
+        "depth_sigma_m": torch.full((1, 3, 1, 4, 4), 0.05, dtype=torch.float32),
+        "confidence": torch.full((1, 3, 1, 4, 4), 0.75, dtype=torch.float32),
+        "relative_translation_center_from_camera": translation,
+        "relative_rotation_6d_center_from_camera": rotation_6d,
+    }
+
+
 def _write_test_checkpoint(path: Path) -> Path:
     import torch
 
@@ -205,6 +321,9 @@ def _write_test_checkpoint(path: Path) -> Path:
         model.depth_head.bias.fill_(math.log(math.exp(1.0) - 1.0))
         model.sigma_head.bias.fill_(math.log(math.exp(0.05) - 1.0))
         model.confidence_head.bias.fill_(2.0)
+        model.rotation_head[-1].bias.copy_(
+            torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=torch.float32)
+        )
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     write_teacher_signal_temporal_checkpoint(
         path,

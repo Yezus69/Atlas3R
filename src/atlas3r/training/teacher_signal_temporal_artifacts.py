@@ -38,12 +38,25 @@ def load_teacher_signal_temporal_checkpoint(path: str | Path, *, device: str = "
         hidden_channels=int(model_config["hidden_channels"]),
         bottleneck_channels=int(model_config["bottleneck_channels"]),
     ).to(resolved_device)
-    model.load_state_dict(payload["model_state_dict"])
+    state_dict = payload["model_state_dict"]
+    if not isinstance(state_dict, dict):
+        raise ValueError(f"{path}: model_state_dict must be a mapping")
+    has_rotation_head = any(str(key).startswith("rotation_head.") for key in state_dict)
+    load_result = model.load_state_dict(state_dict, strict=False)
+    unexpected = tuple(str(key) for key in load_result.unexpected_keys)
+    missing = tuple(str(key) for key in load_result.missing_keys)
+    allowed_missing = tuple(key for key in missing if key.startswith("rotation_head."))
+    if unexpected or len(allowed_missing) != len(missing):
+        raise ValueError(
+            f"{path}: incompatible TemporalMetricNetV1 state dict; "
+            f"missing={missing}, unexpected={unexpected}"
+        )
     model.eval()
     return {
         "model": model,
         "checkpoint": payload,
         "device": resolved_device,
+        "has_trained_rotation_head": has_rotation_head,
     }
 
 

@@ -68,6 +68,10 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
         self.assertEqual(tuple(sample["target"]["depth_sigma_m"].shape), (2, 1, 4, 4))
         self.assertEqual(tuple(sample["target"]["confidence"].shape), (2, 1, 4, 4))
         self.assertEqual(tuple(sample["target"]["valid_mask"].shape), (2, 1, 4, 4))
+        self.assertEqual(
+            tuple(sample["target"]["relative_rotation_6d_center_from_camera"].shape),
+            (2, 6),
+        )
         self.assertTrue(bool(sample["target"]["teacher_is_measured"]))
         self.assertEqual(sample["metadata"]["teacher_source_type"], "measured_rgbd_pose")
 
@@ -169,6 +173,10 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
             "depth_sigma_m": torch.full((1, 1, 1, 1, 2), 0.05),
             "confidence": torch.full((1, 1, 1, 1, 2), 0.8),
             "relative_translation_center_from_camera": torch.zeros((1, 1, 3)),
+            "relative_rotation_6d_center_from_camera": torch.tensor(
+                [[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]]],
+                dtype=torch.float32,
+            ),
         }
         target = {
             "depth_m": torch.ones((1, 1, 1, 1, 2), dtype=torch.float32),
@@ -177,6 +185,10 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
             "valid_mask": torch.ones((1, 1, 1, 1, 2), dtype=torch.bool),
             "teacher_is_measured": torch.tensor([True]),
             "relative_translation_center_from_camera": torch.zeros((1, 1, 3)),
+            "relative_rotation_6d_center_from_camera": torch.tensor(
+                [[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]]],
+                dtype=torch.float32,
+            ),
         }
         cfg = TeacherSignalLossConfig(max_pixel_weight=1_000_000.0)
         high_weight_loss, metrics = teacher_signal_temporal_loss(prediction, target, config=cfg)
@@ -190,6 +202,7 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
             float(high_weight_loss.detach().cpu()), float(low_weight_loss.detach().cpu())
         )
         self.assertEqual(metrics["valid_depth_pixels"], 2.0)
+        self.assertEqual(metrics["relative_rotation_mean_deg"], 0.0)
 
     def test_temporal_v1_output_shapes_are_finite(self) -> None:
         self._require_torch()
@@ -211,8 +224,128 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
             tuple(prediction["relative_translation_center_from_camera"].shape),
             (2, 3, 3),
         )
+        self.assertEqual(
+            tuple(prediction["relative_rotation_6d_center_from_camera"].shape),
+            (2, 3, 6),
+        )
         for value in prediction.values():
             self.assertTrue(bool(torch.isfinite(value).all()))
+
+    def test_temporal_v1_cuda_amp_step_updates_weights(self) -> None:
+        self._require_torch()
+        import torch
+
+        if not bool(torch.cuda.is_available()):
+            self.skipTest("CUDA is not available")
+        from atlas3r.training.teacher_signal_losses import (
+            TeacherSignalLossConfig,
+            teacher_signal_temporal_loss,
+        )
+        from atlas3r.training.tiny_temporal_geometry_model import TemporalMetricNetV1
+
+        device = "cuda"
+        model = TemporalMetricNetV1(hidden_channels=4, bottleneck_channels=6).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.00025)
+        scaler = torch.cuda.amp.GradScaler(enabled=True)
+        images = torch.zeros((1, 2, 3, 8, 8), dtype=torch.float32, device=device)
+        intrinsics = (
+            torch.eye(3, dtype=torch.float32, device=device)
+            .view(1, 1, 3, 3)
+            .repeat(
+                1,
+                2,
+                1,
+                1,
+            )
+        )
+        intrinsics[:, :, 0, 0] = 8.0
+        intrinsics[:, :, 1, 1] = 8.0
+        target = {
+            "depth_m": torch.ones((1, 2, 1, 8, 8), dtype=torch.float32, device=device),
+            "depth_sigma_m": torch.full((1, 2, 1, 8, 8), 0.05, device=device),
+            "confidence": torch.ones((1, 2, 1, 8, 8), dtype=torch.float32, device=device),
+            "valid_mask": torch.ones((1, 2, 1, 8, 8), dtype=torch.bool, device=device),
+            "teacher_is_measured": torch.tensor([True], device=device),
+            "relative_translation_center_from_camera": torch.zeros(
+                (1, 2, 3),
+                dtype=torch.float32,
+                device=device,
+            ),
+            "relative_rotation_6d_center_from_camera": torch.tensor(
+                [[[1.0, 0.0, 0.0, 0.0, 1.0, 0.0], [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]]],
+                dtype=torch.float32,
+                device=device,
+            ),
+            "intrinsics": intrinsics,
+        }
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            prediction = model(images, intrinsics)
+            loss, _metrics = teacher_signal_temporal_loss(
+                prediction,
+                target,
+                config=TeacherSignalLossConfig(
+                    relative_translation_weight=1.0,
+                    relative_rotation_weight=0.1,
+                    se3_pose_weight=1.0,
+                ),
+            )
+        before = model.depth_head.weight.detach().clone()
+        scaler.scale(loss).backward()
+        gradients = [param.grad for param in model.parameters() if param.grad is not None]
+        self.assertTrue(gradients)
+        self.assertTrue(all(bool(torch.isfinite(gradient).all()) for gradient in gradients))
+        scaler.step(optimizer)
+        scaler.update()
+
+        delta = (model.depth_head.weight.detach() - before).abs().sum()
+        self.assertGreater(float(delta.cpu()), 0.0)
+
+    def test_temporal_v1_loader_accepts_old_checkpoint_without_rotation_head(self) -> None:
+        self._require_torch()
+        import torch
+
+        from atlas3r.training.teacher_signal_temporal_artifacts import (
+            load_teacher_signal_temporal_checkpoint,
+        )
+        from atlas3r.training.tiny_temporal_geometry_model import (
+            TemporalMetricNetV1,
+            temporal_v1_truth_boundary,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "old_checkpoint.pt"
+            model = TemporalMetricNetV1(hidden_channels=4, bottleneck_channels=6)
+            state = {
+                key: value
+                for key, value in model.state_dict().items()
+                if not key.startswith("rotation_head.")
+            }
+            torch.save(
+                {
+                    "format_name": "atlas3r_teacher_signal_temporal_checkpoint",
+                    "format_version": 1,
+                    "step": 1,
+                    "model_state_dict": state,
+                    "optimizer_state_dict": {},
+                    "config": {},
+                    "metrics": {},
+                    "validation_metrics": {},
+                    "model_config": {
+                        "model_name": "TemporalMetricNetV1",
+                        "hidden_channels": 4,
+                        "bottleneck_channels": 6,
+                    },
+                    "loss_config": {},
+                    "teacher_caches": [],
+                    "val_teacher_caches": [],
+                    "truth_boundary": temporal_v1_truth_boundary(),
+                },
+                path,
+            )
+
+            loaded = load_teacher_signal_temporal_checkpoint(path, device="cpu")
+
+        self.assertFalse(bool(loaded["has_trained_rotation_head"]))
 
     def test_cpu_train_export_inspect_and_map_smoke(self) -> None:
         self._require_torch()

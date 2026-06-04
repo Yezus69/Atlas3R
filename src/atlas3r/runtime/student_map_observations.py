@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,9 +12,13 @@ import numpy.typing as npt
 
 from atlas3r.api import CameraModel, PoseEstimate
 from atlas3r.mapping.observations import DepthObservation
-from atlas3r.pose.transforms import quaternion_xyzw_from_rotation_matrix
+from atlas3r.pose.transforms import (
+    compose_transforms,
+    invert_transform,
+    quaternion_xyzw_from_rotation_matrix,
+)
 from atlas3r.runtime.student_map_reports import DIAGNOSTIC_TRUTH_FLAGS, TeacherReferenceFrame
-from atlas3r.runtime.student_stream import StreamFrame, StreamWindow
+from atlas3r.runtime.student_stream import StreamWindow
 from atlas3r.teachers.signals import (
     load_teacher_signal_manifest,
     read_teacher_signal_payload_from_entry,
@@ -21,6 +26,49 @@ from atlas3r.teachers.signals import (
     validate_payload_matches_signal_entry,
     validate_teacher_signal_payload,
 )
+
+
+@dataclass
+class StudentOdometryState:
+    """Roll out learned relative SE(3) transforms over a chronological stream."""
+
+    last_stream_index: int | None = None
+    last_T_world_camera: npt.NDArray[np.float32] | None = None
+
+    def pose_for_window(
+        self,
+        *,
+        prediction: Mapping[str, Any],
+        window: StreamWindow,
+    ) -> tuple[npt.NDArray[np.float32], str]:
+        frame = window.output
+        if frame.stream_index == 0:
+            self.last_stream_index = frame.stream_index
+            self.last_T_world_camera = frame.T_world_camera.astype(np.float32, copy=True)
+            return (
+                self.last_T_world_camera.copy(),
+                "student-odometry anchor: first frame uses source clip-cache T_world_camera",
+            )
+        if self.last_stream_index is None or self.last_T_world_camera is None:
+            raise ValueError("student-odometry: first stream frame must initialize the anchor pose")
+        expected_previous = self.last_stream_index + 1
+        if frame.stream_index != expected_previous:
+            raise ValueError(
+                "student-odometry: stream frames must be processed in chronological order"
+            )
+        previous_slot = _slot_for_stream_index(window, self.last_stream_index)
+        T_current_previous = _predicted_relative_transform(prediction, previous_slot)
+        T_previous_current = invert_transform(T_current_previous)
+        T_world_camera = compose_transforms(
+            self.last_T_world_camera,
+            T_previous_current,
+        ).astype(np.float32)
+        self.last_stream_index = frame.stream_index
+        self.last_T_world_camera = T_world_camera
+        return (
+            T_world_camera.copy(),
+            "student-odometry rollout from learned T_current_previous relative SE(3)",
+        )
 
 
 def load_teacher_reference_frames(
@@ -79,6 +127,7 @@ def observation_from_prediction(
     pose_mode: str,
     checkpoint_path: Path,
     checkpoint: Mapping[str, Any],
+    odometry_state: StudentOdometryState | None = None,
 ) -> tuple[DepthObservation, dict[str, object]]:
     """Convert one temporal-student output slot into a `DepthObservation`."""
 
@@ -94,13 +143,19 @@ def observation_from_prediction(
         .numpy()
         .astype(np.float32)
     )
-    T_world_camera, pose_note = _pose_for_mode(frame, pose_mode, relative_translation)
+    T_world_camera, pose_note = _pose_for_mode(
+        prediction=prediction,
+        window=window,
+        pose_mode=pose_mode,
+        relative_translation_center_from_camera=relative_translation,
+        odometry_state=odometry_state,
+    )
     mean_sigma = float(np.mean(sigma[confidence > 0.0])) if np.any(confidence > 0.0) else 0.0
     covariance = np.diag(np.full(6, max(mean_sigma * mean_sigma, 1e-8), dtype=np.float32))
     timestamp_ns = int(round(frame.timestamp_s * 1_000_000_000.0))
     truth_boundary = cast(dict[str, object], checkpoint["truth_boundary"])
     diagnostics = {
-        "source": "phase5e_stream_student_map_runtime",
+        "source": "phase5g_stream_student_map_runtime",
         "coordinate_frame": "x_right_y_down_z_forward",
         "checkpoint_path": str(checkpoint_path),
         "checkpoint_step": int(checkpoint["step"]),
@@ -144,10 +199,10 @@ def observation_from_prediction(
         confidence=confidence,
         static_mask=(depth > 0.0) & (confidence > 0.0),
         rgb_u8=frame.rgb_u8.copy(),
-        source="phase5e_temporal_student_checkpoint",
+        source="phase5g_temporal_student_checkpoint",
     )
     record = {
-        "format_name": "atlas3r_phase5e_observation_summary",
+        "format_name": "atlas3r_phase5g_observation_summary",
         "format_version": 1,
         "frame_id": frame.frame_id,
         "timestamp_s": frame.timestamp_s,
@@ -184,13 +239,21 @@ def _prediction_array(
 
 
 def _pose_for_mode(
-    frame: StreamFrame,
+    *,
+    prediction: Mapping[str, Any],
+    window: StreamWindow,
     pose_mode: str,
     relative_translation_center_from_camera: npt.NDArray[np.float32],
+    odometry_state: StudentOdometryState | None,
 ) -> tuple[npt.NDArray[np.float32], str]:
+    frame = window.output
     T_world_camera = frame.T_world_camera.astype(np.float32, copy=True)
     if pose_mode == "oracle":
         return T_world_camera, "oracle source clip-cache T_world_camera"
+    if pose_mode == "student-odometry":
+        if odometry_state is None:
+            raise ValueError("student-odometry: odometry state is required")
+        return odometry_state.pose_for_window(prediction=prediction, window=window)
     delta_world = T_world_camera[:3, :3] @ relative_translation_center_from_camera.astype(
         np.float32,
         copy=False,
@@ -199,6 +262,66 @@ def _pose_for_mode(
     return (
         T_world_camera,
         "diagnostic student-relative translation around source anchor; source rotation kept",
+    )
+
+
+def _slot_for_stream_index(window: StreamWindow, stream_index: int) -> int:
+    matches = [
+        slot
+        for slot, source_index in enumerate(window.source_stream_indices)
+        if source_index == stream_index
+    ]
+    if not matches:
+        raise ValueError(f"student-odometry: previous stream index {stream_index} not in window")
+    return matches[-1]
+
+
+def _predicted_relative_transform(
+    prediction: Mapping[str, Any],
+    slot: int,
+) -> npt.NDArray[np.float32]:
+    if "relative_rotation_6d_center_from_camera" not in prediction:
+        raise ValueError("student-odometry: checkpoint prediction has no SE(3) rotation output")
+    translation = (
+        prediction["relative_translation_center_from_camera"][0, slot]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float32)
+    )
+    rotation_6d = (
+        prediction["relative_rotation_6d_center_from_camera"][0, slot]
+        .detach()
+        .cpu()
+        .numpy()
+        .astype(np.float32)
+    )
+    T_current_previous = np.eye(4, dtype=np.float32)
+    T_current_previous[:3, :3] = _rotation_matrix_from_6d(rotation_6d)
+    T_current_previous[:3, 3] = translation
+    return T_current_previous
+
+
+def _rotation_matrix_from_6d(rotation_6d: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
+    if rotation_6d.shape != (6,):
+        raise ValueError("relative_rotation_6d_center_from_camera: expected shape 6")
+    first = rotation_6d[:3].astype(np.float64, copy=False)
+    second = rotation_6d[3:6].astype(np.float64, copy=False)
+    norm_first = float(np.linalg.norm(first))
+    if norm_first <= 1e-12:
+        raise ValueError("relative_rotation_6d_center_from_camera: first basis vector is zero")
+    basis_0 = first / norm_first
+    second_orthogonal = second - float(np.dot(basis_0, second)) * basis_0
+    norm_second = float(np.linalg.norm(second_orthogonal))
+    if norm_second <= 1e-12:
+        raise ValueError(
+            "relative_rotation_6d_center_from_camera: second basis vector is degenerate"
+        )
+    basis_1 = second_orthogonal / norm_second
+    basis_2 = np.cross(basis_0, basis_1)
+    return cast(
+        npt.NDArray[np.float32],
+        np.stack([basis_0, basis_1, basis_2], axis=1).astype(np.float32),
     )
 
 
@@ -259,6 +382,7 @@ def _int_field(mapping: Mapping[str, object], key: str) -> int:
 
 
 __all__ = [
+    "StudentOdometryState",
     "load_teacher_reference_frames",
     "observation_from_prediction",
     "window_arrays",

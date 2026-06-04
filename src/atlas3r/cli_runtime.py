@@ -17,7 +17,7 @@ def register_runtime_parser(subparsers: Any) -> None:
     runtime_subparsers = runtime_parser.add_subparsers(dest="runtime_command", required=True)
     stream_parser = runtime_subparsers.add_parser(
         "stream-student-map",
-        help="Run a Phase 5D temporal checkpoint as a streaming CPU TSDF map diagnostic.",
+        help="Run a temporal checkpoint as a streaming CPU TSDF map diagnostic.",
     )
     stream_parser.add_argument("--checkpoint", type=Path, required=True)
     stream_parser.add_argument("--clip-cache", type=Path, required=True)
@@ -32,7 +32,7 @@ def register_runtime_parser(subparsers: Any) -> None:
     stream_parser.add_argument("--window-size", type=int, default=5)
     stream_parser.add_argument(
         "--pose-mode",
-        choices=("oracle", "student-relative", "both"),
+        choices=("oracle", "student-relative", "student-odometry", "both"),
         default="oracle",
     )
     stream_parser.add_argument("--voxel-size-m", type=float, default=0.05)

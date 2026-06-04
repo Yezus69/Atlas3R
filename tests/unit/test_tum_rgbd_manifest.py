@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atlas3r.data.tum_rgbd import prepare_tum_rgbd_manifest, safe_extract_tar
+from atlas3r.data.tum_rgbd import (
+    TUM_RGBD_SEQUENCES,
+    download_tum_rgbd_sequence,
+    prepare_tum_rgbd_manifest,
+    safe_extract_tar,
+)
 
 
 class TumRgbdManifestTest(unittest.TestCase):
@@ -55,6 +60,56 @@ class TumRgbdManifestTest(unittest.TestCase):
             self.assertTrue(train_ids.isdisjoint(val_ids))
             self.assertEqual(manifest["split"]["policy"], "block")
             self.assertEqual(manifest["split"]["val_fraction"], 0.2)
+
+    def test_supported_multisequence_specs_are_available(self) -> None:
+        expected = {
+            "freiburg1_xyz",
+            "freiburg1_desk",
+            "freiburg2_xyz",
+            "freiburg3_long_office_household",
+        }
+        self.assertTrue(expected.issubset(TUM_RGBD_SEQUENCES))
+        for sequence_name in expected:
+            spec = TUM_RGBD_SEQUENCES[sequence_name]
+            self.assertEqual(spec["sequence_name"], sequence_name)
+            self.assertTrue(str(spec["archive_url"]).endswith(f"rgbd_dataset_{sequence_name}.tgz"))
+            self.assertTrue(
+                str(spec["groundtruth_url"]).endswith(
+                    f"rgbd_dataset_{sequence_name}-groundtruth.txt"
+                )
+            )
+
+    def test_prepare_manifest_uses_selected_sequence_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "rgbd_dataset_freiburg2_xyz"
+            _write_minimal_tum_sequence(root, frame_count=3)
+            output = Path(tmp) / "manifest_freiburg2.json"
+
+            manifest = prepare_tum_rgbd_manifest(root, output, sequence="freiburg2_xyz")
+
+            self.assertEqual(manifest["dataset_name"], "TUM RGB-D freiburg2_xyz")
+            self.assertEqual(manifest["sequence_name"], "freiburg2_xyz")
+            self.assertEqual(manifest["truth_boundary"]["dataset"], "TUM RGB-D freiburg2_xyz")
+
+    def test_download_override_validation_happens_before_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+
+            with self.assertRaisesRegex(ValueError, "supplied together"):
+                download_tum_rgbd_sequence(
+                    "freiburg1_xyz",
+                    root,
+                    archive_url="https://example.invalid/rgbd_dataset_freiburg1_xyz.tgz",
+                )
+            with self.assertRaisesRegex(ValueError, "http"):
+                download_tum_rgbd_sequence(
+                    "freiburg1_xyz",
+                    root,
+                    archive_url="file:///tmp/rgbd_dataset_freiburg1_xyz.tgz",
+                    groundtruth_url=(
+                        "https://example.invalid/rgbd_dataset_freiburg1_xyz-groundtruth.txt"
+                    ),
+                )
 
     def test_safe_extract_rejects_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

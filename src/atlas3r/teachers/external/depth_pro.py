@@ -210,6 +210,8 @@ def run_depth_pro_teacher_signal_cache(
             "runner": "atlas3r.teachers.external.depth_pro",
             "depth_source": "Depth Pro single-frame RGB metric depth",
             "pose_source": "source Atlas3R clip-cache T_world_camera",
+            "pose_source_type": "source_clip_cache_pose_not_external_teacher",
+            "pose_confidence": 1.0,
             "valid_pixel_rule": "finite positive predicted depth and positive confidence",
             "measured_geometry": False,
             "pseudo_label": True,

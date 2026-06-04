@@ -47,7 +47,7 @@ def temporal_v1_truth_boundary() -> dict[str, object]:
         "accuracy_report": False,
         "performance_report": False,
         "generalizes_to_real_world": False,
-        "relative_rotation_learned": False,
+        "relative_rotation_learned": True,
         "outputs_are_pseudo_labels": True,
     }
 
@@ -167,6 +167,12 @@ class TemporalMetricNetV1(_NN.Module):  # type: ignore[misc]
             _NN.ReLU(inplace=True),
             _NN.Linear(hidden_channels, 3),
         )
+        self.rotation_head = _NN.Sequential(
+            _NN.Linear(bottleneck_channels, hidden_channels),
+            _NN.ReLU(inplace=True),
+            _NN.Linear(hidden_channels, 6),
+        )
+        self._initialize_rotation_head()
 
     def forward(self, images_rgb: Any, intrinsics: Any) -> dict[str, Any]:
         """Run a temporal-v1 forward pass.
@@ -212,7 +218,16 @@ class TemporalMetricNetV1(_NN.Module):  # type: ignore[misc]
             "depth_sigma_m": sigma.reshape(batch_size, clip_length, 1, height, width),
             "confidence": confidence.reshape(batch_size, clip_length, 1, height, width),
             "relative_translation_center_from_camera": self.translation_head(pooled),
+            "relative_rotation_6d_center_from_camera": self.rotation_head(pooled),
         }
+
+    def _initialize_rotation_head(self) -> None:
+        final_layer = self.rotation_head[-1]
+        with _TORCH.no_grad():
+            final_layer.weight.zero_()
+            final_layer.bias.copy_(
+                _TORCH.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=final_layer.bias.dtype)
+            )
 
     def _conv_gru(self, features: Any) -> Any:
         batch_size, clip_length, channels, height, width = features.shape
@@ -243,8 +258,10 @@ class TemporalMetricNetV1(_NN.Module):  # type: ignore[misc]
                 "depth_sigma_m B,T,1,H,W",
                 "confidence B,T,1,H,W",
                 "relative_translation_center_from_camera B,T,3",
+                "relative_rotation_6d_center_from_camera B,T,6",
             ],
-            "relative_rotation_output": False,
+            "relative_rotation_output": True,
+            "relative_rotation_representation": "6d_first_two_rotation_columns_center_from_camera",
             "hidden_channels": self.hidden_channels,
             "bottleneck_channels": self.bottleneck_channels,
             "temporal_fusion": "single-pass ConvGRU bottleneck",

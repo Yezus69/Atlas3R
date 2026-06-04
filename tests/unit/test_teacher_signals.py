@@ -60,6 +60,9 @@ class TeacherSignalTest(unittest.TestCase):
         self.assertEqual(manifest["format_name"], TEACHER_SIGNAL_FORMAT_NAME)
         self.assertTrue(manifest["truth_boundary"]["measured_geometry"])  # type: ignore[index]
         self.assertFalse(manifest["truth_boundary"]["pseudo_label"])  # type: ignore[index]
+        source_metadata = manifest["source_metadata"]  # type: ignore[index]
+        self.assertEqual(source_metadata["pose_source_type"], "measured_tum_groundtruth")  # type: ignore[index]
+        self.assertEqual(source_metadata["pose_confidence"], 1.0)  # type: ignore[index]
         self.assertEqual(payload["depth_sigma_m"][0, 0, 0], 0.0)
         self.assertEqual(payload["confidence"][0, 0, 0], 0.0)
         self.assertAlmostEqual(float(payload["depth_sigma_m"][0, 0, 1]), 0.02)
@@ -69,6 +72,18 @@ class TeacherSignalTest(unittest.TestCase):
         manifest["signals"][0]["payload_path"] = "../bad.npz"  # type: ignore[index]
 
         with self.assertRaisesRegex(ValueError, "unsafe path"):
+            validate_teacher_signal_manifest(
+                manifest,
+                cache_root=".",
+                validate_payloads=False,
+                source_clip_manifest=None,
+            )
+
+    def test_manifest_rejects_bad_pose_source_metadata_when_present(self) -> None:
+        manifest = _valid_teacher_manifest()
+        manifest["source_metadata"] = {"pose_source": "fixture", "pose_confidence": 1.5}
+
+        with self.assertRaisesRegex(ValueError, "pose_confidence"):
             validate_teacher_signal_manifest(
                 manifest,
                 cache_root=".",
@@ -338,10 +353,11 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase5g(self) -> None:
+    def test_status_handoff_points_to_phase5h(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5G", text)
-        self.assertIn("Pose Tracking Teacher", text)
+        self.assertIn("Phase 5H", text)
+        self.assertIn("Measured 3D Scene/Object", text)
+        self.assertIn("mesh/object", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

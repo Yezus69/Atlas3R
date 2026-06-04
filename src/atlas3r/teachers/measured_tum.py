@@ -101,7 +101,9 @@ def forge_measured_tum_teacher_signal_cache(
         pseudo_label=False,
         source_metadata={
             "depth_source": "Phase 5A clip-cache TUM sensor depth",
-            "pose_source": "Phase 5A clip-cache TUM pose",
+            "pose_source": "measured TUM RGB-D groundtruth.txt via Phase 5A clip-cache pose",
+            "pose_source_type": "measured_tum_groundtruth",
+            "pose_confidence": 1.0,
             "valid_pixel_rule": "valid_depth_mask",
             "invalid_pixel_rule": "depth=0, sigma=0, confidence=0",
             "sigma_m": config.sigma_m,
@@ -184,6 +186,7 @@ def ingest_local_teacher_signal_cache(config: LocalTeacherIngestConfig) -> dict[
         source_metadata={
             "ingest_input_path": str(config.input),
             "ingest_input_format": input_format,
+            "pose_source": "local teacher payload T_world_camera",
             **preserved_metadata,
         },
     )
