@@ -28,9 +28,9 @@ class RepoContextBudgetTest(unittest.TestCase):
 
     def test_next_task_points_to_phase_5h(self) -> None:
         next_task = (REPO_ROOT / "docs/status/next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5H", next_task)
-        self.assertIn("Measured 3D Scene/Object", next_task)
-        self.assertIn("mesh/object", next_task)
+        self.assertIn("Phase 5H.1", next_task)
+        self.assertIn("real VGGT", next_task)
+        self.assertIn("Training gate", next_task)
 
 
 if __name__ == "__main__":

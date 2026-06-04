@@ -13,8 +13,11 @@ from atlas3r.teachers.external import (
     DepthProFramePrediction,
     ExternalTeacherDependencyError,
     ExternalTeacherRunConfig,
+    VGGTExternalTeacherRunner,
     VGGTLocalIngestConfig,
+    VGGTRunConfig,
     get_depth_pro_status,
+    get_vggt_status,
     ingest_vggt_local_teacher_signal_cache,
 )
 from atlas3r.teachers.map_eval import TeacherSignalMapConfig, map_teacher_signals
@@ -50,6 +53,31 @@ class ExternalTeacherTest(unittest.TestCase):
                     "Depth Pro.*Install Depth Pro",
                 ):
                     DepthProExternalTeacherRunner().run(config)
+
+    def test_vggt_status_does_not_import_optional_model_package(self) -> None:
+        before = "vggt" in sys.modules
+        with patch("atlas3r.teachers.external.vggt.find_spec", return_value=None):
+            status = get_vggt_status()
+
+        self.assertEqual(before, "vggt" in sys.modules)
+        self.assertEqual(status.availability, "unavailable")
+        self.assertFalse(status.can_run_locally)
+        self.assertIn("ATLAS3R_VGGT_REPO", status.reason or "")
+
+    def test_vggt_unavailable_path_is_clear(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = VGGTRunConfig(
+                clip_cache=root / "missing_clip_cache",
+                output=root / "teacher_cache",
+            )
+
+            with patch("atlas3r.teachers.external.vggt.find_spec", return_value=None):
+                with self.assertRaisesRegex(
+                    ExternalTeacherDependencyError,
+                    "VGGT.*ATLAS3R_VGGT_REPO",
+                ):
+                    VGGTExternalTeacherRunner().run(config)
 
     def test_fake_depth_pro_writes_valid_cache_and_map_smoke(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -199,11 +227,51 @@ class ExternalTeacherTest(unittest.TestCase):
         self.assertGreater(float(payload["depth_sigma_m"][0, 0, 1]), 0.0)
         self.assertGreater(int(map_result["map_summary"]["surface_point_count"]), 0)  # type: ignore[index]
 
+    def test_fake_vggt_writes_valid_cache_alignment_and_eval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_manifest = _write_clip_cache(root / "clip_cache")
+            output = root / "vggt_teacher"
+            inspect_output = root / "vggt_eval"
+
+            result = VGGTExternalTeacherRunner(_fake_vggt_predictor).run(
+                VGGTRunConfig(
+                    clip_cache=clip_manifest,
+                    output=output,
+                    max_clips=1,
+                    inspect_output=inspect_output,
+                    align_to_source_pose="diagnostic_sim3",
+                )
+            )
+            manifest = load_teacher_signal_manifest(output, validate_payloads=True)
+            payload = read_teacher_signal_payload(output)
+            source_metadata = manifest["source_metadata"]  # type: ignore[index]
+            signal_entry = manifest["signals"][0]  # type: ignore[index]
+            summary_written = (inspect_output / "summary.json").is_file()
+            report_written = (inspect_output / "report.md").is_file()
+
+        self.assertEqual(result["teacher_name"], "vggt")
+        self.assertEqual(manifest["teacher_source_type"], "external_multiview_geometry_teacher")
+        self.assertTrue(manifest["truth_boundary"]["pseudo_label"])  # type: ignore[index]
+        self.assertFalse(manifest["truth_boundary"]["measured_geometry"])  # type: ignore[index]
+        self.assertEqual(source_metadata["alignment_policy"], "diagnostic_sim3")  # type: ignore[index]
+        self.assertEqual(source_metadata["model_source"], "injected_test_predictor")  # type: ignore[index]
+        self.assertIn("world_points", source_metadata["output_fields_found"])  # type: ignore[index]
+        self.assertTrue(summary_written)
+        self.assertTrue(report_written)
+        self.assertFalse(Path(signal_entry["payload_path"]).is_absolute())  # type: ignore[index]
+        self.assertNotIn("..", Path(signal_entry["payload_path"]).parts)  # type: ignore[index]
+        self.assertEqual(tuple(payload["depth_m"].shape), (2, 4, 4))
+        self.assertIn("pointmap_world_m", payload)
+        self.assertGreater(float(payload["depth_sigma_m"][0, 0, 1]), 0.0)
+        self.assertGreater(float(payload["confidence"][0, 0, 1]), 0.0)
+
     def test_external_teacher_cli_help_works(self) -> None:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(SRC)
         commands = [
             ["teachers", "run-depth-pro", "--help"],
+            ["teachers", "run-vggt", "--help"],
             ["teachers", "ingest-vggt-local", "--help"],
         ]
         for command in commands:
@@ -218,8 +286,10 @@ class ExternalTeacherTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
-                if command[1] == "run-depth-pro":
+                if command[1] in {"run-depth-pro", "run-vggt"}:
                     self.assertIn("--device", result.stdout)
+                if command[1] == "run-vggt":
+                    self.assertIn("--align-to-source-pose", result.stdout)
 
 
 def _fake_depth_pro_predictor(
@@ -231,6 +301,21 @@ def _fake_depth_pro_predictor(
         depth_m=np.full((height, width), 1.25, dtype=np.float32),
         confidence=np.full((height, width), 0.75, dtype=np.float32),
     )
+
+
+def _fake_vggt_predictor(clip_payload: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    depth = clip_payload["depth_m"].copy()
+    confidence = np.where(clip_payload["valid_depth_mask"], 2.0, 0.0).astype(np.float32)
+    pointmap = np.zeros((*depth.shape, 3), dtype=np.float32)
+    pointmap[..., 2] = depth
+    extrinsic = np.linalg.inv(clip_payload["T_world_camera"]).astype(np.float32)
+    return {
+        "depth": depth[..., np.newaxis],
+        "depth_conf": confidence,
+        "extrinsic": extrinsic,
+        "intrinsic": clip_payload["K"],
+        "world_points": pointmap,
+    }
 
 
 if __name__ == "__main__":

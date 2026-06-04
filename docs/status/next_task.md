@@ -1,38 +1,44 @@
-Phase 5H - External Pose/Pointmap Teacher Generation Before Mesh/Object Work.
+Phase 5H.1 - Configure And Run Real VGGT Teacher Evidence.
 
-Goal: improve pose and geometry supervision before attempting measured
-mesh/object ingestion. Phase 5G.1 showed that multi-sequence measured TUM
-training works, but student odometry remains too drifty and depth generalization
-is uneven, especially on `freiburg1_desk`.
+Goal: unblock Phase 5H by installing or pointing Atlas3R at a real VGGT
+checkout and checkpoint outside this repo, then generate and evaluate external
+VGGT pose/depth/pointmap teacher signals before any student training.
 
-Start from branch `codex/phase5g1-multisequence-tum-generalization`. Reload
+Start from branch `codex/phase5h-vggt-pose-pointmap-teacher`. Reload
 `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`,
 `docs/status/progress.md`, `docs/status/decisions.md`,
 `docs/status/active_task.md`, and
-`docs/status/phase5g1_multisequence_tum_generalization_report.md`.
+`docs/status/phase5h_vggt_pose_pointmap_teacher_report.md`.
 
-Constraints:
+Required setup:
 
-- Do not claim mapping-ready, realtime, benchmark accuracy, or millimeter
-  accuracy without an explicit evaluation report.
-- Do not hallucinate completed or hidden geometry as measured geometry.
-- Do not vendor third-party datasets, repos, model weights, or generated run
-  artifacts.
-- Preserve coordinate conventions, tensor shapes, teacher-signal cache schema,
-  and runtime output contracts unless `docs/08_API_CONTRACTS.md` and tests are
-  updated first.
-- Keep third-party pose/pointmap models isolated behind dependency-safe
-  adapters or local-output ingestion paths.
+- Set `ATLAS3R_VGGT_REPO` to a local VGGT checkout or install an importable
+  `vggt` package in the active environment.
+- Set `ATLAS3R_VGGT_CHECKPOINT` or pass `--checkpoint` if the local VGGT API
+  needs explicit weights.
+- Keep VGGT code, weights, checkpoints, generated teacher caches, and run
+  artifacts outside git-tracked Atlas3R files.
 
-Suggested first vertical slice:
+First command to try:
 
-1. Pick VGGT or LingBot-Map based on what is locally available, or add only a
-   dependency-safe runner/local-ingest blocker report if neither is configured.
-2. Generate or ingest external pose/pointmap teacher outputs for the Phase 5G.1
-   TUM validation/train sequences without committing model weights or caches.
-3. Validate the external outputs into existing teacher-signal cache contracts,
-   with explicit pseudo-label and truth-boundary metadata.
-4. Train or evaluate the existing temporal student against the stronger teacher
-   signal on a small multi-sequence slice.
-5. Compare student-odometry drift against the Phase 5G.1 report before starting
-   measured mesh/object work.
+```bash
+python -m atlas3r teachers run-vggt \
+  --clip-cache data/tum_rgbd/freiburg1_xyz_phase5g1_clip_cache_val \
+  --output runs/phase5h_vggt_freiburg1_xyz_val \
+  --device cuda \
+  --max-clips 8 \
+  --align-to-source-pose diagnostic_sim3
+```
+
+Then inspect the generated `summary.json`, `per_clip_metrics.jsonl`, and
+`report.md`. Repeat on at least one additional Phase 5G.1 validation sequence if
+the first run succeeds.
+
+Training gate:
+
+- Train the existing temporal student only if the real VGGT teacher improves
+  depth RMSE, relative pose/RPE, or pointmap quality against measured TUM data
+  compared with the Phase 5G.1 student evidence.
+- If VGGT does not pass a gate, do not train. Update the report and try a
+  different external/local measurement teacher such as LingBot-Map or
+  Anchor-style local geometry.

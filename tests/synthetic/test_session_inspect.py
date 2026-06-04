@@ -174,9 +174,9 @@ class SessionInspectTest(unittest.TestCase):
     def test_status_handoff_points_to_phase_5h(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Phase 5H", next_task)
-        self.assertIn("Measured 3D Scene/Object", next_task)
-        self.assertIn("mesh/object", next_task)
+        self.assertIn("Phase 5H.1", next_task)
+        self.assertIn("real VGGT", next_task)
+        self.assertIn("Training gate", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

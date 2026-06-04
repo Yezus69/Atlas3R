@@ -70,6 +70,44 @@ def register_teachers_parser(subparsers: Any) -> None:
     )
     depth_pro_parser.set_defaults(handler=_run_depth_pro)
 
+    run_vggt_parser = teacher_subparsers.add_parser(
+        "run-vggt",
+        help="Run real VGGT into a validated Atlas3R teacher-signal cache.",
+    )
+    run_vggt_parser.add_argument("--clip-cache", type=Path, required=True)
+    run_vggt_parser.add_argument("--output", type=Path, required=True)
+    run_vggt_parser.add_argument(
+        "--device",
+        choices=("auto", "cuda", "mps", "cpu"),
+        default="auto",
+        help="VGGT inference device.",
+    )
+    run_vggt_parser.add_argument("--max-clips", type=int, default=None)
+    run_vggt_parser.add_argument(
+        "--vggt-repo",
+        type=Path,
+        default=None,
+        help="Local VGGT checkout path; overrides ATLAS3R_VGGT_REPO.",
+    )
+    run_vggt_parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="VGGT checkpoint path or URI; overrides ATLAS3R_VGGT_CHECKPOINT.",
+    )
+    run_vggt_parser.add_argument(
+        "--align-to-source-pose",
+        choices=("diagnostic_sim3", "diagnostic_se3", "none"),
+        default="none",
+        help="Diagnostic-only pose alignment policy for TUM teacher evaluation.",
+    )
+    run_vggt_parser.add_argument(
+        "--inspect-output",
+        type=Path,
+        default=None,
+        help="Optional output folder for the post-run VGGT evaluation.",
+    )
+    run_vggt_parser.set_defaults(handler=_run_vggt)
+
     vggt_parser = teacher_subparsers.add_parser(
         "ingest-vggt-local",
         help="Ingest local VGGT-style NPZ outputs into the stable teacher-signal format.",
@@ -181,6 +219,34 @@ def _run_depth_pro(args: argparse.Namespace) -> int:
                 inspect_output=args.inspect_output,
                 checkpoint_uri=args.checkpoint_uri,
                 device=args.device,
+            )
+        )
+    except (ExternalTeacherError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_vggt(args: argparse.Namespace) -> int:
+    from atlas3r.teachers.external import (
+        ExternalTeacherError,
+        VGGTExternalTeacherRunner,
+        VGGTRunConfig,
+    )
+
+    try:
+        result = VGGTExternalTeacherRunner().run(
+            VGGTRunConfig(
+                clip_cache=args.clip_cache,
+                output=args.output,
+                max_clips=args.max_clips,
+                run_inspect=True,
+                inspect_output=args.inspect_output,
+                device=args.device,
+                vggt_repo=args.vggt_repo,
+                checkpoint=args.checkpoint,
+                align_to_source_pose=args.align_to_source_pose,
             )
         )
     except (ExternalTeacherError, ValueError) as exc:

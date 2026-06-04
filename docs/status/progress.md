@@ -5,23 +5,26 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Current State
 
-- Current phase: Phase 5G.1 multi-sequence TUM generalization run completed.
-- Branch: `codex/phase5g1-multisequence-tum-generalization`.
-- Latest implementation: multi-sequence teacher-signal temporal training now
-  allows caches across datasets/sequences when split, clip length, and image
-  size match; train summaries include per-cache/per-sequence counts; validation
-  JSONL includes per-sequence diagnostic metrics.
-- Public commands remain backward-compatible, including
-  `atlas3r train teacher-signals-temporal` and
-  `atlas3r runtime stream-student-map --pose-mode oracle|student-relative|student-odometry|both`.
+- Current phase: Phase 5H real VGGT pose/pointmap teacher boundary completed as
+  a dependency-safe blocker.
+- Branch: `codex/phase5h-vggt-pose-pointmap-teacher`.
+- Latest implementation: `atlas3r teachers run-vggt` can run a real external
+  VGGT package/checkout when configured, converts depth/pose/intrinsics/optional
+  pointmaps into the stable teacher-signal cache, supports diagnostic
+  source-pose Sim(3)/SE(3) alignment, and writes JSON/JSONL/Markdown VGGT
+  teacher-vs-measured evaluation reports.
+- Real VGGT execution is blocked locally because `vggt` is not importable and
+  `ATLAS3R_VGGT_REPO` / `ATLAS3R_VGGT_CHECKPOINT` are unset. CUDA is available
+  on three GPUs, first device `NVIDIA GeForce RTX 4090`.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed; one test file reformatted.
-- `python -m ruff format --check src tests`: passed with 147 files formatted.
+- `python -m ruff format src tests`: passed; 152 files left unchanged.
+- `python -m ruff format --check src tests`: passed; 152 files already
+  formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 110 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed 198 tests. A
+- `python -m mypy src`: passed with no issues in 115 source files.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed 201 tests. The
   pre-existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
 - `where.exe make`: no `make` found in this Windows shell, so `make test`,
@@ -29,6 +32,10 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Real-Data Evidence
 
+- Phase 5H real VGGT run attempt:
+  `python -m atlas3r teachers run-vggt --clip-cache data/tum_rgbd/freiburg1_xyz_phase5g1_clip_cache_val --output runs/phase5h_vggt_freiburg1_xyz_val --device cuda --max-clips 1 --align-to-source-pose diagnostic_sim3`.
+  It exited with code `2` because VGGT is unavailable, and no output folder was
+  created.
 - TUM sequences prepared for Phase 5G.1: `freiburg1_xyz`,
   `freiburg1_desk`, and `freiburg2_xyz`.
 - `freiburg1_desk` and `freiburg2_xyz` downloaded successfully from the
@@ -84,6 +91,8 @@ Detailed history belongs in git commits, tests, and reports.
 - Phase 5G.1: real multi-sequence TUM measured training/evaluation; training
   works, but depth generalization is uneven and student-odometry is still too
   drifty for mapping.
+- Phase 5H: dependency-safe real VGGT runner/evaluator added; local execution
+  blocked by missing external VGGT install/config, with no fake outputs.
 
 ## Current Known Gaps
 
@@ -95,3 +104,6 @@ Detailed history belongs in git commits, tests, and reports.
 - More measured TUM sequences alone did not fix generalization. The next
   blocker is stronger external pose/pointmap teachers plus model/data
   robustness before mesh/object evaluation.
+- VGGT is not currently installed/configured. Set `ATLAS3R_VGGT_REPO` or install
+  an importable `vggt` package and provide a checkpoint if required before
+  rerunning Phase 5H teacher generation.

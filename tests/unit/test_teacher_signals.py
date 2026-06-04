@@ -355,9 +355,9 @@ class TeacherSignalTest(unittest.TestCase):
 
     def test_status_handoff_points_to_phase5h(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5H", text)
-        self.assertIn("Measured 3D Scene/Object", text)
-        self.assertIn("mesh/object", text)
+        self.assertIn("Phase 5H.1", text)
+        self.assertIn("real VGGT", text)
+        self.assertIn("Training gate", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:
