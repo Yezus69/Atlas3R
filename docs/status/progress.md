@@ -5,25 +5,23 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Current State
 
-- Current phase: Phase 5G multi-sequence measured TUM pose/depth supervision and
-  learned SE(3) student-odometry runtime diagnostics completed.
-- Branch: `codex/phase5g-multisequence-pose-odometry`.
-- Latest implementation: multi-sequence TUM specs plus URL override validation,
-  explicit teacher-signal pose metadata, `TemporalMetricNetV1` 6D relative
-  rotation output, SE(3) losses/metrics, CUDA AMP-stable rotation loss, and
-  `runtime stream-student-map --pose-mode student-odometry` with TUM trajectory
-  and pose-quality reports.
-- Public commands include `atlas3r datasets tum-rgbd download|prepare`,
-  `atlas3r train teacher-signals-temporal`, and
+- Current phase: Phase 5G.1 multi-sequence TUM generalization run completed.
+- Branch: `codex/phase5g1-multisequence-tum-generalization`.
+- Latest implementation: multi-sequence teacher-signal temporal training now
+  allows caches across datasets/sequences when split, clip length, and image
+  size match; train summaries include per-cache/per-sequence counts; validation
+  JSONL includes per-sequence diagnostic metrics.
+- Public commands remain backward-compatible, including
+  `atlas3r train teacher-signals-temporal` and
   `atlas3r runtime stream-student-map --pose-mode oracle|student-relative|student-odometry|both`.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed with 147 files unchanged.
+- `python -m ruff format src tests`: passed; one test file reformatted.
 - `python -m ruff format --check src tests`: passed with 147 files formatted.
 - `python -m ruff check src tests`: passed.
 - `python -m mypy src`: passed with no issues in 110 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed 197 tests. A
+- `python -m unittest discover -s tests -p "test_*.py"`: passed 198 tests. A
   pre-existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
 - `where.exe make`: no `make` found in this Windows shell, so `make test`,
@@ -31,35 +29,39 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Real-Data Evidence
 
-- Optional external pose-teacher env vars were unset:
-  `ATLAS3R_VGGT_REPO`, `ATLAS3R_VGGT_CHECKPOINT`, `ATLAS3R_VGGT_OUTPUT`,
-  `ATLAS3R_LINGBOT_MAP_REPO`, and `ATLAS3R_LINGBOT_MAP_OUTPUT`.
-- Only `freiburg1_xyz` local TUM caches were present. Additional specs for
-  `freiburg1_desk`, `freiburg2_xyz`, and
-  `freiburg3_long_office_household` are implemented and unit-tested, but no
-  extra local sequence was trained.
-- Measured train/val caches: 330 train signals and 56 validation signals, clip
-  length 5, image size 160x120.
-- The first Phase 5G AMP run was stopped because the rotation loss produced
-  nonfinite AMP gradients and `GradScaler` skipped optimizer steps. The loss was
-  fixed with float32 loss math plus a stable `atan2` geodesic rotation angle, and
-  a CUDA AMP regression test now checks that weights update.
-- Final training: 20,000 steps on CUDA with AMP, completed normally. Best
-  checkpoint was step 19,000 with validation RMSE `0.088052159` m, MAE
-  `0.054015226` m, AbsRel `0.049743026`, relative translation mean
-  `0.019125509` m, relative rotation mean `0.729621351` deg, ATE-like center
-  mean `0.024512752` m, RPE-like translation mean `0.013363804` m, and
-  RPE-like rotation mean `0.629176323` deg.
+- TUM sequences prepared for Phase 5G.1: `freiburg1_xyz`,
+  `freiburg1_desk`, and `freiburg2_xyz`.
+- `freiburg1_desk` and `freiburg2_xyz` downloaded successfully from the
+  official TUM RGB-D URLs. `freiburg1_xyz` reused existing local data.
+  `freiburg3_long_office_household` was not attempted after two additional
+  successful sequences to keep the run practical.
+- Phase 5G.1 cache policy: block split, validation fraction `0.15`, 160x120,
+  clip length 5, stride 2, max frame gap `0.12s`, measured TUM depth/pose
+  teacher caches.
+- Train/val measured signals:
+  - `freiburg1_xyz`: 336 train, 58 val.
+  - `freiburg1_desk`: 251 train, 43 val.
+  - `freiburg2_xyz`: 1,556 train, 273 val.
+- Final training: 30,000 steps on CUDA with AMP, completed normally. Best
+  checkpoint was step 24,500 with aggregate validation RMSE `0.265286` m, MAE
+  `0.180751` m, AbsRel `0.187038`, ATE-like center mean `0.007248` m,
+  relative translation mean `0.005221` m, relative rotation mean `0.256970` deg,
+  RPE translation mean `0.003630` m, and RPE rotation mean `0.250807` deg.
+- Best validation by sequence:
+  - `freiburg1_xyz`: RMSE `0.184351` m, AbsRel `0.115135`.
+  - `freiburg1_desk`: RMSE `0.521650` m, AbsRel `0.723090`.
+  - `freiburg2_xyz`: RMSE `0.240855` m, AbsRel `0.117443`.
 - Runtime over 60 validation frames with `checkpoint_best.pt`:
-  - Oracle pose: depth RMSE `0.090435066` m, AbsRel `0.049121839`, 8,078
-    surface points, coverage `0.088784`, pose ATE mean `0.0` m.
-  - Student-odometry: same depth metrics, 12,075 surface points, coverage
-    `0.117054`, pose ATE mean `0.160803384` m, rotation mean `5.388367751` deg,
-    RPE translation mean `0.015672370` m, RPE rotation mean `0.589294296` deg.
-- Runtime latency diagnostics: oracle model inference mean/p50/p95
-  `10.532/4.390/5.025` ms; student-odometry `11.383/4.440/5.576` ms. These are
-  diagnostics with warmup included, not performance claims.
-- Full evidence: `docs/status/phase5g_multisequence_pose_odometry_report.md`.
+  - `freiburg1_xyz` student-odometry: depth RMSE `0.186342` m, AbsRel
+    `0.086612`, ATE mean `0.137798` m, rotation mean `2.568183` deg, RPE
+    translation mean `0.010458` m, RPE rotation mean `0.479756` deg.
+  - `freiburg1_desk` student-odometry: depth RMSE `0.514743` m, AbsRel
+    `0.719807`, ATE mean `0.425468` m, rotation mean `14.102981` deg.
+  - `freiburg2_xyz` student-odometry: depth RMSE `0.281236` m, AbsRel
+    `0.083914`, ATE mean `0.100351` m, rotation mean `1.429469` deg.
+  - `freiburg1_xyz` oracle pose: same depth metrics as student-odometry with
+    zero translation ATE, confirming depth and pose are separable there.
+- Full evidence: `docs/status/phase5g1_multisequence_tum_generalization_report.md`.
 
 ## Compact Phase Ledger
 
@@ -79,12 +81,17 @@ Detailed history belongs in git commits, tests, and reports.
   training, student export, and runtime comparison.
 - Phase 5G: measured SE(3) pose supervision, 6D rotation head, SE(3) metrics,
   and diagnostic student-odometry runtime.
+- Phase 5G.1: real multi-sequence TUM measured training/evaluation; training
+  works, but depth generalization is uneven and student-odometry is still too
+  drifty for mapping.
 
 ## Current Known Gaps
 
 - No realtime scheduler, live camera loop, bounded GPU TSDF, object-aware
   mapping, triangle mesh extraction, or benchmark accuracy report exists.
-- `student-odometry` is not mapping-ready; 60-frame rollout had 0.160803 m mean
-  camera-center drift and 5.388 deg mean absolute rotation error.
-- Multi-sequence TUM code exists, but only `freiburg1_xyz` was locally available
-  for the real training/evaluation run.
+- `student-odometry` is not mapping-ready; the Phase 5G.1 60-frame rollout had
+  large absolute drift, especially `freiburg1_desk` at `0.425468` m mean camera
+  center error and `14.102981` deg mean rotation error.
+- More measured TUM sequences alone did not fix generalization. The next
+  blocker is stronger external pose/pointmap teachers plus model/data
+  robustness before mesh/object evaluation.

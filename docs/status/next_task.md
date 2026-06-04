@@ -1,13 +1,15 @@
-Phase 5H - Measured 3D Scene/Object Ingestion And Mesh Evaluation.
+Phase 5H - External Pose/Pointmap Teacher Generation Before Mesh/Object Work.
 
-Goal: add a measured 3D scene/object dataset path and evaluate Atlas3R geometry,
-mesh, and object outputs against measured references. This is not another
-depth-only pseudo-label phase.
+Goal: improve pose and geometry supervision before attempting measured
+mesh/object ingestion. Phase 5G.1 showed that multi-sequence measured TUM
+training works, but student odometry remains too drifty and depth generalization
+is uneven, especially on `freiburg1_desk`.
 
-Start from the Phase 5G branch/report. Reload `README.md`, `PLANS.md`,
-`docs/08_API_CONTRACTS.md`, `docs/status/progress.md`,
-`docs/status/decisions.md`, `docs/status/active_task.md`, and
-`docs/status/phase5g_multisequence_pose_odometry_report.md`.
+Start from branch `codex/phase5g1-multisequence-tum-generalization`. Reload
+`README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`,
+`docs/status/progress.md`, `docs/status/decisions.md`,
+`docs/status/active_task.md`, and
+`docs/status/phase5g1_multisequence_tum_generalization_report.md`.
 
 Constraints:
 
@@ -19,15 +21,18 @@ Constraints:
 - Preserve coordinate conventions, tensor shapes, teacher-signal cache schema,
   and runtime output contracts unless `docs/08_API_CONTRACTS.md` and tests are
   updated first.
+- Keep third-party pose/pointmap models isolated behind dependency-safe
+  adapters or local-output ingestion paths.
 
 Suggested first vertical slice:
 
-1. Pick one locally available measured 3D scene/object dataset path or add a
-   dependency-safe adapter stub plus local ingest path if no dataset is present.
-2. Define concise contracts for measured mesh/object references and evaluation
-   outputs.
-3. Run the existing teacher/student depth plus pose path into a mesh/object
-   diagnostic output on a small measured scene.
-4. Report mesh metrics such as Chamfer/F-score thresholds and object metrics
-   such as AP/IoU only where measured references exist.
-5. Keep all outputs diagnostic and record the exact commands and gaps.
+1. Pick VGGT or LingBot-Map based on what is locally available, or add only a
+   dependency-safe runner/local-ingest blocker report if neither is configured.
+2. Generate or ingest external pose/pointmap teacher outputs for the Phase 5G.1
+   TUM validation/train sequences without committing model weights or caches.
+3. Validate the external outputs into existing teacher-signal cache contracts,
+   with explicit pseudo-label and truth-boundary metadata.
+4. Train or evaluate the existing temporal student against the stronger teacher
+   signal on a small multi-sequence slice.
+5. Compare student-odometry drift against the Phase 5G.1 report before starting
+   measured mesh/object work.

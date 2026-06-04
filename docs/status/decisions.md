@@ -40,6 +40,7 @@ tests, and the contract docs.
 | D-0033 | Student map runtime | Phase 5E adds `atlas3r runtime stream-student-map` as a diagnostic checkpoint-to-`DepthObservation`-to-CPU-TSDF path over unique clip-cache frames, with oracle and diagnostic student-relative pose modes plus PLY point-cloud, quality, and latency reports. | Yes |
 | D-0034 | Depth Pro pseudo labels | Phase 5F keeps Depth Pro external, device-selected, frame-deduped, and resized into the stable teacher-signal cache; mixed training treats optional pointmaps with per-sample validity so pseudo caches without pointmaps do not supervise zero pointmaps. | Yes |
 | D-0035 | SE(3) student odometry | Phase 5G extends measured TUM teacher-signal training with 6D relative rotation, SE(3) pose metrics, multi-sequence TUM specs, and diagnostic `student-odometry` rollout reports; runtime outputs remain non-mapping and non-realtime. | Yes |
+| D-0036 | Multi-sequence teacher-signal training | Phase 5G.1 allows teacher-signal temporal training across source datasets/sequences when split, clip length, and image size match; summaries must record per-cache and per-sequence counts. | Yes |
 
 Active cross-cutting constraints:
 

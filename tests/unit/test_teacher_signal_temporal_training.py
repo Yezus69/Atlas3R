@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
+from atlas3r.forge.clip_cache import write_json_file
 from atlas3r.teachers.map_eval import (
     TeacherSignalInspectConfig,
     TeacherSignalMapConfig,
@@ -113,6 +115,42 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
         self.assertEqual(pseudo["metadata"]["teacher_name"], "pseudo_fixture")
         self.assertEqual(summary["measured_record_count"], 1)
         self.assertEqual(summary["pseudo_record_count"], 1)
+
+    def test_dataset_accepts_multi_sequence_caches_and_summarizes_counts(self) -> None:
+        self._require_torch()
+        from atlas3r.training.teacher_signal_dataset import TeacherSignalTemporalDataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clip_a = _write_test_clip_cache(root / "clip_a")
+            clip_b = _write_test_clip_cache(root / "clip_b")
+            _rewrite_clip_cache_identity(
+                clip_b,
+                dataset_name="TUM RGB-D fixture",
+                sequence_name="freiburg2_fixture",
+            )
+            teacher_a = root / "teacher_a"
+            teacher_b = root / "teacher_b"
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_a, output=teacher_a)
+            )
+            forge_measured_tum_teacher_signal_cache(
+                MeasuredTumTeacherForgeConfig(clip_cache=clip_b, output=teacher_b)
+            )
+
+            dataset = TeacherSignalTemporalDataset([teacher_a, teacher_b])
+            summary = dataset.cache_summary()
+            sample_b = dataset[1]
+
+        self.assertEqual(len(dataset), 2)
+        self.assertEqual(
+            summary["source_sequence_names"],
+            ["teacher_signal_fixture", "freiburg2_fixture"],
+        )
+        self.assertEqual(len(summary["cache_records"]), 2)
+        self.assertEqual(len(summary["sequence_records"]), 2)
+        self.assertEqual(sample_b["metadata"]["source_sequence_name"], "freiburg2_fixture")
+        self.assertEqual(summary["record_count"], 2)
 
     def test_dataset_collates_mixed_optional_pointmaps(self) -> None:
         self._require_torch()
@@ -419,6 +457,16 @@ class TeacherSignalTemporalTrainingTest(unittest.TestCase):
                 "prediction_preview.svg",
             ):
                 self.assertTrue((run_dir / filename).is_file(), filename)
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+            validation_lines = [
+                json.loads(line)
+                for line in (run_dir / "validation_metrics.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+                if line
+            ]
+            self.assertIn("teacher_signal_fixture", summary["best_validation_per_sequence"])
+            self.assertIn("per_sequence", validation_lines[-1])
 
             student_cache = root / "student_teacher"
             export_result = subprocess.run(
@@ -484,6 +532,18 @@ def _write_test_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = F
     from test_teacher_signals import _write_clip_cache
 
     return _write_clip_cache(root, clip_count=clip_count, overlap=overlap)
+
+
+def _rewrite_clip_cache_identity(
+    manifest_path: Path,
+    *,
+    dataset_name: str,
+    sequence_name: str,
+) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source_dataset_name"] = dataset_name
+    manifest["source_sequence_name"] = sequence_name
+    write_json_file(manifest_path, manifest)
 
 
 if __name__ == "__main__":

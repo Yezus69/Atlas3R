@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -175,6 +175,8 @@ class TeacherSignalTemporalDataset:
             for record in self.records
             if _teacher_is_measured(self.teacher_manifests[record.teacher_cache_index])
         )
+        cache_records = self._cache_records()
+        sequence_records = _sequence_records(cache_records)
         return {
             "teacher_caches": [str(path) for path in self.teacher_cache_paths],
             "clip_caches": [str(path) for path in self.clip_manifest_paths],
@@ -183,11 +185,46 @@ class TeacherSignalTemporalDataset:
             "pseudo_record_count": len(self.records) - measured,
             "source_dataset_name": str(self.teacher_manifests[0]["source_dataset_name"]),
             "source_sequence_name": str(self.teacher_manifests[0]["source_sequence_name"]),
+            "source_dataset_names": _unique_strings(
+                record["source_dataset_name"] for record in cache_records
+            ),
+            "source_sequence_names": _unique_strings(
+                record["source_sequence_name"] for record in cache_records
+            ),
             "split": str(self.teacher_manifests[0]["split"]),
             "clip_length": self.clip_length,
             "image_width": self.width,
             "image_height": self.height,
+            "cache_records": cache_records,
+            "sequence_records": sequence_records,
         }
+
+    def _cache_records(self) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for cache_index, manifest in enumerate(self.teacher_manifests):
+            selected = [
+                record for record in self.records if record.teacher_cache_index == cache_index
+            ]
+            measured = sum(1 for _record in selected if _teacher_is_measured(manifest))
+            records.append(
+                {
+                    "teacher_cache": str(self.teacher_cache_paths[cache_index]),
+                    "clip_cache": str(self.clip_manifest_paths[cache_index]),
+                    "cache_index": cache_index,
+                    "record_count": len(selected),
+                    "measured_record_count": measured,
+                    "pseudo_record_count": len(selected) - measured,
+                    "source_dataset_name": str(manifest["source_dataset_name"]),
+                    "source_sequence_name": str(manifest["source_sequence_name"]),
+                    "split": str(manifest["split"]),
+                    "clip_length": _int_field(manifest, "clip_length"),
+                    "image_width": _int_field(manifest, "image_width"),
+                    "image_height": _int_field(manifest, "image_height"),
+                    "teacher_name": str(manifest["teacher_name"]),
+                    "teacher_source_type": str(manifest["teacher_source_type"]),
+                }
+            )
+        return records
 
     def _records(self) -> tuple[TeacherSignalRecord, ...]:
         records: list[TeacherSignalRecord] = []
@@ -250,13 +287,62 @@ def _source_clip_manifest_path(manifest: dict[str, object], cache_root: Path) ->
 
 def _compatibility_key(manifest: dict[str, object]) -> tuple[object, ...]:
     return (
-        manifest["source_dataset_name"],
-        manifest["source_sequence_name"],
         manifest["split"],
         manifest["clip_length"],
         manifest["image_width"],
         manifest["image_height"],
     )
+
+
+def _sequence_records(cache_records: list[dict[str, object]]) -> list[dict[str, object]]:
+    grouped: dict[tuple[str, str, str], dict[str, object]] = {}
+    for record in cache_records:
+        key = (
+            str(record["source_dataset_name"]),
+            str(record["source_sequence_name"]),
+            str(record["split"]),
+        )
+        if key not in grouped:
+            grouped[key] = {
+                "source_dataset_name": key[0],
+                "source_sequence_name": key[1],
+                "split": key[2],
+                "record_count": 0,
+                "measured_record_count": 0,
+                "pseudo_record_count": 0,
+                "teacher_cache_count": 0,
+            }
+        grouped_record = grouped[key]
+        grouped_record["record_count"] = _object_int(grouped_record["record_count"]) + _object_int(
+            record["record_count"]
+        )
+        grouped_record["measured_record_count"] = _object_int(
+            grouped_record["measured_record_count"]
+        ) + _object_int(record["measured_record_count"])
+        grouped_record["pseudo_record_count"] = _object_int(
+            grouped_record["pseudo_record_count"]
+        ) + _object_int(record["pseudo_record_count"])
+        grouped_record["teacher_cache_count"] = (
+            _object_int(grouped_record["teacher_cache_count"]) + 1
+        )
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def _object_int(value: object) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ValueError("summary count: expected integer")
+    return value
+
+
+def _unique_strings(values: Iterable[object]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value)
+        if text not in seen:
+            unique.append(text)
+            seen.add(text)
+    return unique
 
 
 def _relative_translation_center_from_camera(

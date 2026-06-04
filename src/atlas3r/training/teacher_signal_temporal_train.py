@@ -104,6 +104,7 @@ def run_teacher_signal_temporal_training(
     scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
     truth_boundary = temporal_v1_truth_boundary()
     best_val_metrics: dict[str, float] | None = None
+    best_val_per_sequence: dict[str, dict[str, float]] = {}
     best_val_rmse = float("inf")
     final_train_metrics: dict[str, float] = {}
     stopped_reason = "completed_steps"
@@ -154,7 +155,7 @@ def run_teacher_signal_temporal_training(
                 {"format_name": "atlas3r_teacher_signal_train_metric", "step": step, **metrics},
             )
         if step == 1 or step % config.val_every == 0 or step == config.steps:
-            val_metrics = _validate(
+            val_metrics, val_per_sequence = _validate(
                 model,
                 val_loader,
                 resolved_device,
@@ -166,11 +167,13 @@ def run_teacher_signal_temporal_training(
                     "format_name": "atlas3r_teacher_signal_validation_metric",
                     "step": step,
                     **val_metrics,
+                    "per_sequence": val_per_sequence,
                 },
             )
             if val_metrics["depth_rmse_m"] < best_val_rmse:
                 best_val_rmse = val_metrics["depth_rmse_m"]
                 best_val_metrics = val_metrics
+                best_val_per_sequence = val_per_sequence
                 write_teacher_signal_temporal_checkpoint(
                     config.output / "checkpoint_best.pt",
                     model=model,
@@ -209,7 +212,7 @@ def run_teacher_signal_temporal_training(
 
     if success:
         if best_val_metrics is None:
-            best_val_metrics = _validate(
+            best_val_metrics, best_val_per_sequence = _validate(
                 model,
                 val_loader,
                 resolved_device,
@@ -254,6 +257,7 @@ def run_teacher_signal_temporal_training(
         "train_summary": train_dataset.cache_summary(),
         "validation_summary": val_dataset.cache_summary(),
         "best_validation": best_val_metrics,
+        "best_validation_per_sequence": best_val_per_sequence,
         "final_train_losses": final_train_metrics,
         "artifacts": {
             "config": "config.json",
@@ -311,10 +315,12 @@ def _validate(
     device: str,
     *,
     loss_config: TeacherSignalLossConfig,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
     torch = require_torch()
     model.eval()
     totals: dict[str, float] = {}
+    sequence_totals: dict[str, dict[str, float]] = {}
+    sequence_counts: dict[str, int] = {}
     batches = 0
     with torch.no_grad():
         for batch in val_loader:
@@ -327,16 +333,83 @@ def _validate(
             )
             for key, value in metrics.items():
                 totals[key] = totals.get(key, 0.0) + value
+            _accumulate_per_sequence_metrics(
+                prediction,
+                _loss_target(batch),
+                _sequence_names_from_batch(batch),
+                sequence_totals,
+                sequence_counts,
+                loss_config=loss_config,
+            )
             batches += 1
     if batches <= 0:
         raise ValueError("validation: no batches were produced")
-    return {key: value / float(batches) for key, value in totals.items()}
+    aggregate = {key: value / float(batches) for key, value in totals.items()}
+    per_sequence = {
+        sequence: {
+            key: value / float(sequence_counts[sequence]) for key, value in sorted(metrics.items())
+        }
+        for sequence, metrics in sorted(sequence_totals.items())
+    }
+    return aggregate, per_sequence
 
 
 def _loss_target(batch: dict[str, Any]) -> dict[str, Any]:
     target = dict(batch["target"])
     target["intrinsics"] = batch["intrinsics"]
     return target
+
+
+def _accumulate_per_sequence_metrics(
+    prediction: dict[str, Any],
+    target: dict[str, Any],
+    sequence_names: tuple[str, ...],
+    sequence_totals: dict[str, dict[str, float]],
+    sequence_counts: dict[str, int],
+    *,
+    loss_config: TeacherSignalLossConfig,
+) -> None:
+    batch_size = _batch_size(prediction)
+    if len(sequence_names) != batch_size:
+        raise ValueError("validation metadata: source_sequence_name count does not match batch")
+    for index, sequence_name in enumerate(sequence_names):
+        _loss, metrics = teacher_signal_temporal_loss(
+            _slice_batch(prediction, index),
+            _slice_batch(target, index),
+            config=loss_config,
+        )
+        totals = sequence_totals.setdefault(sequence_name, {})
+        for key, value in metrics.items():
+            totals[key] = totals.get(key, 0.0) + value
+        sequence_counts[sequence_name] = sequence_counts.get(sequence_name, 0) + 1
+
+
+def _sequence_names_from_batch(batch: dict[str, Any]) -> tuple[str, ...]:
+    metadata = batch.get("metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError("validation metadata: expected metadata mapping")
+    value = metadata.get("source_sequence_name")
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value)
+    raise ValueError("validation metadata: source_sequence_name must be a string or list")
+
+
+def _batch_size(prediction: dict[str, Any]) -> int:
+    depth = prediction["depth_m"]
+    if not hasattr(depth, "shape") or len(depth.shape) < 1:
+        raise ValueError("prediction.depth_m: expected batch-shaped tensor")
+    return int(depth.shape[0])
+
+
+def _slice_batch(value: Any, index: int) -> Any:
+    torch = require_torch()
+    if torch.is_tensor(value):
+        return value[index : index + 1]
+    if isinstance(value, dict):
+        return {key: _slice_batch(item, index) for key, item in value.items()}
+    return value
 
 
 def _next_training_batch(loader: Any, iterator: Any) -> tuple[dict[str, Any], Any]:
