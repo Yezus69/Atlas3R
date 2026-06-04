@@ -32,6 +32,31 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("smoke", result.stdout)
         self.assertIn("profile", result.stdout)
 
+        recording_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "recording", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(recording_result.returncode, 0, recording_result.stderr)
+        self.assertIn("validate", recording_result.stdout)
+        self.assertIn("from-tum", recording_result.stdout)
+        self.assertIn("from-clip-cache", recording_result.stdout)
+
+        fuse_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "fuse-recording", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(fuse_result.returncode, 0, fuse_result.stderr)
+        self.assertIn("--recording", fuse_result.stdout)
+        self.assertIn("--export-mesh", fuse_result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

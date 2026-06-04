@@ -42,6 +42,7 @@ tests, and the contract docs.
 | D-0035 | SE(3) student odometry | Phase 5G extends measured TUM teacher-signal training with 6D relative rotation, SE(3) pose metrics, multi-sequence TUM specs, and diagnostic `student-odometry` rollout reports; runtime outputs remain non-mapping and non-realtime. | Yes |
 | D-0036 | Multi-sequence teacher-signal training | Phase 5G.1 allows teacher-signal temporal training across source datasets/sequences when split, clip length, and image size match; summaries must record per-cache and per-sequence counts. | Yes |
 | D-0037 | Real VGGT teacher runner | Phase 5H adds `atlas3r teachers run-vggt` as a dependency-safe external runner that writes only stable pseudo-label teacher-signal caches and diagnostic JSON/Markdown evaluation reports; optional source-pose alignment remains diagnostic and non-measured. | Yes |
+| D-0038 | Recording fusion product slice | Phase 6A adds `atlas3r_recording` as the stable measured capture boundary and `runtime fuse-recording` as a diagnostic measured depth+pose to CPU TSDF path with PLY export and optional `scikit-image` marching cubes mesh export. | Yes |
 
 Active cross-cutting constraints:
 

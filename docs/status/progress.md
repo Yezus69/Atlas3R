@@ -5,26 +5,27 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Current State
 
-- Current phase: Phase 5H real VGGT pose/pointmap teacher boundary completed as
-  a dependency-safe blocker.
-- Branch: `codex/phase5h-vggt-pose-pointmap-teacher`.
-- Latest implementation: `atlas3r teachers run-vggt` can run a real external
-  VGGT package/checkout when configured, converts depth/pose/intrinsics/optional
-  pointmaps into the stable teacher-signal cache, supports diagnostic
-  source-pose Sim(3)/SE(3) alignment, and writes JSON/JSONL/Markdown VGGT
-  teacher-vs-measured evaluation reports.
-- Real VGGT execution is blocked locally because `vggt` is not importable and
-  `ATLAS3R_VGGT_REPO` / `ATLAS3R_VGGT_CHECKPOINT` are unset. CUDA is available
-  on three GPUs, first device `NVIDIA GeForce RTX 4090`.
+- Current phase: Phase 6A product-slice measured recording mapper completed.
+- Branch: `codex/phase6a-product-slice-mapper-recording-mesh`.
+- Latest implementation: `atlas3r_recording` validates RGB + K + optional
+  measured depth + optional measured pose streams; `recording from-tum` and
+  `recording from-clip-cache` import existing measured data; `runtime
+  fuse-recording` streams measured recording frames through `DepthObservation`
+  and CPU TSDF, then writes TSDF artifacts, `surface_points.ply`, optional real
+  mesh status/export, event logs, summary, latency, memory, quality, and preview
+  reports.
+- Mesh extraction is optional through `scikit-image`; local run degraded
+  correctly to point-cloud export with `mesh_exported=false` because
+  `scikit-image` is not installed.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed; 152 files left unchanged.
-- `python -m ruff format --check src tests`: passed; 152 files already
+- `python -m ruff format src tests`: passed; 163 files left unchanged.
+- `python -m ruff format --check src tests`: passed; 163 files already
   formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 115 source files.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed 201 tests. The
+- `python -m mypy src`: passed with no issues in 122 source files.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed 208 tests. The
   pre-existing optional Torch/einops import warning appeared.
 - `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
 - `where.exe make`: no `make` found in this Windows shell, so `make test`,
@@ -32,6 +33,22 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Real-Data Evidence
 
+- Phase 6A measured recording run:
+  - Import command:
+    `python -m atlas3r recording from-tum --manifest data/tum_rgbd/freiburg1_xyz_phase5g1_manifest_block.json --output runs/phase6a_recording_freiburg1_xyz_val/recording --split val --max-frames 120 --width 160 --height 120`.
+  - Validation command:
+    `python -m atlas3r recording validate --input runs/phase6a_recording_freiburg1_xyz_val/recording`.
+  - Fusion command:
+    `python -m atlas3r runtime fuse-recording --recording runs/phase6a_recording_freiburg1_xyz_val/recording --output runs/phase6a_fuse_recording_freiburg1_xyz_val --pose-source recording --depth-source recording --max-frames 120 --keyframe-stride 1 --voxel-size-m 0.05 --truncation-voxels 3.0 --export-point-cloud --export-mesh auto`.
+  - Result: 120 TUM `freiburg1_xyz` validation frames fused, frame IDs
+    676-795, 3,136 surface points, `surface_points.ply` exported.
+  - `mesh_status.json`: `mesh_exported=false`; optional `scikit-image` missing.
+  - Diagnostic latency p50/p95/max ms: observation load 1891.5437, CPU TSDF
+    3973.6902, geometry export 26.2614, total pipeline 5892.6372.
+  - Memory byte counters: observation arrays 27,648,000; TSDF arrays
+    2,457,216; surface arrays 62,720.
+  - Valid measured depth pixels: 1,714,731; valid ratio 0.7442408854166667.
+  - Full evidence: `docs/status/phase6a_product_slice_mapper_recording_mesh_report.md`.
 - Phase 5H real VGGT run attempt:
   `python -m atlas3r teachers run-vggt --clip-cache data/tum_rgbd/freiburg1_xyz_phase5g1_clip_cache_val --output runs/phase5h_vggt_freiburg1_xyz_val --device cuda --max-clips 1 --align-to-source-pose diagnostic_sim3`.
   It exited with code `2` because VGGT is unavailable, and no output folder was
@@ -96,8 +113,11 @@ Detailed history belongs in git commits, tests, and reports.
 
 ## Current Known Gaps
 
-- No realtime scheduler, live camera loop, bounded GPU TSDF, object-aware
-  mapping, triangle mesh extraction, or benchmark accuracy report exists.
+- No realtime scheduler, live camera loop, calibration capture, bounded GPU
+  TSDF, object-aware mapping, glTF/game-engine export, or benchmark accuracy
+  report exists.
+- Real triangle mesh extraction is implemented but requires optional
+  `scikit-image`; it was not available locally for the Phase 6A run.
 - `student-odometry` is not mapping-ready; the Phase 5G.1 60-frame rollout had
   large absolute drift, especially `freiburg1_desk` at `0.425468` m mean camera
   center error and `14.102981` deg mean rotation error.

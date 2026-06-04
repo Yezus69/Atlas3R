@@ -26,11 +26,11 @@ class RepoContextBudgetTest(unittest.TestCase):
                     f"{relative_path} has {line_count} lines; budget is {max_lines}",
                 )
 
-    def test_next_task_points_to_phase_5h(self) -> None:
+    def test_next_task_points_to_phase_6b(self) -> None:
         next_task = (REPO_ROOT / "docs/status/next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5H.1", next_task)
-        self.assertIn("real VGGT", next_task)
-        self.assertIn("Training gate", next_task)
+        self.assertIn("Phase 6B - Live/Video Input and Calibration Capture", next_task)
+        self.assertIn("validated `atlas3r_recording` folders", next_task)
+        self.assertIn("calibration capture", next_task)
 
 
 if __name__ == "__main__":

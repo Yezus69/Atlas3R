@@ -171,12 +171,12 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_5h(self) -> None:
+    def test_status_handoff_points_to_phase_6b(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
-        self.assertIn("Phase 5H.1", next_task)
-        self.assertIn("real VGGT", next_task)
-        self.assertIn("Training gate", next_task)
+        self.assertIn("Phase 6B - Live/Video Input and Calibration Capture", next_task)
+        self.assertIn("validated `atlas3r_recording` folders", next_task)
+        self.assertIn("calibration capture", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

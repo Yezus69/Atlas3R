@@ -178,22 +178,16 @@ class TeacherPrediction:
     metadata: Mapping[str, Any]
 ```
 
-`AdapterCapabilities` records predicted modalities plus batch/streaming support.
-`AdapterStatus` records name/display name, availability
-(`available|unavailable|stub-only`), capabilities, install hint, and reason.
-Known stubs include `VGGTAdapter` and `DepthProAdapter`; missing optional
-dependencies raise `AdapterDependencyError`.
+`AdapterCapabilities` records modalities plus batch/streaming support.
+`AdapterStatus` records name/display name, availability, capabilities, install
+hint, and reason; known stubs include `VGGTAdapter` and `DepthProAdapter`.
+Missing optional dependencies raise `AdapterDependencyError`.
 
-`atlas3r.data.teacher_frame_batch_from_frame_packets(frames, ...)` and
-`teacher_frame_batch_from_rgb_source(source, ...)` build ordered `FrameBatch`
-records from existing `FramePacket` / `RGBFrameSource` inputs. They preserve
-input order, reject empty/non-packet/duplicate-frame-id inputs, keep compact
-deterministic metadata, and do not run inference or touch mapper/runtime/TSDF
-paths.
-Teacher prediction caches remain `metadata.json`, `frame_summaries.jsonl`, and
-optional `arrays/frame_<frame_id:06d>.npz` payloads enabled by `--store-arrays`.
-Metadata records format/version, adapter status/capabilities, coordinate frame,
-frame IDs, scale sources, summaries path, and array storage state.
+`teacher_frame_batch_from_frame_packets(...)` and
+`teacher_frame_batch_from_rgb_source(...)` build ordered `FrameBatch` records
+without running inference or touching mapper/runtime/TSDF paths. Teacher
+prediction caches are `metadata.json`, `frame_summaries.jsonl`, and optional
+`arrays/frame_<frame_id:06d>.npz` payloads enabled by `--store-arrays`.
 
 Teacher-signal caches use
 `atlas3r_teacher_signal_manifest.json` plus `signals/clip_<id>.npz`. Manifest
@@ -207,22 +201,20 @@ flags: `diagnostic_only=true`, `accuracy_report=false`,
 
 Teacher-signal payload required arrays are `depth_m`, `depth_sigma_m`,
 `confidence`, `valid_mask`, `K`, `T_world_camera`, `frame_ids`, and
-`timestamps_s` with shapes `T,H,W`, `T,3,3`, `T,4,4`, `T`, and `T`. Optional
-arrays are `pointmap_camera_m`, `pointmap_world_m`, `normal_camera`,
-`object_mask_ids`, `object_confidence`, and `dynamic_probability`. Validation
-checks finite arrays, non-negative depth/sigma, positive sigma on valid pixels,
-probabilities in `[0,1]`, valid intrinsics/transforms, safe relative paths, and
-matching source clip metadata.
-`source_metadata.pose_source` is optional but must be a non-empty string when
-present; `source_metadata.pose_confidence` is optional but must be in `[0,1]`
-when present. Measured TUM teacher caches mark measured geometry true and
-pseudo-label false; pseudo/external caches do the inverse and must not relabel
-measured TUM pose as an external teacher.
-Raw `teachers ingest-local` NPZ inputs must be named `clip_<source_clip_id:06d>.npz` or `source_clip_<source_clip_id:06d>.npz`; parsed IDs select source clips, and duplicate/out-of-range IDs, bad filenames, or frame ID/timestamp mismatches are rejected.
-`teachers inspect-signals` writes only `summary.json` and `per_clip_metrics.jsonl`. `teachers map-signals` deduplicates by `frame_id` before CPU TSDF integration; first occurrence wins in signal order then frame offset, duplicates must match depth/K/`T_world_camera`, and `map_summary.json` records before/after counts, duplicate count, and policy.
-External teacher runners under `atlas3r.teachers.external` expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`, and `ExternalTeacherRunner`; must not import external model packages at module import time; `status()` reports availability/install/input/output/local-run capability; and `run(...)` writes a validated signal cache or raises an explicit error.
-Depth Pro uses source RGB plus clip-cache `T_world_camera`, accepts `--device auto|cuda|mps|cpu`, records `teacher_source=depth_pro`, and sets measured false/pseudo-label true; it predicts each unique `frame_id` once, validates duplicate RGB/K before reuse, resizes depth/confidence/sigma to clip-cache resolution, and records clip/frame-slot/unique/reuse/resize counts in source metadata. VGGT local ingest maps `clip_<source_clip_id:06d>.npz` arrays with `teacher_source_type=local_external_geometry_teacher`.
-VGGT real execution uses `atlas3r teachers run-vggt --clip-cache ... --output ... --device auto|cuda|mps|cpu [--max-clips N] [--vggt-repo PATH] [--checkpoint PATH_OR_URI] [--align-to-source-pose diagnostic_sim3|diagnostic_se3|none]`. The runner accepts an importable `vggt` package or `ATLAS3R_VGGT_REPO`, keeps VGGT code/weights external, extracts depth/confidence, decoded camera pose, optional intrinsics, and optional pointmaps when exposed, then writes standard pseudo-label teacher signals with `teacher_name=vggt`, `teacher_source_type=external_multiview_geometry_teacher`, measured false, and pseudo-label true. `diagnostic_*` alignment modes may align VGGT local poses/pointmaps to source clip poses for TUM evaluation; alignment metadata must state that aligned pseudo-labels are not measured geometry. Post-run VGGT evaluation writes `summary.json`, `per_clip_metrics.jsonl`, and `report.md` with depth, ATE-like center, RPE-like relative pose, optional pointmap, coverage, and confidence metrics.
+`timestamps_s` with shapes `T,H,W`, `T,3,3`, `T,4,4`, `T`, and `T`; optional
+arrays include pointmaps, normals, object IDs/confidence, and dynamic
+probability. Validation checks finite arrays, non-negative depth/sigma,
+positive sigma on valid pixels, probabilities in `[0,1]`, valid
+intrinsics/transforms, safe relative paths, and matching source clip metadata.
+Measured TUM caches mark measured true/pseudo false; pseudo/external caches do
+the inverse. Raw ingest NPZ names encode `source_clip_id`; inspect writes
+`summary.json`/`per_clip_metrics.jsonl`; map-signals dedupes by `frame_id`.
+External runners expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`,
+and `ExternalTeacherRunner`, import no external model packages at module import
+time, and write validated signal caches or explicit errors. Depth Pro and VGGT
+outputs remain pseudo-labels unless measured by source data; VGGT code/weights
+stay external, diagnostic source-pose alignment is not measured geometry, and
+VGGT reports are `summary.json`, `per_clip_metrics.jsonl`, and `report.md`.
 Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`; `atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`; `atlas3r teachers ingest-local`; `atlas3r teachers run-depth-pro`; `atlas3r teachers run-vggt`; `atlas3r teachers ingest-vggt-local`; `atlas3r teachers run-student-temporal`; `atlas3r teachers inspect-signals`; and `atlas3r teachers map-signals`.
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
 `atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic NumPy CPU
@@ -268,44 +260,27 @@ voxel size, scale source, observed coverage, confidence, and mean/p95 uncertaint
 
 ## Runtime Fixture Contracts
 
-`atlas3r smoke runtime-fixture --output <folder>` is a single-threaded
-deterministic scheduler skeleton over the synthetic cube-room fixture. It writes:
+`atlas3r smoke runtime-fixture --output <folder>` is a deterministic
+single-threaded synthetic scheduler skeleton. It writes `runtime_events.jsonl`,
+`runtime_summary.json`, `synthetic_cube_room.atlas3r/`, `teacher_cache/`, and
+`teacher_cache_tsdf/`. Runtime events use
+`format_name=atlas3r_runtime_fixture_event_log`, `format_version=1`,
+monotonic `event_index`, known `stage_name`, optional `frame_id`, deterministic
+`timestamp_ns`/`latency_ns`, `dropped_frame`, bounded `memory_counters`,
+relative `paths`, and deterministic `metadata`. Known stages are
+`runtime_start`, `session_write`, `source_frame`, `adapter_cache_write`,
+`adapter_cache_frame`, `tsdf_replay`, `tsdf_replay_frame`,
+`tsdf_output_write`, and `runtime_complete`.
 
-```text
-<folder>/
-  runtime_events.jsonl
-  runtime_summary.json
-  synthetic_cube_room.atlas3r/
-  teacher_cache/
-  teacher_cache_tsdf/
-```
-
-Runtime event records use `format_name=atlas3r_runtime_fixture_event_log`,
-`format_version=1`, monotonic `event_index`, known `stage_name`, optional
-`frame_id`, deterministic placeholder `timestamp_ns` and `latency_ns`,
-`dropped_frame`, scheduler-owned `memory_counters`, relative `paths`, and
-deterministic `metadata`.
-
-Known stage names: `runtime_start`, `session_write`, `source_frame`,
-`adapter_cache_write`, `adapter_cache_frame`, `tsdf_replay`,
-`tsdf_replay_frame`, `tsdf_output_write`, and `runtime_complete`.
-
-`runtime_summary.json` uses `format_name=atlas3r_runtime_fixture_smoke_summary`
-and records runtime paths, frame IDs, event-log path, bounded-memory counters,
-artifact paths, and a truth boundary. `atlas3r inspect runtime-fixture --input
-<folder>` validates the event log, summary, generated session, full-array
-teacher cache, and nested complete TSDF output inspection.
-
-`atlas3r runtime stream-student-map --checkpoint ... --clip-cache ... --teacher-cache ... --output ...`
-runs a temporal checkpoint over unique frames, emits `DepthObservation`s, fuses
-CPU TSDF, and writes per-mode reports, TSDF sidecars, PLY, and preview HTML.
-Pose modes are `oracle`, diagnostic-only `student-relative`,
-`student-odometry`, or `both`; `student-odometry` anchors only the first frame
-to source pose, then rolls out learned relative SE(3) from each window's
-previous-frame slot. Per-mode outputs include `quality_report.json`,
-`per_frame_quality.jsonl`, `pose_quality_report.json`,
-`per_frame_pose_quality.jsonl`, TUM estimate/ground-truth trajectories,
-`latency_report.json`, `tsdf/`, and `point_cloud.ply`; truth-claim flags stay false.
+`runtime_summary.json` uses
+`format_name=atlas3r_runtime_fixture_smoke_summary`; `inspect
+runtime-fixture` validates the event log, summary, generated session,
+full-array teacher cache, and nested complete TSDF output inspection.
+`runtime stream-student-map` runs a temporal checkpoint over unique frames,
+emits `DepthObservation`s, fuses CPU TSDF, and writes per-mode quality, pose,
+latency, TSDF, trajectory, PLY, and preview outputs. Pose modes are `oracle`,
+diagnostic `student-relative`, `student-odometry`, or `both`; truth-claim flags
+stay false.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.
@@ -381,31 +356,31 @@ checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
 synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 
 ### TUM RGB-D Real-Data Debug Training, Eval, And Temporal Clips
-Commands: `atlas3r datasets tum-rgbd download|prepare`, `atlas3r train tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `atlas3r eval tum-rgbd-checkpoint [--write-tsdf]`, `atlas3r forge tum-rgbd-clips`, `atlas3r train tum-rgbd-temporal`, and `atlas3r train teacher-signals-temporal`. Download uses stdlib networking and safe tar extraction. Supported sequence specs include `freiburg1_xyz`, `freiburg1_desk`, `freiburg2_xyz`, and `freiburg3_long_office_household`; `download` accepts paired `--archive-url` and `--groundtruth-url` overrides for verified mirrors or URL changes.
+Commands include `datasets tum-rgbd download|prepare`, `train
+tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `eval tum-rgbd-checkpoint
+[--write-tsdf]`, `forge tum-rgbd-clips`, `train tum-rgbd-temporal`, and
+`train teacher-signals-temporal`. Download uses safe tar extraction; supported
+sequence specs include `freiburg1_xyz`, `freiburg1_desk`, `freiburg2_xyz`, and
+`freiburg3_long_office_household`.
 
-The TUM manifest is `format_name=atlas3r_tum_rgbd_manifest`, `format_version=1`,
-and records RGB/depth metadata, ROS default `K`, `depth_raw/5000.0`, split
-metadata, frame IDs, timestamps, paths, `T_world_camera`, camera center, and
-truth boundary. `every10` preserves the original split; `block` uses the
-selected-frame tail as validation.
+The TUM manifest is `format_name=atlas3r_tum_rgbd_manifest`,
+`format_version=1`, and records RGB/depth metadata, ROS default `K`,
+`depth_raw/5000.0`, split metadata, frame IDs, timestamps, paths,
+`T_world_camera`, camera center, and truth boundary. Clip caches use
+`atlas3r_clip_cache_manifest.json` plus `clips/clip_<id>.npz` payloads with
+RGB/depth/mask/K/`T_world_camera`/frame/timestamp arrays, `center_index`, and
+optional pointmap/normal arrays.
 
-Single-frame real-RGBD datasets return `images_rgb 3,H,W`, scaled `intrinsics`,
-depth/mask/confidence/camera-center/`T_world_camera` targets, and metadata.
-`TinyDepthPoseNet` is RGB-only; `TinyMetricDepthNetV2` adds intrinsics rays.
-
-Clip caches use `atlas3r_clip_cache_manifest.json` with format/version, split,
-clip/image sizes, frame IDs, timestamps, payload paths, source metadata, and
-diagnostic TUM sensor depth/pose truth flags. Payloads are `clips/clip_<id>.npz`
-with RGB/depth/mask/K/`T_world_camera`/frame/timestamp arrays, `center_index`,
-and optional pointmap/normal arrays.
-
-`TumRgbdClipCacheDataset` returns `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, center depth/mask/confidence targets, and `relative_T_center_camera T,4,4` where `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`. `TinyTemporalMetricNetV0` predicts center depth/sigma/confidence and `relative_translation_center_from_camera B,T,3`; rotation is not learned in Phase 5A. Temporal runs write config, train/validation JSONL, summary, last/best checkpoints, NPZ sample, and HTML/SVG preview. All metrics are diagnostic.
-
-`TeacherSignalTemporalDataset` lazily aligns one or more validated teacher-signal caches to source clip RGB, intrinsics, `T_world_camera`, frame IDs, and timestamps. Samples expose `images_rgb T,3,H,W`, `intrinsics T,3,3`, `T_world_camera T,4,4`, `frame_ids T`, `timestamps_s T`, targets `depth_m/depth_sigma_m/confidence/valid_mask T,1,H,W`, `teacher_is_measured`, teacher metadata, and `pointmap_camera_m T,3,H,W` plus `pointmap_camera_valid` (false with zero pointmaps when absent); mixed caches may span datasets/sequences but must share split, clip length, and image size. Training config and summaries record aggregate counts plus per-cache and per-sequence selected record counts; validation JSONL records aggregate metrics plus a per-sequence diagnostic breakdown.
-
-`TemporalMetricNetV1` is the Phase 5D/5G trainable teacher-signal model: RGB plus ray channels, shared 2D encoder, small ConvGRU bottleneck, `depth_m/depth_sigma_m/confidence B,T,1,H,W`, `relative_translation_center_from_camera B,T,3`, and `relative_rotation_6d_center_from_camera B,T,6` using the first two columns of `T_center_camera_i = inverse(T_world_camera_center) @ T_world_camera_i`. Older Phase 5D/5F checkpoints without rotation-head weights still load for depth and `student-relative` diagnostics, but `student-odometry` requires trained rotation-head weights. `atlas3r train teacher-signals-temporal` writes config/metrics/validation/summary/last+best checkpoints and a compact preview; checkpoints use `format_name=atlas3r_teacher_signal_temporal_checkpoint` and include model/loss config, teacher cache lists, step, metrics, optimizer state, and truth flags with mapping/realtime/accuracy/performance/final-SMGT false.
-
-Teacher-signal losses weight valid pixels by `confidence / clamp(depth_sigma_m^2, min_sigma^2, max_sigma^2)`, clamp and normalize weights per batch, and default to measured teacher weight `1.0` and pseudo teacher weight `0.25`. Pose losses include relative translation SmoothL1 in meters, 6D-to-SO(3) geodesic rotation loss in radians, and an optional `se3_pose_weight`. Metrics include depth RMSE/MAE/AbsRel, relative translation mean/median/p95, relative rotation mean/median/p95 in degrees, ATE-like camera-center rollout error, and RPE-like consecutive transform error. `atlas3r teachers run-student-temporal` loads a temporal checkpoint and writes `teacher_name=atlas3r_temporal_v1_student` pseudo-label caches; exported `T_world_camera` comes from the source clip cache unless a later phase upgrades pose export.
+`TeacherSignalTemporalDataset` aligns validated teacher-signal caches to source
+clip RGB, intrinsics, `T_world_camera`, frame IDs, timestamps, depth/sigma/
+confidence/valid-mask targets, measured flags, and optional pointmaps. Mixed
+caches may span datasets/sequences but must share split, clip length, and image
+size. `TemporalMetricNetV1` predicts depth/sigma/confidence and relative
+translation/6D rotation; `student-odometry` requires trained rotation-head
+weights. Teacher-signal losses use confidence/sigma weighting, measured teacher
+weight `1.0`, pseudo teacher weight `0.25`, SE(3) pose losses, and diagnostic
+depth/pose metrics. `run-student-temporal` writes pseudo-label caches and uses
+source clip-cache `T_world_camera` unless a later phase upgrades pose export.
 
 ## Map Object Contracts
 `ObjectInstance` fields: `object_id`, `label_candidates`, `T_world_object 4,4`,
@@ -433,18 +408,43 @@ Runtime event names: `PoseUpdate`, `DepthUpdate`, `ObjectUpdate`,
 `BenchmarkMetric`; payloads use the public contracts above.
 
 ## File Formats
+### Atlas3R Recording Folder
+Layout is `atlas3r_recording.json`, `frames.jsonl`, optional local
+`rgb/<frame_id>.<ext>`, and optional measured `depth/<frame_id>.npz|png`.
+Manifest fields: `format_name=atlas3r_recording`, `format_version=1`,
+`coordinate_frame=x_right_y_down_z_forward`, `frame_count`, `width`, `height`,
+`source_dataset`, `source_sequence`, `capture_metadata`,
+`known_calibration_metadata`, `depth_present`, `pose_present`,
+`truth_boundary`, optional `external_roots`; truth flags keep
+`diagnostic_only=true`, `accuracy_report=false`, `performance_report=false`,
+and `hidden_geometry_measured=false`. Frame fields: `frame_id`, chronological
+`timestamp_s`, safe relative `rgb_path`, optional `depth_path`, optional PNG
+`depth_scale`, `K`, optional `T_world_camera`, optional
+`camera_center_world_m`, and `source_metadata`; absolute paths and `..` are
+rejected. Import commands:
+```bash
+atlas3r recording from-tum --manifest <tum_manifest.json> --output <recording_dir> --split val --max-frames N --width W --height H
+atlas3r recording from-clip-cache --clip-cache <manifest-or-folder> --output <recording_dir> --dedupe-frame-id
+```
+`from-tum` references measured RGB/depth through an external TUM root and
+writes scaled `K` plus measured `T_world_camera`; `from-clip-cache` writes
+local per-frame NPZ RGB/depth payloads from unique chronological clip-cache
+frames.
+### Recording Fusion Runtime
+`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams
+chronological measured depth+pose to `DepthObservation`, CPU TSDF, and
+`runtime_events.jsonl`, `summary.json`, latency/memory/quality reports,
+`tsdf/`, `surface_points.ply`, `mesh_status.json`, optional `mesh.obj`, and
+`map_preview.html`. Phase 6A supports recording pose/depth sources only. CPU
+TSDF is diagnostic, not realtime or a benchmark performance report.
+`--export-mesh auto` uses optional `scikit-image` marching cubes or writes
+`mesh_exported=false` with an install hint.
 ### `.atlas3r` Session Folder
-Folder layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
-`mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files, optional
-`depth/frame_<id>.npz`, and `logs/runtime_profile.json`.
-
-The Phase 0C reader reconstructs `PoseEstimate`, `CameraModel`, `ObjectInstance`,
-and `MeshChunk` from sidecars and records sorted depth NPZ paths without loading
-every depth array by default.
-
-`atlas3r inspect session --input <session.atlas3r> --output <preview_dir>` writes
-deterministic HTML/SVG preview files.
-
-Every export/sidecar must preserve coordinate convention, unit scale, scale
-source, camera metadata source when known, model checkpoint hash or `null`, voxel
-size when relevant, accuracy report path or `null`, and RGB-only warnings.
+Layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
+`mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files, optional depth
+NPZs, and `logs/runtime_profile.json`. The reader reconstructs
+`PoseEstimate`, `CameraModel`, `ObjectInstance`, and `MeshChunk` from sidecars
+without loading all depth arrays. `inspect session` writes deterministic
+HTML/SVG previews. Exports preserve coordinate convention, units, scale source,
+camera metadata source, checkpoint hash or `null`, voxel size when relevant,
+accuracy report path or `null`, and RGB-only warnings.

@@ -353,11 +353,11 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase5h(self) -> None:
+    def test_status_handoff_points_to_phase6b(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 5H.1", text)
-        self.assertIn("real VGGT", text)
-        self.assertIn("Training gate", text)
+        self.assertIn("Phase 6B - Live/Video Input and Calibration Capture", text)
+        self.assertIn("validated `atlas3r_recording` folders", text)
+        self.assertIn("calibration capture", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

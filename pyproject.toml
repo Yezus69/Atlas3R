@@ -23,6 +23,9 @@ train = [
   "torch",
   "Pillow",
 ]
+mesh = [
+  "scikit-image",
+]
 
 [project.scripts]
 atlas3r = "atlas3r.cli:main"

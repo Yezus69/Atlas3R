@@ -38,6 +38,21 @@ def register_runtime_parser(subparsers: Any) -> None:
     stream_parser.add_argument("--voxel-size-m", type=float, default=0.05)
     stream_parser.add_argument("--truncation-voxels", type=float, default=3.0)
     stream_parser.set_defaults(handler=_run_stream_student_map)
+    fuse_parser = runtime_subparsers.add_parser(
+        "fuse-recording",
+        help="Fuse measured Atlas3R recording depth+pose through CPU TSDF.",
+    )
+    fuse_parser.add_argument("--recording", type=Path, required=True)
+    fuse_parser.add_argument("--output", type=Path, required=True)
+    fuse_parser.add_argument("--pose-source", choices=("recording",), default="recording")
+    fuse_parser.add_argument("--depth-source", choices=("recording",), default="recording")
+    fuse_parser.add_argument("--max-frames", type=int, default=None)
+    fuse_parser.add_argument("--keyframe-stride", type=int, default=1)
+    fuse_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    fuse_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    fuse_parser.add_argument("--export-point-cloud", action="store_true")
+    fuse_parser.add_argument("--export-mesh", choices=("off", "auto", "required"), default="auto")
+    fuse_parser.set_defaults(handler=_run_fuse_recording)
 
 
 def _run_stream_student_map(args: argparse.Namespace) -> int:
@@ -63,6 +78,31 @@ def _run_stream_student_map(args: argparse.Namespace) -> int:
             )
         )
     except (TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_fuse_recording(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.recording_fusion import FuseRecordingConfig, run_fuse_recording
+
+    try:
+        result = run_fuse_recording(
+            FuseRecordingConfig(
+                recording=args.recording,
+                output=args.output,
+                pose_source=args.pose_source,
+                depth_source=args.depth_source,
+                max_frames=args.max_frames,
+                keyframe_stride=args.keyframe_stride,
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                export_point_cloud=args.export_point_cloud,
+                export_mesh=args.export_mesh,
+            )
+        )
+    except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
