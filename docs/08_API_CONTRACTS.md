@@ -233,24 +233,17 @@ diagnostic checkpoint `DepthObservation`s; pose modes are `oracle`,
 `student-relative`, `student-odometry`, or `both`, and truth claims stay false.
 
 ### RGB Teacher Mapping
-`runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output
-<run> --teacher vggt --rgb-only` converts VGGT teacher-pseudo
-depth/pose/intrinsics into validated `DepthObservation`s, then reuses sparse
-TSDF and observed mesh chunks. Fixture teacher mode is test-only; optional
-teacher/image/video deps raise explicit errors. Inputs include RGB-only
-`atlas3r_recording`, NPZ/PPM, image folders, or videos; recording measured
-depth/pose are mapping-ignored and eval-only.
-Outputs include `rgb_teacher_frames/`, `rgb_teacher_predictions/`,
-`rgb_teacher_recording/`, `rgb_teacher_summary.json`,
-`rgb_teacher_report.md`, live replay JSON/Markdown, `sparse_tsdf/`,
-`mesh_chunks/`, optional point cloud, and optional eval sidecars. Summary
-format `atlas3r_rgb_teacher_mapping_summary` records teacher metadata, frame
-counts, pseudo counts, sparse/mesh counters, latency, artifacts, limitations,
-and `truth_boundary`. VGGT OpenCV camera-from-world extrinsics are inverted to
-`T_world_camera`; missing teacher pose is rejected. Teacher scale is
-`rgb_prior` / `teacher_scale_unverified`. Truth flags keep pseudo/teacher/
-observed diagnostic flags true and measured mapping, hidden geometry,
-completion, student RGB-only, accuracy, and realtime flags false.
+`runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output <run> --teacher vggt --rgb-only` converts VGGT teacher-pseudo depth/pose/intrinsics into validated `DepthObservation`s, then reuses sparse TSDF and observed mesh chunks. Inputs are RGB-only `atlas3r_recording`, NPZ/PPM, image folders, or videos; measured recording depth/pose are mapping-ignored and eval-only. Fixture teacher mode is test-only; optional deps raise explicit errors. VGGT camera-from-world extrinsics are inverted to `T_world_camera`; missing teacher pose is rejected. Teacher scale is `rgb_prior` or `teacher_scale_unverified`.
+
+Multi-window runs default to `--stitch-windows sim3-overlap`; `none` preserves the Phase 6G baseline. Stitching estimates local-window to pseudo-global Sim3 from duplicate overlap camera centers and optional teacher pointmaps. Scale is applied to camera centers, depth, and depth sigma; intrinsics are unchanged. Insufficient overlap, inliers, scale ratio, or center RMSE rejects a window.
+
+Outputs: `rgb_teacher_frames/`, `rgb_teacher_predictions/`, `rgb_teacher_recording/`, `rgb_teacher_summary.json`, `rgb_teacher_report.md`, live replay JSON/Markdown, `sparse_tsdf/`, `mesh_chunks/`, optional point cloud/eval sidecars, and optional `teacher_temporal_cache/`. Summary format `atlas3r_rgb_teacher_mapping_summary` records teacher metadata, counts, sparse/mesh counters, latency, artifacts, limitations, stitch diagnostics, and `truth_boundary`.
+
+Stitch fields: `stitch_mode`, window/edge accepted/rejected counts, `stitch_submap_count`, overlap RMSE, scale min/median/max, boundary jumps, and `rejected_windows`. Mesh metadata inherits `stitch_mode`, `pseudo_submap_id`, `metric_scale_source`, and `teacher_geometry_used=true`.
+
+Teacher temporal caches use `teacher_temporal_cache/` with manifest `atlas3r_teacher_temporal_cache.json`, `clips/clip_<id>.npz`, `frame_index.jsonl`, and inspect reports. Clip arrays: `frame_ids`, `timestamps_ns`, `rgb_u8`, `K`, `T_world_camera`, `depth_m`, `depth_sigma_m`, `confidence`, `valid_mask`, `teacher_valid`, and `pseudo_submap_id`. Manifests record teacher source/device/checkpoint, stitch mode, metric scale source, clip length/stride, truth boundary, array schema, safe relative paths, and `no_model_weights_in_cache=true`. Inspect with `atlas3r inspect teacher-temporal-cache --cache <cache_dir>`. Default pseudo depth and pose target weights are `0.25`.
+
+Truth flags keep pseudo/teacher/observed diagnostic flags true and measured mapping, hidden geometry, completion, student RGB-only, accuracy, and realtime flags false.
 ### Capture Adapter Boundary
 Runtime capture adapters live under `atlas3r.runtime`, import no optional
 camera deps at module import time, and expose `CaptureAdapterStatus` fields

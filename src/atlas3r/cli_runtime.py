@@ -118,6 +118,24 @@ def register_runtime_parser(subparsers: Any) -> None:
     rgb_teacher_parser.add_argument("--rgb-only", action="store_true")
     rgb_teacher_parser.add_argument("--sim3-align-for-eval-only", action="store_true")
     rgb_teacher_parser.add_argument(
+        "--stitch-windows",
+        choices=("none", "sim3-overlap"),
+        default="sim3-overlap",
+    )
+    rgb_teacher_parser.add_argument("--stitch-min-overlap-frames", type=int, default=4)
+    rgb_teacher_parser.add_argument("--stitch-max-center-rmse-m", type=float, default=0.25)
+    rgb_teacher_parser.add_argument("--stitch-max-scale-ratio", type=float, default=2.0)
+    rgb_teacher_parser.add_argument("--stitch-min-inliers", type=int, default=4)
+    rgb_teacher_parser.add_argument("--export-teacher-cache", action="store_true")
+    rgb_teacher_parser.add_argument(
+        "--teacher-cache-format",
+        choices=("atlas3r_teacher_temporal_cache_v1",),
+        default="atlas3r_teacher_temporal_cache_v1",
+    )
+    rgb_teacher_parser.add_argument("--cache-clip-length", type=int, default=8)
+    rgb_teacher_parser.add_argument("--cache-clip-stride", type=int, default=4)
+    rgb_teacher_parser.add_argument("--remap-from-teacher-cache", type=Path, default=None)
+    rgb_teacher_parser.add_argument(
         "--vggt-repo",
         type=Path,
         default=None,
@@ -272,6 +290,16 @@ def _run_map_rgb_teacher(args: argparse.Namespace) -> int:
                 export_point_cloud=args.export_point_cloud,
                 rgb_only=args.rgb_only,
                 sim3_align_for_eval_only=args.sim3_align_for_eval_only,
+                stitch_windows=args.stitch_windows,
+                stitch_min_overlap_frames=args.stitch_min_overlap_frames,
+                stitch_max_center_rmse_m=args.stitch_max_center_rmse_m,
+                stitch_max_scale_ratio=args.stitch_max_scale_ratio,
+                stitch_min_inliers=args.stitch_min_inliers,
+                export_teacher_cache=args.export_teacher_cache,
+                teacher_cache_format=args.teacher_cache_format,
+                cache_clip_length=args.cache_clip_length,
+                cache_clip_stride=args.cache_clip_stride,
+                remap_from_teacher_cache=args.remap_from_teacher_cache,
                 vggt_repo=args.vggt_repo,
                 checkpoint=args.checkpoint,
             )

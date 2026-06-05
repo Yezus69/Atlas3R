@@ -353,11 +353,13 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase6h(self) -> None:
+    def test_status_handoff_points_to_phase6i(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 6H - Distill RGB Teacher Geometry Into Student Training Data", text)
-        self.assertIn("runtime map-rgb-teacher", text)
-        self.assertIn("phase6g_rgb_teacher_map_report.md", text)
+        self.assertIn(
+            "Phase 6I - Train Tiny Student From Measured And Teacher Temporal Caches", text
+        )
+        self.assertIn("TeacherTemporalCacheDataset", text)
+        self.assertIn("phase6h_teacher_stitch_cache_report.md", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

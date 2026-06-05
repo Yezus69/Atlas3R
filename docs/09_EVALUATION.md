@@ -126,6 +126,28 @@ measured depth/pose are false for mapping, may be true only for eval sidecars,
 and `metric_scale_source=teacher_scale_unverified` unless a named calibration
 or benchmark report proves metric scale.
 
+Phase 6H adds a teacher-baseline stitching/cache evidence slice, not a new
+accuracy gate. A stitched `runtime map-rgb-teacher` run may compare against a
+`--stitch-windows none` baseline using:
+
+- accepted/rejected stitch edges and rejected windows;
+- pseudo submap count;
+- overlap camera-center RMSE and Sim3 scale distribution;
+- boundary camera-center jump mean/p95/max at teacher window boundaries;
+- mesh chunk and vertex/triangle counts;
+- optional eval-only ATE/depth metrics against source recording measurements.
+
+The expected Phase 6H quality target is explicit: stitching should improve at
+least one tracked diagnostic against the no-stitch baseline, or the report must
+mark the stitched path as worse and keep it diagnostic. The Freiburg Phase 6H
+run improved eval-only Sim3 camera-center ATE RMSE but worsened boundary jump
+metrics, so it remains evidence for cache/stitch plumbing only.
+
+Validated teacher temporal caches are pseudo-label training data. Inspectors
+must reject unsafe paths, invalid arrays, missing truth flags, measured-label
+mislabeling, or model-weight payloads. Default pseudo target weights must remain
+lower than measured target weights.
+
 ### Gate 2: student overfit
 
 - model overfits synthetic sequence;

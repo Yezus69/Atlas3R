@@ -131,7 +131,7 @@ Acceptance on Apple M-series:
 - `lite` profile runs with Core ML/MPS path;
 - explicit FPS and memory report; lower FPS is acceptable unless the specific chip/profile proves 30 FPS.
 
-### Completed Phase 6A-6F product slices
+### Completed Phase 6A-6H product slices
 
 - **6A:** stable measured `atlas3r_recording` boundary plus measured
   recording-to-CPU-TSDF diagnostic fusion.
@@ -152,13 +152,17 @@ Acceptance on Apple M-series:
   input through VGGT teacher-pseudo depth/pose/intrinsics, pseudo recording
   artifacts, existing sparse TSDF fusion, observed mesh chunks, and diagnostic
   eval on TUM source measurements without using measured truth for mapping.
+- **6H:** multi-window RGB teacher stitching and cache export: adjacent VGGT
+  windows are aligned with explicit Sim3 scale, inconsistent windows are
+  rejected, stitched teacher pseudo observations drive observed mesh chunks, and
+  validated temporal teacher caches are exported for future SMGT training.
 
-### Next likely Phase 6H
+### Next likely Phase 6I
 
-Distill RGB teacher outputs into SMGT training data and tighten the pseudo
-recording/cache path. Phase 6G proved real RGB teacher-pseudo geometry can drive
-existing sparse TSDF mesh chunks, but it is offline, teacher-heavy, unlooped, and
-not student runtime.
+Train and evaluate `smgt_tiny` on measured plus pseudo teacher temporal caches,
+then produce RGB student predictions through the existing mapper on a tiny real
+sequence. Phase 6H produced validated pseudo caches, but no final student was
+trained and no RGB-only student mapping readiness claim exists.
 
 ## Phase 7 - Evaluation and release gates
 

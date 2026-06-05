@@ -1,45 +1,51 @@
-Phase 6H - Distill RGB Teacher Geometry Into Student Training Data
+Phase 6I - Train Tiny Student From Measured And Teacher Temporal Caches
 
-Goal: turn Phase 6G RGB teacher outputs into compact, validated temporal
-training data for the SMGT student path, without treating teacher pseudo labels
-as measured geometry.
+Goal: use the Phase 6H validated teacher temporal cache as pseudo-label
+training data for a tiny SMGT-style student, mix it with measured temporal
+caches when available, and produce a diagnostic RGB student mapping run without
+claiming RGB-only readiness.
 
-Start from branch `codex/phase6g-rgb-teacher-map`. Reload `README.md`,
+Start from branch `codex/phase6h-teacher-stitch-cache`. Reload `README.md`,
 `PLANS.md`, `docs/08_API_CONTRACTS.md`, `docs/09_EVALUATION.md`,
 `docs/status/progress.md`, `docs/status/decisions.md`,
 `docs/status/active_task.md`, and
-`docs/status/phase6g_rgb_teacher_map_report.md`.
+`docs/status/phase6h_teacher_stitch_cache_report.md`.
 
 Context:
 
-- Phase 6G proved real VGGT RGB teacher-pseudo depth/pose/intrinsics can drive
-  existing sparse TSDF fusion and observed mesh chunk export.
-- Phase 6G is offline and teacher-heavy. It is not the final RGB-only student
-  mapper, not realtime, not loop-closed, and not a benchmark accuracy report.
-- Measured recording depth/pose may be used for diagnostic eval only, not for
-  training targets unless the cache explicitly marks them measured.
+- Phase 6H proved real VGGT RGB teacher windows can be stitched with Sim3 and
+  exported as validated `atlas3r_teacher_temporal_cache` clips.
+- The real stitched Freiburg cache lives under
+  `runs/phase6h_rgb_teacher_stitched_freiburg1_xyz_val/teacher_temporal_cache`
+  when local run artifacts are present.
+- Teacher cache labels are pseudo labels only. They must retain lower weights
+  than measured labels and must not become measured mapping truth.
+- Phase 6H did not train a student and did not prove realtime, metric-scale,
+  loop closure, object-aware fusion, hidden-geometry completion, or RGB-only
+  student mapping readiness.
 
 Required work:
 
-- Define a compact pseudo recording or teacher-signal export from Phase 6G runs
-  that preserves RGB frame IDs, intrinsics, pseudo depth/sigma/confidence,
-  pseudo `T_world_camera`, teacher metadata, source run path, and truth flags.
-- Add validation and inspection for this export, including safe relative paths,
-  finite arrays, consistent shapes, and explicit pseudo/measured fields.
-- Build a small temporal dataset bridge that can feed existing student training
-  code from Phase 6G pseudo labels while weighting pseudo targets lower than
-  measured targets.
-- Add dependency-safe tests with a fixture teacher run and at least one real
-  exported Phase 6G cache inspection.
-- Update contracts, evaluation notes, status docs, and a Phase 6H report.
+- Add a tiny training data adapter that can mix existing measured temporal
+  caches and Phase 6H `TeacherTemporalCacheDataset` samples with explicit
+  per-target weights.
+- Train or overfit the smallest dependency-safe `smgt_tiny` student slice on a
+  fixture plus one real teacher-cache clip subset, recording losses, config,
+  checkpoint metadata, truth flags, and source cache hashes/paths.
+- Add an inference bridge that converts tiny student RGB predictions into the
+  existing pseudo `DepthObservation` mapper path with explicit student and
+  pseudo truth flags.
+- Run a diagnostic map on a tiny real sequence and compare against the Phase 6H
+  teacher-cache target or eval-only source measurements without calling it an
+  accuracy report.
+- Update contracts, evaluation notes, status docs, and a Phase 6I report.
 
 Acceptance:
 
-- A fixture `runtime map-rgb-teacher --teacher fixture-vggt` run can be exported
-  to a validated temporal training cache and loaded by the student training data
-  bridge.
-- The real Phase 6G Freiburg RGB teacher run can be inspected/exported without
-  copying model weights, vendoring external repositories, or weakening truth
-  flags.
-- Verification commands include format, lint, typecheck, unit tests, diff check,
-  and the export/inspect evidence command.
+- Unit tests cover mixed measured/pseudo sample weighting, cache loading,
+  checkpoint metadata, and inference-to-mapper shape/truth contracts.
+- A fixture cache train/infer/map path runs without optional VGGT dependencies.
+- A real small-cache train or overfit command completes locally, or the phase is
+  explicitly marked blocked with exact dependency/hardware failures.
+- Verification includes format, lint, typecheck, focused tests, full unittest
+  discovery, `git diff --check`, and the real train/infer/map evidence command.

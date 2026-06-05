@@ -36,6 +36,21 @@ runtime. Measured recording depth/pose may be loaded only for eval-only
 diagnostics; mapping output keeps `measured_depth_used=false` and
 `measured_pose_used=false`.
 
+Phase 6H extends this bridge with explicit Sim3 stitching across overlapping
+VGGT windows before mapping or cache export:
+
+```text
+independent VGGT windows
+  -> overlap camera-center/pointmap Sim3 edges
+  -> one accepted pseudo-world submap or explicit rejected windows
+  -> sparse TSDF observed mesh chunks
+  -> validated teacher temporal cache clips
+```
+
+Sim3 scale is applied to camera centers, depth, and depth sigma. Intrinsics are
+unchanged. This is still offline teacher-pseudo geometry and not loop closure,
+global bundle adjustment, realtime runtime, or RGB-only student mapping.
+
 ## Module 1: Frame IO and preprocessing
 
 ### Inputs

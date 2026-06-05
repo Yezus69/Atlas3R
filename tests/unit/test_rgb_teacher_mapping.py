@@ -17,6 +17,7 @@ from atlas3r.runtime.rgb_teacher_conversion import (
 from atlas3r.runtime.rgb_teacher_inputs import RGBTeacherFrame
 from atlas3r.runtime.rgb_teacher_mapping import RGBTeacherMapConfig, run_rgb_teacher_mapping
 from atlas3r.teachers.external.contracts import ExternalTeacherDependencyError
+from atlas3r.training.teacher_temporal_cache import inspect_teacher_temporal_cache
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -100,6 +101,71 @@ class RGBTeacherMappingTest(unittest.TestCase):
         self.assertGreater(first_chunk.vertex_count, 0)
         self.assertEqual(ply_counts["vertex"], first_chunk.vertex_count)
 
+    def test_fixture_multi_window_stitching_exports_valid_temporal_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = _write_npz_image_folder(root / "images", frame_count=6)
+            output = root / "stitched"
+
+            summary = run_rgb_teacher_mapping(
+                RGBTeacherMapConfig(
+                    input=input_dir,
+                    output=output,
+                    teacher="fixture-vggt",
+                    max_frames=6,
+                    frame_stride=1,
+                    teacher_window_size=4,
+                    teacher_window_overlap=2,
+                    stitch_min_overlap_frames=2,
+                    stitch_min_inliers=2,
+                    voxel_size_m=0.25,
+                    truncation_voxels=3.0,
+                    pixel_stride=1,
+                    export_mesh_chunks=True,
+                    export_teacher_cache=True,
+                    cache_clip_length=2,
+                    cache_clip_stride=1,
+                    rgb_only=True,
+                )
+            )
+            cache_report = inspect_teacher_temporal_cache(output / "teacher_temporal_cache")
+
+        self.assertEqual(summary["stitch_mode"], "sim3-overlap")
+        self.assertGreaterEqual(summary["stitch_window_count"], 2)
+        self.assertGreaterEqual(summary["stitch_accepted_edge_count"], 1)
+        self.assertEqual(summary["stitch_rejected_edge_count"], 0)
+        self.assertIn("stitch_graph", summary)
+        self.assertGreater(summary["mesh_chunk_count"], 0)
+        self.assertGreater(summary["teacher_temporal_cache_clip_count"], 0)
+        self.assertTrue(cache_report["validation_passed"])
+        self.assertFalse(summary["truth_boundary"]["measured_depth_used"])  # type: ignore[index]
+
+    def test_fixture_no_stitch_mode_keeps_baseline_command_working(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = _write_npz_image_folder(root / "images", frame_count=6)
+
+            summary = run_rgb_teacher_mapping(
+                RGBTeacherMapConfig(
+                    input=input_dir,
+                    output=root / "nostitch",
+                    teacher="fixture-vggt",
+                    max_frames=6,
+                    frame_stride=1,
+                    teacher_window_size=4,
+                    teacher_window_overlap=2,
+                    stitch_windows="none",
+                    voxel_size_m=0.25,
+                    truncation_voxels=3.0,
+                    pixel_stride=1,
+                    rgb_only=True,
+                )
+            )
+
+        self.assertEqual(summary["stitch_mode"], "none")
+        self.assertEqual(summary["stitch_edge_count"], 0)
+        self.assertEqual(summary["pseudo_depth_count"], 6)
+
     def test_unavailable_real_vggt_path_is_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -168,7 +234,28 @@ class RGBTeacherMappingTest(unittest.TestCase):
                     "--export-mesh-chunks",
                     "--mesh-format",
                     "ply",
+                    "--export-teacher-cache",
+                    "--cache-clip-length",
+                    "2",
+                    "--cache-clip-stride",
+                    "1",
                     "--rgb-only",
+                ],
+                check=False,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+            )
+            inspect_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "inspect",
+                    "teacher-temporal-cache",
+                    "--cache",
+                    str(output / "teacher_temporal_cache"),
                 ],
                 check=False,
                 cwd=ROOT,
@@ -180,8 +267,13 @@ class RGBTeacherMappingTest(unittest.TestCase):
 
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
         self.assertIn("--teacher-window-size", help_result.stdout)
+        self.assertIn("--stitch-windows", help_result.stdout)
+        self.assertIn("--export-teacher-cache", help_result.stdout)
         self.assertEqual(run_result.returncode, 0, run_result.stderr)
+        self.assertEqual(inspect_result.returncode, 0, inspect_result.stderr)
+        self.assertIn("atlas3r_teacher_temporal_cache_inspection", inspect_result.stdout)
         self.assertGreater(summary["mesh_chunk_count"], 0)
+        self.assertGreater(summary["teacher_temporal_cache_clip_count"], 0)
         self.assertFalse(summary["truth_boundary"]["measured_pose_used"])  # type: ignore[index]
 
 
