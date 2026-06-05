@@ -26,14 +26,14 @@ class RepoContextBudgetTest(unittest.TestCase):
                     f"{relative_path} has {line_count} lines; budget is {max_lines}",
                 )
 
-    def test_next_task_points_to_core_phase_a3(self) -> None:
+    def test_next_task_points_to_core_phase_a4(self) -> None:
         next_task = (REPO_ROOT / "docs/status/next_task.md").read_text(encoding="utf-8")
         self.assertIn(
-            "Core Phase A3 - Replace Or Harden SMGT-Tiny Before Object Fusion",
+            "Core Phase A4 - Broaden Student Validation And First-Class Profiling",
             next_task,
         )
         self.assertIn("before object/dynamic fusion", next_task)
-        self.assertIn("core_smgt_tiny_a2_generalization_report.md", next_task)
+        self.assertIn("core_smgt_small_v2_measured_pseudo_report.md", next_task)
 
 
 if __name__ == "__main__":

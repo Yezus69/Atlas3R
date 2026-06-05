@@ -166,14 +166,21 @@ Acceptance on Apple M-series:
   metric windows, heldout mapping diagnostics, and long-run map-growth evidence.
   Result: current SMGT-tiny is a diagnostic/toy baseline; do not start
   object/dynamic fusion from it.
+- **Core A3:** SMGT-small-v2 measured/pseudo diagnostic student: measured
+  temporal caches, mixed measured/pseudo training, RGB phase-correlation pose
+  prior plus learned residual, validation-quality checkpoint selection,
+  confidence/sigma calibration, and heldout RGB-only mapping. Result: local
+  Freiburg heldout gates passed with a validation-selected checkpoint, but final
+  SMGT, realtime, RGB-only readiness, object-aware fusion, and accuracy claims
+  remain false.
 
-### Next likely Core Phase A3
+### Next likely Core Phase A4
 
-Replace or harden the SMGT-tiny student core before object/dynamic fusion.
-Acceptance should require strict heldout pose beating no-motion, depth beating
-constant-depth or meeting the absolute target, calibrated confidence/sigma gates
-that map substantially less than all-positive, and a validation-selected
-checkpoint that produces nonzero heldout mesh chunks without VGGT.
+Broaden SMGT-small-v2 validation and profiling before object/dynamic fusion.
+Acceptance should require at least one additional measured heldout sequence,
+first-class memory/FPS instrumentation in runtime summaries, calibrated gates
+that stay selective across sequences, and no regression of the A3 Freiburg
+depth/pose/mesh gates.
 
 ## Phase 7 - Evaluation and release gates
 

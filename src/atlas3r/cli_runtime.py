@@ -183,6 +183,41 @@ def register_runtime_parser(subparsers: Any) -> None:
         ),
     )
     rgb_student_parser.set_defaults(handler=_run_map_rgb_student)
+    rgb_student_v2_parser = runtime_subparsers.add_parser(
+        "map-rgb-student-v2",
+        help="Map RGB input through an SMGT-small-v2 checkpoint into sparse TSDF mesh chunks.",
+    )
+    rgb_student_v2_parser.add_argument("--input", type=Path, required=True)
+    rgb_student_v2_parser.add_argument("--output", type=Path, required=True)
+    rgb_student_v2_parser.add_argument("--checkpoint", type=Path, required=True)
+    rgb_student_v2_parser.add_argument("--device", default="cuda")
+    rgb_student_v2_parser.add_argument("--max-frames", type=int, default=120)
+    rgb_student_v2_parser.add_argument("--frame-stride", type=int, default=1)
+    rgb_student_v2_parser.add_argument("--clip-length", type=int, default=8)
+    rgb_student_v2_parser.add_argument("--clip-overlap", type=int, default=4)
+    rgb_student_v2_parser.add_argument("--image-size", default=None)
+    rgb_student_v2_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    rgb_student_v2_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    rgb_student_v2_parser.add_argument("--pixel-stride", type=int, default=12)
+    rgb_student_v2_parser.add_argument("--export-mesh-chunks", action="store_true")
+    rgb_student_v2_parser.add_argument(
+        "--mesh-format", choices=("npz", "ply", "both"), default="npz"
+    )
+    rgb_student_v2_parser.add_argument("--mesh-min-weight", type=float, default=0.0)
+    rgb_student_v2_parser.add_argument("--export-point-cloud", action="store_true")
+    rgb_student_v2_parser.add_argument("--rgb-only", action="store_true")
+    rgb_student_v2_parser.add_argument("--calibration", type=Path, default=None)
+    rgb_student_v2_parser.add_argument("--student-confidence-threshold", type=float, default=0.30)
+    rgb_student_v2_parser.add_argument("--student-min-depth-m", type=float, default=None)
+    rgb_student_v2_parser.add_argument("--student-max-depth-m", type=float, default=None)
+    rgb_student_v2_parser.add_argument("--student-max-sigma-m", type=float, default=None)
+    rgb_student_v2_parser.add_argument("--student-dynamic-threshold", type=float, default=0.50)
+    rgb_student_v2_parser.add_argument(
+        "--student-map-valid-policy",
+        choices=("confidence", "confidence_sigma", "all_positive"),
+        default=None,
+    )
+    rgb_student_v2_parser.set_defaults(handler=_run_map_rgb_student_v2)
     capture_adapters_parser = runtime_subparsers.add_parser(
         "capture-adapters",
         help="Inspect dependency-safe runtime capture adapters.",
@@ -383,6 +418,49 @@ def _run_map_rgb_student(args: argparse.Namespace) -> int:
             )
         )
     except (TorchDependencyError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_map_rgb_student_v2(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.rgb_student_v2_mapping import (
+        RGBStudentV2MapConfig,
+        run_rgb_student_v2_mapping,
+    )
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_rgb_student_v2_mapping(
+            RGBStudentV2MapConfig(
+                input=args.input,
+                output=args.output,
+                checkpoint=args.checkpoint,
+                device=args.device,
+                max_frames=args.max_frames,
+                frame_stride=args.frame_stride,
+                clip_length=args.clip_length,
+                clip_overlap=args.clip_overlap,
+                image_size=_parse_image_size(args.image_size),
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                pixel_stride=args.pixel_stride,
+                export_mesh_chunks=args.export_mesh_chunks,
+                mesh_format=args.mesh_format,
+                mesh_min_weight=args.mesh_min_weight,
+                export_point_cloud=args.export_point_cloud,
+                rgb_only=args.rgb_only,
+                calibration=args.calibration,
+                student_confidence_threshold=args.student_confidence_threshold,
+                student_min_depth_m=args.student_min_depth_m,
+                student_max_depth_m=args.student_max_depth_m,
+                student_max_sigma_m=args.student_max_sigma_m,
+                student_dynamic_threshold=args.student_dynamic_threshold,
+                student_map_valid_policy=args.student_map_valid_policy,
+            )
+        )
+    except (TorchDependencyError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))

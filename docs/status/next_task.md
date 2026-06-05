@@ -1,54 +1,52 @@
-Core Phase A3 - Replace Or Harden SMGT-Tiny Before Object Fusion
+Core Phase A4 - Broaden Student Validation And First-Class Profiling
 
-Goal: fix the student core and confidence calibration before any object/dynamic
-fusion work. Do not add SAM, object-aware sparse fusion, or dynamic-scene fusion
-until this phase passes heldout student-quality gates.
+Goal: harden SMGT-small-v2 across more measured heldout evidence before object/dynamic fusion.
+Do not add SAM, object-aware sparse fusion, or dynamic-scene fusion until this
+broader validation passes.
 
-Start from branch `codex/core-smgt-tiny-generalization-gauntlet`. Reload
+Start from branch `codex/core-smgt-small-v2-measured-pseudo`. Reload
 `README.md`, `PLANS.md`, `docs/01_SYSTEM_ARCHITECTURE.md`,
 `docs/08_API_CONTRACTS.md`, `docs/09_EVALUATION.md`,
 `docs/status/progress.md`, `docs/status/decisions.md`,
 `docs/status/active_task.md`, and
-`docs/status/core_smgt_tiny_a2_generalization_report.md`.
+`docs/status/core_smgt_small_v2_measured_pseudo_report.md`.
 
 Context:
 
-- Core A2 added strict temporal split manifests, heldout metrics, confidence/
-  sigma/dynamic mapping gates, heldout RGB-only mapping, and a long-run replay.
-- The A2 training run:
-  `runs/core_smgt_tiny_a2_weighted_split_freiburg1_xyz_val`.
-- `checkpoint_best.pt` and `checkpoint_heldout_best.pt` selected step 1 by loss
-  and produced zero heldout mesh chunks with the required gate.
-- `checkpoint_last.pt` produced heldout mesh chunks, but `mapped_pixel_ratio`
-  was `0.999262` on heldout and `0.999353` on the 120-frame long run.
-- Heldout teacher-cache final pose was `22.526x` the no-motion baseline, so the
-  current student is a diagnostic/toy baseline.
+- Core A3 added measured temporal caches, SMGT-small-v2 measured/pseudo
+  training, validation-quality checkpoint selection, confidence/sigma gate
+  calibration, and `runtime map-rgb-student-v2`.
+- A3 selected `checkpoint_best.pt` at step 1500 from
+  `runs/core_smgt_small_v2_train_freiburg1_freiburg2`.
+- Heldout Freiburg validation passed local diagnostic gates: depth beat the
+  constant-depth baseline, pose beat no-motion, calibrated mapped ratio was
+  `0.311182`, and 32 observed mesh chunks were emitted.
+- The result is still diagnostic: no final SMGT, no object-aware fusion, no
+  realtime proof, no benchmark accuracy report, no millimeter claim, and
+  `metric_scale_source=student_rgb_prior_unverified`.
 
 Required work:
 
-- Improve checkpoint selection so validation quality cannot choose an untrained
-  step-1 checkpoint when heldout depth/pose gates are bad.
-- Replace or substantially harden `SMGTTiny` pose/depth/confidence learning
-  before object/dynamic fusion. Keep changes scoped to the student core,
-  training losses, confidence calibration, and mapping gates.
-- Add calibration diagnostics: confidence/sigma should correlate with heldout
-  error and reject a meaningful fraction of high-error pixels.
-- Train/evaluate on the existing strict split first. Add a second sequence/cache
-  only if available locally or generated through the existing teacher bridge.
-- Run heldout RGB-only mapping without VGGT at student inference using the
-  validation-selected checkpoint, not only `checkpoint_last.pt`.
+- Add first-class runtime memory/profile instrumentation to
+  `runtime map-rgb-student-v2` summaries instead of relying on external samples.
+- Run at least one additional measured heldout sequence/cache if locally
+  available, or prepare one through existing TUM recording/cache commands.
+- Verify calibrated confidence/sigma gates remain selective across sequences and
+  mapped pixels keep lower error than rejected pixels.
+- Preserve the A3 Freiburg gates as regression checks.
+- Keep measured depth/pose as training/eval-only; runtime mapping must remain
+  RGB-only and teacher-free.
 
 Acceptance:
 
-- Heldout teacher-cache depth AbsRel `<= 0.20` or at least 25% better than the
-  constant-depth baseline.
-- Heldout teacher-cache pose center error beats the no-motion baseline by at
-  least 15%.
-- Validation-selected checkpoint produces nonzero heldout mesh chunks with
-  `confidence_sigma` gating.
-- `mapped_pixel_ratio` is materially below all-positive and the report explains
-  the chosen threshold.
-- Long-run replay has no explosive active-block growth, no nonfinite outputs,
-  and no near-1.0 mapped-pixel ratio under the accepted gate.
+- Existing A3 Freiburg heldout metrics do not regress under the new code.
+- Additional heldout sequence produces nonzero mesh chunks with
+  `confidence_sigma` gating or the report clearly marks the sequence-specific
+  failure.
+- Mapped-pixel ratio remains materially below all-positive and within the
+  calibrated target unless explicitly justified.
+- Runtime summary records latency percentiles and memory counters without
+  external sampling.
 - Full verification passes: format, lint, typecheck, full unittest discovery,
-  focused tests, `git diff --check`, and `make smoke`.
+  focused tests, `git diff --check`, and `make smoke` or documented direct
+  equivalents on Windows.

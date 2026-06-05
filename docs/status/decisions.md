@@ -52,6 +52,7 @@ tests, and the contract docs.
 | D-0045 | Teacher stitching and temporal cache | Phase 6H aligns adjacent RGB teacher windows with Sim3 overlap edges, rejects inconsistent windows, preserves a no-stitch baseline, and exports validated pseudo-label teacher temporal cache clips with conservative truth flags and low pseudo target weights. | Yes |
 | D-0046 | SMGT-tiny student mapping | Core Phase A trains a learned diagnostic `SMGTTiny` from Phase 6H pseudo teacher temporal cache clips and maps RGB-only input through predicted `DepthObservation`s without VGGT at student inference; outputs stay non-final, non-realtime, non-accuracy, and non-ready truth-bounded. | Yes |
 | D-0047 | SMGT-tiny A2 gate | Core Phase A2 requires strict temporal heldout splits, stable metric windows, confidence/sigma/dynamic map gating, and heldout/long-run diagnostics; the current SMGT-tiny is blocked from object/dynamic fusion until heldout pose and gate calibration improve. | Yes |
+| D-0048 | SMGT-small-v2 measured/pseudo student | Core Phase A3 uses measured temporal caches plus optional low-weight pseudo caches to train `SMGTSmallV2`, selects checkpoints by validation depth/pose/gating quality, calibrates confidence/sigma gates, and maps RGB-only input without teacher or measured mapping truth; outputs remain diagnostic and non-final. | Yes |
 
 Active cross-cutting constraints:
 

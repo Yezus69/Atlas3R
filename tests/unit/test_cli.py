@@ -157,6 +157,88 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--heldout-split", smgt_train_result.stdout)
         self.assertIn("--split-manifest", smgt_train_result.stdout)
 
+        measured_cache_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "atlas3r",
+                "train",
+                "build-measured-temporal-cache",
+                "--help",
+            ],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(measured_cache_result.returncode, 0, measured_cache_result.stderr)
+        self.assertIn("--recording", measured_cache_result.stdout)
+        self.assertIn("--image-size", measured_cache_result.stdout)
+
+        smgt_v2_train_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "train", "smgt-v2", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(smgt_v2_train_result.returncode, 0, smgt_v2_train_result.stderr)
+        self.assertIn("--measured-cache", smgt_v2_train_result.stdout)
+        self.assertIn("--pseudo-cache", smgt_v2_train_result.stdout)
+        self.assertIn("--val-source", smgt_v2_train_result.stdout)
+
+        smgt_v2_calibration_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "eval", "smgt-v2-calibrate-gate", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(
+            smgt_v2_calibration_result.returncode,
+            0,
+            smgt_v2_calibration_result.stderr,
+        )
+        self.assertIn("--checkpoint", smgt_v2_calibration_result.stdout)
+        self.assertIn("--cache", smgt_v2_calibration_result.stdout)
+
+        rgb_student_v2_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-student-v2", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(rgb_student_v2_result.returncode, 0, rgb_student_v2_result.stderr)
+        self.assertIn("--checkpoint", rgb_student_v2_result.stdout)
+        self.assertIn("--calibration", rgb_student_v2_result.stdout)
+
+        measured_cache_inspect_result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "atlas3r",
+                "inspect",
+                "measured-temporal-cache",
+                "--help",
+            ],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(
+            measured_cache_inspect_result.returncode,
+            0,
+            measured_cache_inspect_result.stderr,
+        )
+        self.assertIn("--cache", measured_cache_inspect_result.stdout)
+
         smgt_split_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "inspect", "smgt-tiny-split", "--help"],
             check=False,

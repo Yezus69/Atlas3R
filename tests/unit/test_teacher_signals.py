@@ -353,11 +353,14 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_core_phase_a3(self) -> None:
+    def test_status_handoff_points_to_core_phase_a4(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Core Phase A3 - Replace Or Harden SMGT-Tiny Before Object Fusion", text)
+        self.assertIn(
+            "Core Phase A4 - Broaden Student Validation And First-Class Profiling",
+            text,
+        )
         self.assertIn("before object/dynamic fusion", text)
-        self.assertIn("core_smgt_tiny_a2_generalization_report.md", text)
+        self.assertIn("core_smgt_small_v2_measured_pseudo_report.md", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

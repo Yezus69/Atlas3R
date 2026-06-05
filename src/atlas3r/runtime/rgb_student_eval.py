@@ -85,6 +85,8 @@ def _depth_eval(matched: Sequence[tuple[DepthObservation, DepthObservation]]) ->
     for student, measured in matched:
         pred = student.depth_m.astype(np.float64, copy=False)
         gt = measured.depth_m.astype(np.float64, copy=False)
+        if gt.shape != pred.shape:
+            gt = _resize_2d_nearest(gt, height=pred.shape[0], width=pred.shape[1])
         valid = (
             np.isfinite(pred)
             & np.isfinite(gt)
@@ -233,6 +235,21 @@ def _concat(arrays: Sequence[npt.NDArray[np.float64]]) -> npt.NDArray[np.float64
     if not arrays:
         return np.zeros((0,), dtype=np.float64)
     return cast(npt.NDArray[np.float64], np.concatenate(arrays))
+
+
+def _resize_2d_nearest(
+    array: npt.NDArray[np.float64],
+    *,
+    height: int,
+    width: int,
+) -> npt.NDArray[np.float64]:
+    if array.shape == (height, width):
+        return array.astype(np.float64, copy=True)
+    y = np.linspace(0, array.shape[0] - 1, height).round().astype(np.int64)
+    x = np.linspace(0, array.shape[1] - 1, width).round().astype(np.int64)
+    return cast(
+        npt.NDArray[np.float64], array[y[:, None], x[None, :]].astype(np.float64, copy=True)
+    )
 
 
 def _mean_or_none(values: npt.NDArray[np.float64]) -> float | None:

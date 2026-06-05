@@ -177,6 +177,15 @@ the trained last checkpoint produced mesh but mapped `0.9993` of pixels under
 the stricter gate. Gate 2 therefore marks current SMGT-tiny as diagnostic/toy,
 not ready for object/dynamic fusion.
 
+Core Phase A3 replaces the active diagnostic student with SMGT-small-v2 trained
+from measured Freiburg train caches plus a low-weight pseudo cache. The 5000-step
+run selected step 1500 by validation quality: depth AbsRel `0.0621` versus
+constant baseline `0.1834`, pose center ratio `0.6968` versus no-motion, and
+nonzero mesh potential. Calibrated heldout RGB-only mapping produced 32 mesh
+chunks, mapped `0.3112` of pixels, and eval-only depth/pose both beat their
+baselines. This is still local diagnostic evidence, not a benchmark accuracy,
+realtime, final SMGT, or RGB-only-readiness claim.
+
 ### Gate 3: real validation
 
 - student beats a naive DepthPro+PnP baseline on held-out validation;

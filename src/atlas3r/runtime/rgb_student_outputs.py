@@ -204,7 +204,7 @@ def require_nonzero_student_mesh(
 
 def student_known_limitations() -> list[str]:
     return [
-        "SMGT-tiny is a diagnostic learned student, not the final SMGT architecture.",
+        "The learned RGB student is diagnostic, not the final SMGT architecture.",
         "Metric scale comes from an unverified RGB prior learned from pseudo labels.",
         "No measured depth or pose is consumed by mapping; measured truth is eval-only if present.",
         "No hidden geometry completion, object-aware fusion, loop closure, realtime, "

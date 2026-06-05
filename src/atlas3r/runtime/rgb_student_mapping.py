@@ -212,6 +212,8 @@ def _predict_observations(
     recorder: LatencyRecorder,
     truth_boundary: Mapping[str, object],
     gate_config: StudentMapGateConfig,
+    student_source_name: str = "smgt_tiny_student_rgb_checkpoint",
+    camera_source_name: str = "smgt_tiny_student_or_input_intrinsics",
 ) -> tuple[tuple[DepthObservation, ...], dict[str, object]]:
     output.mkdir(parents=True, exist_ok=True)
     observations: list[DepthObservation] = []
@@ -253,6 +255,8 @@ def _predict_observations(
                 T_world_camera=T_global,
                 checkpoint_truth=truth_boundary,
                 gate_config=gate_config,
+                student_source_name=student_source_name,
+                camera_source_name=camera_source_name,
             )
             observations.append(observation)
             gate_stats.append(
@@ -397,6 +401,8 @@ def _observation_from_prediction_slot(
     T_world_camera: npt.NDArray[np.float32],
     checkpoint_truth: Mapping[str, object],
     gate_config: StudentMapGateConfig,
+    student_source_name: str = "smgt_tiny_student_rgb_checkpoint",
+    camera_source_name: str = "smgt_tiny_student_or_input_intrinsics",
 ) -> DepthObservation:
     sanitized_depth = sanitize_student_depth(depth)
     sanitized_sigma = sanitize_student_sigma(sigma, fallback_m=gate_config.max_sigma_m or 1.0)
@@ -423,7 +429,7 @@ def _observation_from_prediction_slot(
             distortion_params=None,
             rolling_shutter_row_time_s=None,
             confidence=1.0,
-            source="smgt_tiny_student_or_input_intrinsics",
+            source=camera_source_name,
         ),
         pose=PoseEstimate(
             frame_id=frame.frame_id,
@@ -438,7 +444,7 @@ def _observation_from_prediction_slot(
             tracking_state="OK" if np.any(valid) else "LOW_CONFIDENCE",
             scale_source="rgb_prior",
             diagnostics={
-                "source": "smgt_tiny_student_rgb_checkpoint",
+                "source": student_source_name,
                 "truth_boundary": dict(checkpoint_truth),
                 "source_rgb_path": frame.source_path,
                 "student_mapping_gate": diagnostics,
@@ -451,7 +457,7 @@ def _observation_from_prediction_slot(
         static_mask=valid,
         object_id=None,
         rgb_u8=rgb_u8.copy(),
-        source="smgt_tiny_student_rgb_checkpoint",
+        source=student_source_name,
     )
 
 

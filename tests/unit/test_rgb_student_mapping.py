@@ -207,6 +207,19 @@ class RGBStudentMappingTest(unittest.TestCase):
         self.assertGreater(pose["no_motion_pose_baseline_ate_rmse_m"], 0.0)
         self.assertTrue(pose["student_beats_no_motion_pose_baseline"])
 
+    def test_eval_resizes_measured_depth_to_student_resolution(self) -> None:
+        measured = _observation(frame_id=0, center_x=0.0)
+        student = _observation(
+            frame_id=0,
+            center_x=0.0,
+            depth=np.repeat(np.repeat(measured.depth_m, 2, axis=0), 2, axis=1),
+        )
+
+        depth = _depth_eval(((student, measured),))
+
+        self.assertEqual(depth["overlap_valid_pixel_count"], 16)
+        self.assertEqual(depth["absrel"], 0.0)
+
 
 def _write_checkpoint(path: Path, torch: object) -> Path:
     model = SMGTTiny(
@@ -236,17 +249,34 @@ def _write_checkpoint(path: Path, torch: object) -> Path:
     return path
 
 
-def _observation(*, frame_id: int, center_x: float) -> DepthObservation:
-    K = np.asarray([[4.0, 0.0, 1.5], [0.0, 4.0, 1.5], [0.0, 0.0, 1.0]], dtype=np.float32)
+def _observation(
+    *,
+    frame_id: int,
+    center_x: float,
+    depth: np.ndarray | None = None,
+) -> DepthObservation:
+    depth = (
+        np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        if depth is None
+        else depth.astype(np.float32, copy=True)
+    )
+    height, width = depth.shape
+    K = np.asarray(
+        [
+            [float(width), 0.0, (width - 1.0) * 0.5],
+            [0.0, float(height), (height - 1.0) * 0.5],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
     T_world_camera = np.eye(4, dtype=np.float32)
     T_world_camera[0, 3] = np.float32(center_x)
-    depth = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
-    confidence = np.ones((2, 2), dtype=np.float32)
+    confidence = np.ones((height, width), dtype=np.float32)
     return DepthObservation(
         frame_id=frame_id,
         camera=CameraModel(
-            width=2,
-            height=2,
+            width=width,
+            height=height,
             K=K,
             distortion_model="none",
             distortion_params=None,
@@ -267,11 +297,11 @@ def _observation(*, frame_id: int, center_x: float) -> DepthObservation:
             diagnostics={},
         ),
         depth_m=depth,
-        depth_sigma_m=np.full((2, 2), 0.01, dtype=np.float32),
+        depth_sigma_m=np.full((height, width), 0.01, dtype=np.float32),
         confidence=confidence,
         static_mask=confidence.astype(bool),
         object_id=None,
-        rgb_u8=np.zeros((2, 2, 3), dtype=np.uint8),
+        rgb_u8=np.zeros((height, width, 3), dtype=np.uint8),
         source="unit_test",
     )
 

@@ -37,6 +37,16 @@ def register_eval_parser(subparsers: Any) -> None:
     tum_parser.add_argument("--truncation-voxels", type=float, default=3.0)
     tum_parser.add_argument("--map-max-points", type=int, default=3000)
     tum_parser.set_defaults(handler=_run_eval_tum_rgbd_checkpoint)
+    smgt_v2_calibration_parser = eval_subparsers.add_parser(
+        "smgt-v2-calibrate-gate",
+        help="Select confidence/sigma mapping gates for an SMGT-small-v2 checkpoint.",
+    )
+    smgt_v2_calibration_parser.add_argument("--checkpoint", type=Path, required=True)
+    smgt_v2_calibration_parser.add_argument("--cache", type=Path, required=True)
+    smgt_v2_calibration_parser.add_argument("--output", type=Path, required=True)
+    smgt_v2_calibration_parser.add_argument("--device", default="cuda")
+    smgt_v2_calibration_parser.add_argument("--batch-size", type=int, default=2)
+    smgt_v2_calibration_parser.set_defaults(handler=_run_eval_smgt_v2_calibrate_gate)
 
 
 def _run_eval_tum_rgbd_checkpoint(args: argparse.Namespace) -> int:
@@ -66,6 +76,30 @@ def _run_eval_tum_rgbd_checkpoint(args: argparse.Namespace) -> int:
             )
         )
     except (PillowDependencyError, TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_eval_smgt_v2_calibrate_gate(args: argparse.Namespace) -> int:
+    from atlas3r.training.smgt_v2_eval import (
+        SMGTV2CalibrationConfig,
+        run_smgt_v2_gate_calibration,
+    )
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_smgt_v2_gate_calibration(
+            SMGTV2CalibrationConfig(
+                checkpoint=args.checkpoint,
+                cache=args.cache,
+                output=args.output,
+                device=args.device,
+                batch_size=args.batch_size,
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))

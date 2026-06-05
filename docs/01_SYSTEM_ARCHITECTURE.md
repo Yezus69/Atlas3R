@@ -81,6 +81,27 @@ teacher-cache heldout pose failed the no-motion baseline target. Object/dynamic
 fusion should not be built on this student until the core and confidence
 calibration are replaced or hardened.
 
+## Core SMGT-small-v2 measured/pseudo diagnostic slice
+
+Core Phase A3 replaces the active diagnostic student with SMGT-small-v2:
+
+```text
+measured RGB-D/pose recordings + optional low-weight teacher temporal caches
+  -> measured/pseudo temporal cache training
+  -> SMGT-small-v2 checkpoint with validation-quality selection
+  -> confidence/sigma calibration on heldout measured cache
+  -> RGB-only clip inference without VGGT or measured mapping truth
+  -> sparse TSDF observed mesh chunks
+```
+
+`SMGTSmallV2` is still diagnostic. It uses RGB plus intrinsics-derived ray
+channels, a multi-scale Conv/ConvGRU memory, depth/sigma/confidence/dynamic
+heads, an RGB phase-correlation pose prior, and a learned pose residual.
+Measured depth/pose supervise training and eval sidecars only; runtime mapping
+keeps measured depth/pose false and does not import teacher models. A3 passed the
+local Freiburg heldout gates, but final SMGT, object-aware fusion, realtime,
+accuracy, and RGB-only readiness claims remain false.
+
 ## Module 1: Frame IO and preprocessing
 
 ### Inputs

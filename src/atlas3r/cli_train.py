@@ -208,6 +208,35 @@ def register_train_parser(subparsers: Any) -> None:
     smgt_parser.add_argument("--feature-dim", type=int, default=96)
     smgt_parser.add_argument("--memory-dim", type=int, default=128)
     smgt_parser.set_defaults(handler=_run_train_smgt_tiny)
+    measured_cache_parser = train_subparsers.add_parser(
+        "build-measured-temporal-cache",
+        help="Build a measured RGB-D/pose temporal cache from an Atlas3R recording.",
+    )
+    measured_cache_parser.add_argument("--recording", type=Path, required=True)
+    measured_cache_parser.add_argument("--output", type=Path, required=True)
+    measured_cache_parser.add_argument("--clip-length", type=int, default=8)
+    measured_cache_parser.add_argument("--clip-stride", type=int, default=4)
+    measured_cache_parser.add_argument("--image-size", default="160x224")
+    measured_cache_parser.set_defaults(handler=_run_build_measured_temporal_cache)
+    smgt_v2_parser = train_subparsers.add_parser(
+        "smgt-v2",
+        help="Train SMGT-small-v2 from measured and optional pseudo temporal caches.",
+    )
+    smgt_v2_parser.add_argument("--measured-cache", type=Path, action="append", required=True)
+    smgt_v2_parser.add_argument("--pseudo-cache", type=Path, action="append", default=[])
+    smgt_v2_parser.add_argument("--output", type=Path, required=True)
+    smgt_v2_parser.add_argument("--steps", type=int, default=10000)
+    smgt_v2_parser.add_argument("--batch-size", type=int, default=4)
+    smgt_v2_parser.add_argument("--device", default="cuda")
+    smgt_v2_parser.add_argument("--amp", action="store_true")
+    smgt_v2_parser.add_argument("--learning-rate", type=float, default=1e-4)
+    smgt_v2_parser.add_argument("--num-workers", type=int, default=2)
+    smgt_v2_parser.add_argument("--save-every", type=int, default=1000)
+    smgt_v2_parser.add_argument("--seed", type=int, default=0)
+    smgt_v2_parser.add_argument("--val-source", type=Path, default=None)
+    smgt_v2_parser.add_argument("--val-fraction", type=float, default=0.2)
+    smgt_v2_parser.add_argument("--pseudo-weight", type=float, default=0.25)
+    smgt_v2_parser.set_defaults(handler=_run_train_smgt_v2)
 
 
 def _run_train_synthetic_overfit(args: argparse.Namespace) -> int:
@@ -391,6 +420,71 @@ def _run_train_smgt_tiny(args: argparse.Namespace) -> int:
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def _run_build_measured_temporal_cache(args: argparse.Namespace) -> int:
+    from atlas3r.data.image_runtime import PillowDependencyError
+    from atlas3r.training.measured_temporal_cache import (
+        MeasuredTemporalCacheBuildConfig,
+        build_measured_temporal_cache,
+    )
+
+    try:
+        result = build_measured_temporal_cache(
+            MeasuredTemporalCacheBuildConfig(
+                recording=args.recording,
+                output=args.output,
+                clip_length=args.clip_length,
+                clip_stride=args.clip_stride,
+                image_size=_parse_image_size_required(args.image_size),
+            )
+        )
+    except (PillowDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_train_smgt_v2(args: argparse.Namespace) -> int:
+    from atlas3r.training.smgt_v2_train import SMGTV2TrainConfig, run_smgt_v2_training
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_smgt_v2_training(
+            SMGTV2TrainConfig(
+                measured_caches=tuple(args.measured_cache),
+                pseudo_caches=tuple(args.pseudo_cache),
+                output=args.output,
+                val_source=args.val_source,
+                steps=args.steps,
+                batch_size=args.batch_size,
+                device=args.device,
+                amp=args.amp,
+                learning_rate=args.learning_rate,
+                num_workers=args.num_workers,
+                save_every=args.save_every,
+                seed=args.seed,
+                val_fraction=args.val_fraction,
+                pseudo_weight=args.pseudo_weight,
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _parse_image_size_required(value: str) -> tuple[int, int]:
+    normalized = value.lower().replace(",", "x")
+    parts = normalized.split("x")
+    if len(parts) != 2:
+        raise ValueError("image_size: expected HxW, for example 160x224")
+    height, width = int(parts[0]), int(parts[1])
+    if height <= 0 or width <= 0:
+        raise ValueError("image_size: dimensions must be positive")
+    return height, width
 
 
 __all__ = [

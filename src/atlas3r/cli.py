@@ -30,6 +30,7 @@ from atlas3r.models.adapters import list_adapters
 from atlas3r.models.adapters.runner import AdapterRunError, run_adapter_to_cache
 from atlas3r.runtime.fixture_inspection import format_runtime_fixture_inspection
 from atlas3r.runtime.scheduler import write_runtime_fixture_smoke
+from atlas3r.training.measured_temporal_cache import format_measured_temporal_cache_inspection
 from atlas3r.training.smgt_tiny_split import format_smgt_tiny_split_inspection
 from atlas3r.training.teacher_temporal_cache import format_teacher_temporal_cache_inspection
 from atlas3r.visualization.session_preview import write_session_preview
@@ -150,6 +151,16 @@ def _run_inspect_smgt_tiny_split(args: argparse.Namespace) -> int:
             ),
             end="",
         )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    return 0
+
+
+def _run_inspect_measured_temporal_cache(args: argparse.Namespace) -> int:
+    try:
+        print(format_measured_temporal_cache_inspection(args.cache), end="")
+        return 0
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -379,6 +390,14 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_smgt_tiny_split_parser.add_argument("--val-split", type=float, default=0.2)
     inspect_smgt_tiny_split_parser.add_argument("--heldout-split", type=float, default=0.2)
     inspect_smgt_tiny_split_parser.set_defaults(handler=_run_inspect_smgt_tiny_split)
+    inspect_measured_temporal_cache_parser = inspect_subparsers.add_parser(
+        "measured-temporal-cache",
+        help="Inspect a measured temporal cache for SMGT-v2 training.",
+    )
+    inspect_measured_temporal_cache_parser.add_argument("--cache", type=Path, required=True)
+    inspect_measured_temporal_cache_parser.set_defaults(
+        handler=_run_inspect_measured_temporal_cache
+    )
     inspect_tsdf_output_parser = inspect_subparsers.add_parser(
         "tsdf-output",
         help="Validate a CPU TSDF output folder and print deterministic metadata.",

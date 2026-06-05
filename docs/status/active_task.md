@@ -1,36 +1,41 @@
-# Active Task - Core SMGT Tiny A2 Generalization Gauntlet
+# Active Task - Core SMGT Small V2 Measured/Pseudo A3
 
-Branch: `codex/core-smgt-tiny-generalization-gauntlet`
+Branch: `codex/core-smgt-small-v2-measured-pseudo`
 
 ## Goal
 
-Harden and falsify SMGT-tiny before object/dynamic fusion: confidence-gated
-mapping, strict train/val/heldout teacher-cache discipline, stable training
-metrics, heldout RGB-only mapping, long-run diagnostics, and an honest A2
-generalization report.
+Replace the diagnostic SMGT-tiny core with SMGT-small-v2 trained from measured
+and optional pseudo temporal caches, then verify whether the validation-selected
+checkpoint can map heldout RGB-only frames into nonzero mesh chunks while
+beating constant-depth and no-motion baselines.
 
 ## Checklist
 
-- [x] Confirm clean worktree and switch from `codex/core-smgt-tiny-student-map`.
-- [x] Read required architecture, contract, evaluation, status, model, training,
-  runtime, mapping, and test files.
-- [x] Add confidence/sigma/dynamic valid-mask policy for `map-rgb-student`.
-- [x] Add focused confidence-gating tests and preserve conservative truth flags.
-- [x] Add deterministic train/val/heldout split manifest utilities and tests.
-- [x] Extend SMGT-tiny training CLI/run with heldout split and stable metric
-  reporting.
-- [x] Train/evaluate SMGT-tiny on strict non-overlapping split.
-- [x] Run heldout RGB-only student mapping without VGGT at inference.
-- [x] Run long-run memory/latency/map-growth diagnostic.
-- [x] Write `docs/status/core_smgt_tiny_a2_generalization_report.md` from
-  measured evidence only.
-- [x] Update status/architecture/contracts/evaluation docs after evidence.
-- [x] Run full verification and record exact commands/results.
-- [x] Commit with message `test(models): harden smgt tiny heldout rgb mapping`.
+- [x] Confirm clean worktree and switch from
+  `codex/core-smgt-tiny-generalization-gauntlet`.
+- [x] Read required architecture, contracts, evaluation, status, model,
+  training, runtime, mapping, and test files.
+- [x] Add measured temporal cache writer, validator, dataset, and inspector.
+- [x] Add SMGT-small-v2 model, config, streaming state, and checkpoint helpers.
+- [x] Add v2 mixed measured/pseudo dataset, losses, eval, calibration, and
+  quality-based checkpoint selection.
+- [x] Add `train smgt-v2`, `eval smgt-v2-calibrate-gate`, and
+  `runtime map-rgb-student-v2` CLI commands without teacher imports at runtime.
+- [x] Add CPU-only unit tests for measured cache, v2 model/checkpoint, losses,
+  calibration, runtime mapping, and CLI help.
+- [x] Build at least two measured temporal caches from real measured recordings.
+- [x] Train SMGT-small-v2 long enough for meaningful curves.
+- [x] Calibrate confidence/sigma gates from validation data.
+- [x] Run heldout RGB-only mapping and long-run mapping with the selected
+  checkpoint.
+- [x] Write `docs/status/core_smgt_small_v2_measured_pseudo_report.md`.
+- [x] Update README, PLANS, architecture, contracts, evaluation, progress,
+  decisions, and next-task docs based on actual A3 outcome.
+- [x] Run required verification commands and commit only source/docs/tests.
 
 ## Stop Conditions
 
 - Unknown user changes appear in the worktree.
-- No real heldout RGB input or teacher cache exists and one cannot be generated
-  locally.
+- A second measured sequence cannot be located or prepared/downloaded.
 - CUDA/Torch is unavailable and CPU training is infeasible.
+- Measured-cache support would require changing the phase objective.
