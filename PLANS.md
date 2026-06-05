@@ -155,14 +155,19 @@ Acceptance on Apple M-series:
 - **6H:** multi-window RGB teacher stitching and cache export: adjacent VGGT
   windows are aligned with explicit Sim3 scale, inconsistent windows are
   rejected, stitched teacher pseudo observations drive observed mesh chunks, and
-  validated temporal teacher caches are exported for future SMGT training.
+  validated temporal teacher caches are exported for SMGT student training.
+- **Core A:** first learned SMGT-tiny diagnostic student mapping: SMGT-tiny
+  trains from the Phase 6H pseudo teacher temporal cache, checkpoints carry
+  conservative truth flags, and `runtime map-rgb-student` maps real RGB-only
+  input through learned depth/pose/confidence predictions without VGGT at
+  student inference.
 
-### Next likely Phase 6I
+### Next likely Core Phase B
 
-Train and evaluate `smgt_tiny` on measured plus pseudo teacher temporal caches,
-then produce RGB student predictions through the existing mapper on a tiny real
-sequence. Phase 6H produced validated pseudo caches, but no final student was
-trained and no RGB-only student mapping readiness claim exists.
+Add object/dynamic teacher labels and object-aware sparse TSDF fusion around the
+SMGT-tiny runtime path. The current student maps observed static-like geometry
+only; it has no object head training, dynamic filtering, loop closure, final
+SMGT architecture, realtime proof, or RGB-only production-readiness claim.
 
 ## Phase 7 - Evaluation and release gates
 

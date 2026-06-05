@@ -95,6 +95,19 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--teacher-window-size", rgb_teacher_result.stdout)
         self.assertIn("--export-mesh-chunks", rgb_teacher_result.stdout)
 
+        rgb_student_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-student", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(rgb_student_result.returncode, 0, rgb_student_result.stderr)
+        self.assertIn("--checkpoint", rgb_student_result.stdout)
+        self.assertIn("--clip-length", rgb_student_result.stdout)
+        self.assertIn("--rgb-only", rgb_student_result.stdout)
+
         teacher_temporal_cache_result = subprocess.run(
             [
                 sys.executable,

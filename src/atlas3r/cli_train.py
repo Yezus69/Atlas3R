@@ -185,6 +185,27 @@ def register_train_parser(subparsers: Any) -> None:
     teacher_temporal_parser.add_argument("--relative-rotation-weight", type=float, default=0.1)
     teacher_temporal_parser.add_argument("--se3-pose-weight", type=float, default=1.0)
     teacher_temporal_parser.set_defaults(handler=_run_train_teacher_signals_temporal)
+    smgt_parser = train_subparsers.add_parser(
+        "smgt-tiny",
+        help="Train the first diagnostic SMGT-tiny student from a teacher temporal cache.",
+    )
+    smgt_parser.add_argument("--teacher-cache", type=Path, required=True)
+    smgt_parser.add_argument("--output", type=Path, required=True)
+    smgt_parser.add_argument("--steps", type=int, default=2000)
+    smgt_parser.add_argument("--batch-size", type=int, default=4)
+    smgt_parser.add_argument("--device", default="cuda")
+    smgt_parser.add_argument("--amp", action="store_true")
+    smgt_parser.add_argument("--learning-rate", type=float, default=1e-4)
+    smgt_parser.add_argument("--val-split", type=float, default=0.2)
+    smgt_parser.add_argument("--num-workers", type=int, default=2)
+    smgt_parser.add_argument("--save-every", type=int, default=500)
+    smgt_parser.add_argument("--seed", type=int, default=0)
+    smgt_parser.add_argument("--debug-subset-clips", type=int, default=None)
+    smgt_parser.add_argument("--debug-allow-pseudo-weight", type=float, default=None)
+    smgt_parser.add_argument("--hidden-dim", type=int, default=64)
+    smgt_parser.add_argument("--feature-dim", type=int, default=96)
+    smgt_parser.add_argument("--memory-dim", type=int, default=128)
+    smgt_parser.set_defaults(handler=_run_train_smgt_tiny)
 
 
 def _run_train_synthetic_overfit(args: argparse.Namespace) -> int:
@@ -327,6 +348,38 @@ def _run_train_teacher_signals_temporal(args: argparse.Namespace) -> int:
                     relative_rotation_weight=args.relative_rotation_weight,
                     se3_pose_weight=args.se3_pose_weight,
                 ),
+            )
+        )
+    except (TorchDependencyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_train_smgt_tiny(args: argparse.Namespace) -> int:
+    from atlas3r.training.smgt_tiny_train import SMGTTinyTrainConfig, run_smgt_tiny_training
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_smgt_tiny_training(
+            SMGTTinyTrainConfig(
+                teacher_cache=args.teacher_cache,
+                output=args.output,
+                steps=args.steps,
+                batch_size=args.batch_size,
+                device=args.device,
+                amp=args.amp,
+                learning_rate=args.learning_rate,
+                val_split=args.val_split,
+                num_workers=args.num_workers,
+                save_every=args.save_every,
+                seed=args.seed,
+                debug_subset_clips=args.debug_subset_clips,
+                debug_allow_pseudo_weight=args.debug_allow_pseudo_weight,
+                hidden_dim=args.hidden_dim,
+                feature_dim=args.feature_dim,
+                memory_dim=args.memory_dim,
             )
         )
     except (TorchDependencyError, ValueError) as exc:

@@ -25,10 +25,11 @@ scale, visibility, motion, calibration, and dynamic-scene ambiguities. Hidden
 or completed geometry must be marked predicted/uncertain, not measured. Every
 geometry output carries confidence or uncertainty.
 
-## Current Phase 6H State
+## Current Core SMGT Tiny State
 
-The current implemented slice includes an offline diagnostic RGB teacher bridge,
-not final RGB-only student mapping or realtime mapping:
+The current implemented slice includes an offline diagnostic RGB teacher bridge
+and a first learned SMGT-tiny diagnostic student. It is not final SMGT,
+production RGB-only mapping readiness, or realtime mapping:
 
 - `atlas3r_recording` folders store RGB plus optional measured depth and
   measured `T_world_camera`.
@@ -49,16 +50,24 @@ not final RGB-only student mapping or realtime mapping:
   overlapping teacher windows with Sim3 by default, writes a pseudo recording,
   fuses validated pseudo observations through the existing sparse TSDF mapper,
   emits observed mesh chunks through the Phase 6F writer, and can export a
-  validated temporal teacher cache for future SMGT training.
+  validated temporal teacher cache for SMGT student training.
+- `python -m atlas3r train smgt-tiny ...` trains the first learned diagnostic
+  SMGT-tiny student from the Phase 6H teacher temporal cache with explicit
+  pseudo-label weights and conservative checkpoint truth flags.
+- `python -m atlas3r runtime map-rgb-student ... --rgb-only` loads an SMGT-tiny
+  checkpoint, consumes only RGB/intrinsics at inference, does not import or run
+  VGGT, and maps predicted depth/pose/confidence through sparse TSDF and
+  observed mesh chunks.
 - `python -m atlas3r runtime capture-adapters list` reports dependency-safe
   camera adapter status. The OpenCV adapter does not import `cv2` at module
   import time and reports an install hint when unavailable.
 
-Phase 6H RGB teacher outputs are diagnostics. They use teacher-pseudo depth and
-pose for mapping, do not use measured depth/pose for mapping in `--rgb-only`
-mode, and do not claim final RGB-only student readiness, hidden geometry,
-object-aware fusion, loop closure, realtime readiness, benchmark accuracy, or
-millimeter accuracy.
+The first real Freiburg SMGT-tiny student mapping evidence used 64 RGB frames
+and produced 70 observed mesh chunks with 35,944 vertices and 17,972 triangles.
+Eval-only measured depth/pose were not used for mapping; the student beat the
+constant-depth and no-motion baselines in that sidecar. The run still does not
+claim final RGB-only readiness, hidden geometry, object-aware fusion, loop
+closure, realtime readiness, benchmark accuracy, or millimeter accuracy.
 
 ## Useful Commands
 
@@ -70,6 +79,8 @@ python -m atlas3r runtime live-replay-recording --recording <recording> --output
 python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse --export-mesh-chunks --mesh-format ply
 python -m atlas3r runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output <run> --teacher vggt --device cuda:0 --max-frames 64 --frame-stride 2 --teacher-window-size 24 --teacher-window-overlap 8 --image-size 518 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --export-mesh-chunks --mesh-format ply --rgb-only --stitch-windows sim3-overlap --export-teacher-cache
 python -m atlas3r inspect teacher-temporal-cache --cache <run>/teacher_temporal_cache
+python -m atlas3r train smgt-tiny --teacher-cache <run>/teacher_temporal_cache --output <train_run> --steps 3000 --batch-size 4 --device cuda:0 --amp --val-split 0.2
+python -m atlas3r runtime map-rgb-student --input <recording-or-rgb-folder-or-video> --output <map_run> --checkpoint <train_run>/checkpoint_best.pt --device cuda:0 --max-frames 64 --frame-stride 1 --clip-length 8 --clip-overlap 4 --image-size 120x160 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --export-mesh-chunks --mesh-format ply --rgb-only
 python -m atlas3r runtime fuse-recording --recording <recording> --output <run> --mode incremental --backend cpu-sparse
 ```
 

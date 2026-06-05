@@ -348,6 +348,18 @@ checkpoint-tsdf --checkpoint <checkpoint.pt> --output <folder> [--input
 <clip.npz>]` writes predicted TSDF artifacts and `prediction_sample.npz`;
 synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 
+SMGT-tiny checkpoints use `format_name=atlas3r_smgt_tiny_checkpoint`,
+`format_version=1`, `model_name=SMGTTiny`, `step`, model/optimizer state,
+config, metrics, validation metrics, model/loss config, and `truth_boundary`.
+`train smgt-tiny` writes config, train/val JSONL metrics, best/last checkpoints,
+preview, truth flags, and a report from a teacher temporal cache. `runtime
+map-rgb-student --rgb-only` consumes RGB/intrinsics only and emits predicted
+`DepthObservation`s, sparse TSDF outputs, observed mesh chunks, live replay
+sidecars, `rgb_student_summary.json`, and optional eval-only sidecars. Truth
+flags require learned/student RGB inference true and teacher geometry, measured
+mapping truth, final SMGT, realtime, accuracy, performance, and RGB-only
+readiness claims false.
+
 ### TUM RGB-D Real-Data Debug Training, Eval, And Temporal Clips
 Commands include `datasets tum-rgbd download|prepare`, `train
 tum-rgbd-depth-pose --model tiny-v1|tiny-v2`, `eval tum-rgbd-checkpoint
@@ -427,17 +439,6 @@ coordinate frame, calibration metadata, safe relative RGB/depth paths, finite
 K/poses/timestamps, image dimensions, positive PNG depth scale, and no-claim
 truth flags including `realtime_claim=false`.
 ### Recording Fusion Runtime
-`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, events/reports, final surface
-output, mesh status, and preview HTML. Incremental accepts
-`--backend cpu-persistent|cpu-rebuild|cpu-sparse`; dense backends write `tsdf/`,
-while `cpu-sparse` writes `sparse_tsdf/sparse_tsdf_state.npz`, active state
-counters, final-only surface output, and non-exact sparse-vs-dense
-`backend_comparison.json`. All reports keep diagnostic/no-accuracy/no-performance/
-no-realtime/no-mapping-ready flags. `runtime sparse-tsdf-stress` writes dense
-apartment-box memory estimates and sparse active-state estimates.
+`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, events/reports, final surface output, mesh status, and preview HTML. Incremental accepts `--backend cpu-persistent|cpu-rebuild|cpu-sparse`; dense backends write `tsdf/`, while `cpu-sparse` writes sparse state, final surface, and non-exact sparse-vs-dense comparison artifacts. Reports keep diagnostic/no-accuracy/no-performance/no-realtime/no-ready flags; `runtime sparse-tsdf-stress` writes dense and sparse memory estimates.
 ### `.atlas3r` Session Folder
-Layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
-mesh chunk sidecars, optional GLB/depth NPZs, and `logs/runtime_profile.json`.
-Readers reconstruct contracts from sidecars; exports preserve coordinate
-convention, units, scale source, camera metadata, checkpoint hash, voxel size,
-accuracy report path, and RGB-only warnings.
+Layout includes metadata, pose/camera/object JSONL files, mesh sidecars, optional GLB/depth NPZs, and runtime profile logs; exports preserve coordinate convention, units, scale source, camera metadata, checkpoint hash, voxel size, accuracy report path, and RGB-only warnings.

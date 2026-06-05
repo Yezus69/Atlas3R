@@ -171,15 +171,15 @@ class SessionInspectTest(unittest.TestCase):
             self.assertTrue((preview / "index.html").is_file())
             self.assertTrue((preview / "top_down.svg").is_file())
 
-    def test_status_handoff_points_to_phase_6i(self) -> None:
+    def test_status_handoff_points_to_core_phase_b(self) -> None:
         next_task = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
 
         self.assertIn(
-            "Phase 6I - Train Tiny Student From Measured And Teacher Temporal Caches",
+            "Core Phase B - Object/Dynamic Teacher Labels And Object-Aware Sparse Fusion",
             next_task,
         )
-        self.assertIn("TeacherTemporalCacheDataset", next_task)
-        self.assertIn("phase6h_teacher_stitch_cache_report.md", next_task)
+        self.assertIn("object/dynamic", next_task)
+        self.assertIn("core_smgt_tiny_student_map_report.md", next_task)
 
 
 class SessionPreviewIgnoreTest(unittest.TestCase):

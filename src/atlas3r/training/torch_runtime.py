@@ -32,8 +32,16 @@ def select_device(device: str) -> str:
     """Resolve a requested training device against the available PyTorch backends."""
 
     normalized = device.lower()
-    if normalized not in {"auto", "cuda", "mps", "cpu"}:
-        raise ValueError("device: must be one of auto, cuda, mps, or cpu")
+    explicit_cuda_index: int | None = None
+    if normalized.startswith("cuda:"):
+        try:
+            explicit_cuda_index = int(normalized.split(":", 1)[1])
+        except ValueError as exc:
+            raise ValueError("device: cuda index must be an integer") from exc
+        if explicit_cuda_index < 0:
+            raise ValueError("device: cuda index must be non-negative")
+    elif normalized not in {"auto", "cuda", "mps", "cpu"}:
+        raise ValueError("device: must be one of auto, cuda, cuda:N, mps, or cpu")
 
     torch = require_torch()
     if normalized == "cpu":
@@ -51,6 +59,12 @@ def select_device(device: str) -> str:
         return "cpu"
     if normalized == "cuda" and not cuda_available:
         raise ValueError("device: cuda was requested but torch.cuda is not available")
+    if explicit_cuda_index is not None:
+        if not cuda_available:
+            raise ValueError("device: cuda was requested but torch.cuda is not available")
+        if explicit_cuda_index >= int(torch.cuda.device_count()):
+            raise ValueError("device: requested cuda index is not available")
+        return f"cuda:{explicit_cuda_index}"
     if normalized == "mps" and not mps_available:
         raise ValueError("device: mps was requested but torch.backends.mps is not available")
     return normalized

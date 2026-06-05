@@ -51,6 +51,26 @@ Sim3 scale is applied to camera centers, depth, and depth sigma. Intrinsics are
 unchanged. This is still offline teacher-pseudo geometry and not loop closure,
 global bundle adjustment, realtime runtime, or RGB-only student mapping.
 
+## Core SMGT-tiny diagnostic student slice
+
+Core Phase A adds the first learned student path:
+
+```text
+Phase 6H teacher temporal cache
+  -> train smgt-tiny with pseudo target weights
+  -> SMGT-tiny checkpoint
+  -> RGB-only clip inference without VGGT
+  -> predicted DepthObservation stream
+  -> sparse TSDF observed mesh chunks
+```
+
+`SMGTTiny` is a compact Conv/ConvGRU diagnostic student with depth,
+uncertainty, confidence, dynamic-probability, normal, pointmap, and relative
+pose heads. It uses RGB plus intrinsics-derived ray channels and exports
+conservative truth flags: learned inference is true, teacher geometry is false
+during student inference, measured depth/pose are false for mapping, and final
+SMGT/realtime/RGB-only-readiness claims remain false.
+
 ## Module 1: Frame IO and preprocessing
 
 ### Inputs

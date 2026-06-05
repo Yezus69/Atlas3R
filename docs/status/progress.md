@@ -4,82 +4,72 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Current phase: Phase 6H teacher stitching and temporal cache export completed
-  on branch `codex/phase6h-teacher-stitch-cache`.
-- `runtime map-rgb-teacher` maps RGB-only recording/image/video input through
-  VGGT teacher-pseudo depth/pose/intrinsics, stitches overlapping teacher
-  windows with Sim3 by default, rejects inconsistent windows, fuses accepted
-  pseudo observations through sparse TSDF, and emits observed mesh chunks.
-- `--stitch-windows none` preserves the Phase 6G no-stitch baseline for direct
-  comparison.
-- `--export-teacher-cache` writes validated
-  `atlas3r_teacher_temporal_cache` clips for future student training, with safe
-  relative paths, finite arrays, explicit pseudo truth flags, no model weights,
-  and pseudo target weights of `0.25`.
-- Truth flags keep measured depth/pose false for mapping/cache labels, pseudo
-  depth/pose true, teacher geometry true, `metric_scale_source=rgb_prior` /
-  `teacher_scale_unverified`, and no RGB-only student, realtime, hidden
-  geometry, completion, or accuracy claim.
+- Current branch: `codex/core-smgt-tiny-student-map`.
+- Core Phase A is implemented: a first learned diagnostic `SMGTTiny` student
+  trains from the Phase 6H VGGT teacher temporal cache and maps real RGB-only
+  input through sparse TSDF observed mesh chunks without VGGT at student
+  inference.
+- `atlas3r.models.smgt` contains the compact Conv/ConvGRU model, ray-channel
+  geometry helpers, memory state, and checkpoint truth-boundary validation.
+- `python -m atlas3r train smgt-tiny` writes config, train/val metrics,
+  checkpoints, prediction previews, truth flags, and a Markdown report.
+- `python -m atlas3r runtime map-rgb-student --rgb-only` loads an SMGT-tiny
+  checkpoint, consumes RGB/intrinsics only, predicts depth/pose/confidence, and
+  reuses sparse TSDF plus observed mesh chunk artifacts.
+- Truth flags keep `teacher_geometry_used=false` during student inference,
+  measured depth/pose false for mapping, `metric_scale_source` as unverified
+  student RGB prior, and no final SMGT, RGB-only readiness, realtime,
+  object-aware fusion, hidden geometry, accuracy, or millimeter claim.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed; 208 files left unchanged.
-- `python -m ruff format --check src tests`: passed; 208 files formatted.
-- `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 157 source files.
-- Focused tests passed: `tests.unit.test_rgb_teacher_stitching`,
-  `tests.unit.test_teacher_temporal_cache`,
-  `tests.unit.test_rgb_teacher_mapping`, and `tests.unit.test_cli`.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed 260 tests.
-- `git diff --check`: passed; Git emitted CRLF normalization warnings only.
+- Focused post-patch checks passed before long runs:
+  `python -m ruff check src tests`, `python -m mypy src`,
+  `python -m unittest tests.unit.test_smgt_tiny_losses`,
+  `python -m unittest tests.unit.test_rgb_student_mapping`, and focused
+  SMGT/checkpoint/dataset/CLI tests.
+- Full verification is pending after the final documentation updates.
 
 ## Real-Data Evidence
 
-- Input: `runs/phase6a_recording_freiburg1_xyz_val/recording`, TUM RGB-D
-  `freiburg1_xyz`, 120 RGB frames used, measured depth/pose only for eval
-  sidecars.
-- No-stitch command used VGGT `facebook/VGGT-1B` on `cuda:0` with
-  `--max-frames 120 --teacher-window-size 12 --teacher-window-overlap 6
-  --image-size 518 --pixel-stride 12 --stitch-windows none`.
-- No-stitch result: 19 pseudo submaps, boundary jump mean/p95/max
-  `0.035442 / 0.076935 / 0.078969 m`, 59 mesh chunks, 28,980 vertices,
-  14,490 triangles, eval-only ATE RMSE `0.118310 m`, depth AbsRel/RMSE
-  `0.073069 / 0.264572 m`.
-- Stitched command used the same settings with `--stitch-windows sim3-overlap
-  --export-teacher-cache --cache-clip-length 8 --cache-clip-stride 4`.
-- Stitched result: 18 accepted stitch edges, 0 rejected edges, 1 pseudo submap,
-  boundary jump mean/p95/max `0.066620 / 0.127874 / 0.133376 m`, overlap RMSE
-  mean/p95/max `0.066649 / 0.123902 / 0.130932 m`, scale min/median/max
-  `0.815424 / 1.086051 / 1.260082`, 46 mesh chunks, 17,184 vertices,
-  8,592 triangles, eval-only ATE RMSE `0.094728 m`, depth AbsRel/RMSE
-  `0.073069 / 0.264572 m`.
-- Cache inspection passed for
+- Teacher cache:
   `runs/phase6h_rgb_teacher_stitched_freiburg1_xyz_val/teacher_temporal_cache`
-  with 29 clips; the dataset bridge loaded clip arrays and truth/weight fields.
-- Full evidence: `docs/status/phase6h_teacher_stitch_cache_report.md`.
-
-## Compact Phase Ledger
-
-- Phase 0-4: contracts, synthetic correctness, CPU TSDF diagnostics, teacher
-  adapter/cache boundaries, NumPy student boundary, optional Torch training MVP,
-  checkpoint bridge, and TUM RGB-D debug train/eval.
-- Phase 5A-5H: TUM clip caches, teacher-signal caches, external teacher
-  runners, temporal measured/pseudo training, student-map runtime diagnostics,
-  multi-sequence training, and dependency-safe VGGT runner scaffolding.
-- Phase 6A-6F: measured recording boundary, sensor-folder importer, dense and
-  sparse TSDF paths, bounded live replay scheduler, and observed-only sparse
-  mesh chunk update artifacts.
-- Phase 6G: RGB-only teacher bridge using VGGT pseudo depth/pose/intrinsics to
-  drive sparse TSDF and observed mesh chunk output.
-- Phase 6H: Sim3 overlap stitching for teacher windows plus validated teacher
-  temporal cache export for future SMGT training.
+  with 29 validated pseudo clips.
+- Recording:
+  `runs/phase6a_recording_freiburg1_xyz_val/recording`, TUM RGB-D
+  `freiburg1_xyz`; measured depth/pose used only for eval sidecars.
+- Overfit command: `python -m atlas3r train smgt-tiny --teacher-cache
+  runs/phase6h_rgb_teacher_stitched_freiburg1_xyz_val/teacher_temporal_cache
+  --output runs/core_smgt_tiny_overfit_freiburg1_xyz_val --steps 1000
+  --batch-size 2 --device cuda:0 --amp --debug-subset-clips 4
+  --debug-allow-pseudo-weight 1.0`.
+- Overfit result: completed 1000 steps; first/final 100-step `loss_total`
+  means `0.042932 / -0.127154`; depth loss means
+  `0.007812 / 0.000163`; final train depth AbsRel/RMSE
+  `0.012464 / 0.028668 m`.
+- Weighted command: `python -m atlas3r train smgt-tiny --teacher-cache
+  runs/phase6h_rgb_teacher_stitched_freiburg1_xyz_val/teacher_temporal_cache
+  --output runs/core_smgt_tiny_weighted_freiburg1_xyz_val --steps 3000
+  --batch-size 4 --device cuda:0 --amp --val-split 0.2`.
+- Weighted result: completed 3000 steps; first/final 100-step `loss_total`
+  means `0.174906 / -0.065941`; reported decrease `137.70%`; final train
+  depth AbsRel/RMSE `0.011509 / 0.024855 m`; best checkpoint step `1000`.
+- Student mapping command used the weighted `checkpoint_best.pt` on 64 RGB
+  frames with `--clip-length 8 --clip-overlap 4 --image-size 120x160`.
+- Student mapping result:
+  `runs/core_smgt_tiny_student_map_freiburg1_xyz_val` wrote 70 observed mesh
+  chunks, 35,944 vertices, 17,972 triangles, 4,596 surface points, 90 active
+  sparse blocks, and 11,962 active voxels.
+- Eval-only source measurements: depth AbsRel/RMSE
+  `0.089889 / 0.304203 m` after median-scale alignment; constant-depth
+  baseline AbsRel/RMSE `0.215698 / 0.596336 m`; Sim3 camera-center ATE RMSE
+  `0.090504 m`; no-motion baseline ATE RMSE `0.146124 m`.
+- Full evidence: `docs/status/core_smgt_tiny_student_map_report.md`.
 
 ## Current Known Gaps
 
-- Boundary jump metrics worsened in the Phase 6H stitched run even though
-  eval-only ATE improved.
-- Stitching is sequential adjacent-window Sim3, not loop closure, global bundle
-  adjustment, or metric-scale proof.
-- VGGT teacher inference remains offline and heavy; CPU sparse TSDF and mesh
-  export are diagnostic and not realtime.
-- No student was trained from the Phase 6H teacher temporal cache.
+- Training used VGGT teacher pseudo labels, not measured geometry labels.
+- Metric scale is an unverified RGB prior learned from pseudo labels.
+- The student checkpoint is diagnostic SMGT-tiny, not final SMGT.
+- No object-aware fusion, dynamic filtering, loop closure, global optimization,
+  realtime profile, long-run memory proof, or benchmark accuracy report exists.

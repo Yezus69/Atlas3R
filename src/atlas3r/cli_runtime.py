@@ -147,6 +147,28 @@ def register_runtime_parser(subparsers: Any) -> None:
         help="VGGT checkpoint path or URI; overrides ATLAS3R_VGGT_CHECKPOINT.",
     )
     rgb_teacher_parser.set_defaults(handler=_run_map_rgb_teacher)
+    rgb_student_parser = runtime_subparsers.add_parser(
+        "map-rgb-student",
+        help="Map RGB input through a learned SMGT-tiny checkpoint into sparse TSDF mesh chunks.",
+    )
+    rgb_student_parser.add_argument("--input", type=Path, required=True)
+    rgb_student_parser.add_argument("--output", type=Path, required=True)
+    rgb_student_parser.add_argument("--checkpoint", type=Path, required=True)
+    rgb_student_parser.add_argument("--device", default="cuda")
+    rgb_student_parser.add_argument("--max-frames", type=int, default=64)
+    rgb_student_parser.add_argument("--frame-stride", type=int, default=1)
+    rgb_student_parser.add_argument("--clip-length", type=int, default=8)
+    rgb_student_parser.add_argument("--clip-overlap", type=int, default=4)
+    rgb_student_parser.add_argument("--image-size", default=None)
+    rgb_student_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    rgb_student_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    rgb_student_parser.add_argument("--pixel-stride", type=int, default=12)
+    rgb_student_parser.add_argument("--export-mesh-chunks", action="store_true")
+    rgb_student_parser.add_argument("--mesh-format", choices=("npz", "ply", "both"), default="npz")
+    rgb_student_parser.add_argument("--mesh-min-weight", type=float, default=0.0)
+    rgb_student_parser.add_argument("--export-point-cloud", action="store_true")
+    rgb_student_parser.add_argument("--rgb-only", action="store_true")
+    rgb_student_parser.set_defaults(handler=_run_map_rgb_student)
     capture_adapters_parser = runtime_subparsers.add_parser(
         "capture-adapters",
         help="Inspect dependency-safe runtime capture adapters.",
@@ -309,6 +331,55 @@ def _run_map_rgb_teacher(args: argparse.Namespace) -> int:
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def _run_map_rgb_student(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.rgb_student_mapping import (
+        RGBStudentMapConfig,
+        run_rgb_student_mapping,
+    )
+    from atlas3r.training.torch_runtime import TorchDependencyError
+
+    try:
+        result = run_rgb_student_mapping(
+            RGBStudentMapConfig(
+                input=args.input,
+                output=args.output,
+                checkpoint=args.checkpoint,
+                device=args.device,
+                max_frames=args.max_frames,
+                frame_stride=args.frame_stride,
+                clip_length=args.clip_length,
+                clip_overlap=args.clip_overlap,
+                image_size=_parse_image_size(args.image_size),
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                pixel_stride=args.pixel_stride,
+                export_mesh_chunks=args.export_mesh_chunks,
+                mesh_format=args.mesh_format,
+                mesh_min_weight=args.mesh_min_weight,
+                export_point_cloud=args.export_point_cloud,
+                rgb_only=args.rgb_only,
+            )
+        )
+    except (TorchDependencyError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _parse_image_size(value: str | None) -> tuple[int, int] | None:
+    if value is None:
+        return None
+    normalized = value.lower().replace(",", "x")
+    parts = normalized.split("x")
+    if len(parts) != 2:
+        raise ValueError("image_size: expected HxW, for example 120x160")
+    height, width = int(parts[0]), int(parts[1])
+    if height <= 0 or width <= 0:
+        raise ValueError("image_size: dimensions must be positive")
+    return height, width
 
 
 def _run_capture_adapters_list(_args: argparse.Namespace) -> int:

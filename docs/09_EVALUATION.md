@@ -154,6 +154,19 @@ lower than measured target weights.
 - all heads produce correct shapes;
 - losses decrease predictably.
 
+Core Phase A provides diagnostic Gate 2 evidence for a real pseudo-label cache,
+not a benchmark accuracy claim. `train smgt-tiny` overfit on four Phase 6H
+Freiburg teacher-cache clips for 1000 steps reduced first/final 100-step
+`loss_total` means from `0.0429` to `-0.1272`. The weighted 3000-step run on
+the same cache reduced first/final 100-step `loss_total` means from `0.1749`
+to `-0.0659`. `runtime map-rgb-student` then mapped 64 RGB frames without VGGT
+at student inference and produced nonzero observed mesh chunks. Eval-only
+source measurements reported depth AbsRel/RMSE `0.0899 / 0.3042 m` after
+median scale alignment, Sim3 camera-center ATE RMSE `0.0905 m`, and the student
+beat constant-depth and no-motion baselines. These are diagnostics only:
+pseudo training, unverified RGB prior scale, no object-aware fusion, no
+realtime proof, and no final RGB-only readiness claim.
+
 ### Gate 3: real validation
 
 - student beats a naive DepthPro+PnP baseline on held-out validation;
