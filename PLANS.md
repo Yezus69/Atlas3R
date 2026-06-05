@@ -161,13 +161,19 @@ Acceptance on Apple M-series:
   conservative truth flags, and `runtime map-rgb-student` maps real RGB-only
   input through learned depth/pose/confidence predictions without VGGT at
   student inference.
+- **Core A2:** SMGT-tiny generalization gauntlet: train/val/heldout temporal
+  split manifests, confidence/sigma/dynamic mapping gates, stable training
+  metric windows, heldout mapping diagnostics, and long-run map-growth evidence.
+  Result: current SMGT-tiny is a diagnostic/toy baseline; do not start
+  object/dynamic fusion from it.
 
-### Next likely Core Phase B
+### Next likely Core Phase A3
 
-Add object/dynamic teacher labels and object-aware sparse TSDF fusion around the
-SMGT-tiny runtime path. The current student maps observed static-like geometry
-only; it has no object head training, dynamic filtering, loop closure, final
-SMGT architecture, realtime proof, or RGB-only production-readiness claim.
+Replace or harden the SMGT-tiny student core before object/dynamic fusion.
+Acceptance should require strict heldout pose beating no-motion, depth beating
+constant-depth or meeting the absolute target, calibrated confidence/sigma gates
+that map substantially less than all-positive, and a validation-selected
+checkpoint that produces nonzero heldout mesh chunks without VGGT.
 
 ## Phase 7 - Evaluation and release gates
 

@@ -107,6 +107,9 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--checkpoint", rgb_student_result.stdout)
         self.assertIn("--clip-length", rgb_student_result.stdout)
         self.assertIn("--rgb-only", rgb_student_result.stdout)
+        self.assertIn("--student-confidence-threshold", rgb_student_result.stdout)
+        self.assertIn("--student-max-sigma-m", rgb_student_result.stdout)
+        self.assertIn("--student-map-valid-policy", rgb_student_result.stdout)
 
         teacher_temporal_cache_result = subprocess.run(
             [
@@ -141,6 +144,30 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertEqual(capture_adapters_result.returncode, 0, capture_adapters_result.stderr)
         self.assertIn("opencv-camera", capture_adapters_result.stdout)
         self.assertIn("replay-recording", capture_adapters_result.stdout)
+
+        smgt_train_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "train", "smgt-tiny", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(smgt_train_result.returncode, 0, smgt_train_result.stderr)
+        self.assertIn("--heldout-split", smgt_train_result.stdout)
+        self.assertIn("--split-manifest", smgt_train_result.stdout)
+
+        smgt_split_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "inspect", "smgt-tiny-split", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(smgt_split_result.returncode, 0, smgt_split_result.stderr)
+        self.assertIn("--teacher-cache", smgt_split_result.stdout)
+        self.assertIn("--heldout-split", smgt_split_result.stdout)
 
         stress_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "runtime", "sparse-tsdf-stress", "--help"],

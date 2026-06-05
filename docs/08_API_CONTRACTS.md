@@ -243,6 +243,8 @@ Stitch fields: `stitch_mode`, window/edge accepted/rejected counts, `stitch_subm
 
 Teacher temporal caches use `teacher_temporal_cache/` with manifest `atlas3r_teacher_temporal_cache.json`, `clips/clip_<id>.npz`, `frame_index.jsonl`, and inspect reports. Clip arrays: `frame_ids`, `timestamps_ns`, `rgb_u8`, `K`, `T_world_camera`, `depth_m`, `depth_sigma_m`, `confidence`, `valid_mask`, `teacher_valid`, and `pseudo_submap_id`. Manifests record teacher source/device/checkpoint, stitch mode, metric scale source, clip length/stride, truth boundary, array schema, safe relative paths, and `no_model_weights_in_cache=true`. Inspect with `atlas3r inspect teacher-temporal-cache --cache <cache_dir>`. Default pseudo depth and pose target weights are `0.25`.
 
+SMGT-tiny split manifests use `format_name=atlas3r_smgt_tiny_split_manifest`, `format_version=1`, a source teacher-cache pointer, `train/val/heldout` records with clip indices and frame IDs, omitted boundary clips, and `no_frame_id_overlap=true`. `atlas3r inspect smgt-tiny-split` reports the deterministic non-overlap policy without writing model artifacts.
+
 Truth flags keep pseudo/teacher/observed diagnostic flags true and measured mapping, hidden geometry, completion, student RGB-only, accuracy, and realtime flags false.
 ### Capture Adapter Boundary
 Runtime capture adapters live under `atlas3r.runtime`, import no optional
@@ -351,14 +353,7 @@ synthetic mode adds target comparison, while NPZ clips are not target-evaluated.
 SMGT-tiny checkpoints use `format_name=atlas3r_smgt_tiny_checkpoint`,
 `format_version=1`, `model_name=SMGTTiny`, `step`, model/optimizer state,
 config, metrics, validation metrics, model/loss config, and `truth_boundary`.
-`train smgt-tiny` writes config, train/val JSONL metrics, best/last checkpoints,
-preview, truth flags, and a report from a teacher temporal cache. `runtime
-map-rgb-student --rgb-only` consumes RGB/intrinsics only and emits predicted
-`DepthObservation`s, sparse TSDF outputs, observed mesh chunks, live replay
-sidecars, `rgb_student_summary.json`, and optional eval-only sidecars. Truth
-flags require learned/student RGB inference true and teacher geometry, measured
-mapping truth, final SMGT, realtime, accuracy, performance, and RGB-only
-readiness claims false.
+`train smgt-tiny` writes config, train/val/optional heldout JSONL metrics, best/last checkpoints, optional `checkpoint_heldout_best.pt`, preview, split artifacts, truth flags, and a report. Training reports use first/final metric windows and suppress loss-percent claims when total loss crosses zero. `runtime map-rgb-student --rgb-only` consumes RGB/intrinsics only and emits predicted `DepthObservation`s, sparse TSDF outputs, observed mesh chunks, live replay sidecars, `rgb_student_summary.json`, and optional eval-only sidecars. Mapping valid-mask policy is `confidence`, `confidence_sigma`, or diagnostic-only unsafe `all_positive`; summaries record raw, confidence-gated, sigma-gated, dynamic-rejected, and mapped pixel ratios plus thresholds. Truth flags require learned/student RGB inference true and teacher geometry, measured mapping truth, final SMGT, realtime, accuracy, performance, and RGB-only readiness claims false.
 
 ### TUM RGB-D Real-Data Debug Training, Eval, And Temporal Clips
 Commands include `datasets tum-rgbd download|prepare`, `train

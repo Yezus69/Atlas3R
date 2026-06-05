@@ -71,6 +71,16 @@ conservative truth flags: learned inference is true, teacher geometry is false
 during student inference, measured depth/pose are false for mapping, and final
 SMGT/realtime/RGB-only-readiness claims remain false.
 
+Core Phase A2 keeps the same architecture boundary but hardens the diagnostic
+loop: `train smgt-tiny` can write strict temporal train/val/heldout split
+manifests, and `runtime map-rgb-student` gates mapping with confidence, sigma,
+dynamic probability, and depth range. The Freiburg A2 evidence marks the current
+SMGT-tiny as a diagnostic/toy baseline: validation-selected mapping produced no
+heldout mesh, the trained last checkpoint mapped nearly every pixel, and
+teacher-cache heldout pose failed the no-motion baseline target. Object/dynamic
+fusion should not be built on this student until the core and confidence
+calibration are replaced or hardened.
+
 ## Module 1: Frame IO and preprocessing
 
 ### Inputs

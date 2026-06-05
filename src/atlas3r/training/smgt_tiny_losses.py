@@ -79,6 +79,7 @@ def smgt_tiny_loss(
     uncertainty = _weighted_mean(depth_residual.abs() / pred_sigma + pred_sigma.log(), pixel_weight)
     confidence_target = _TORCH.where(valid, target_conf, _TORCH.zeros_like(target_conf))
     confidence = _bce_probability(pred_conf, confidence_target)
+    confidence_brier = (pred_conf - confidence_target).square().mean()
     pointmap = _pointmap_loss(prediction, batch, target_depth, pixel_weight)
     smoothness = _edge_aware_smoothness(pred_depth, _tensor(batch, "images_rgb").float())
     dynamic = _bce_probability(pred_dynamic, _TORCH.zeros_like(pred_dynamic))
@@ -96,19 +97,34 @@ def smgt_tiny_loss(
     )
     _raise_if_nonfinite(total)
     abs_error = depth_residual.abs()[valid]
+    depth_absrel_metric = (abs_error / target_depth[valid].clamp(min=1e-6)).mean()
+    depth_rmse_metric = _TORCH.sqrt(abs_error.square().mean())
+    constant_depth = target_depth[valid].median()
+    constant_error = (constant_depth - target_depth).abs()[valid]
+    constant_absrel = (constant_error / target_depth[valid].clamp(min=1e-6)).mean()
+    constant_rmse = _TORCH.sqrt(constant_error.square().mean())
     metrics = {
         "loss_total": _float(total),
         "loss_depth_log": _float(depth_log),
         "loss_depth_si": _float(depth_si),
         "loss_uncertainty": _float(uncertainty),
         "loss_confidence": _float(confidence),
+        "confidence_brier": _float(confidence_brier),
         "loss_pose_relative": _float(pose_relative),
         "loss_pose_center": _float(pose_center),
         "loss_pointmap_consistency": _float(pointmap),
         "loss_smoothness": _float(smoothness),
         "loss_dynamic": _float(dynamic),
-        "depth_rmse_m": _float(_TORCH.sqrt(abs_error.square().mean())),
-        "depth_absrel": _float((abs_error / target_depth[valid].clamp(min=1e-6)).mean()),
+        "depth_rmse_m": _float(depth_rmse_metric),
+        "depth_absrel": _float(depth_absrel_metric),
+        "constant_depth_baseline_absrel": _float(constant_absrel),
+        "constant_depth_baseline_rmse_m": _float(constant_rmse),
+        "depth_absrel_vs_constant_baseline_ratio": _float(
+            depth_absrel_metric / constant_absrel.clamp(min=1e-12)
+        ),
+        "student_depth_beats_constant_baseline_25pct": float(
+            bool(depth_absrel_metric <= 0.75 * constant_absrel)
+        ),
         "valid_pixel_ratio": float(valid_count / valid.numel()),
         **pose_metrics,
     }
@@ -159,7 +175,18 @@ def _pose_losses(
     pose_weight = _tensor(batch, "pose_target_weight").float()
     if int(pred_T.shape[1]) <= 1:
         zero = pred_T.new_tensor(0.0)
-        return zero, zero, {"pose_relative_translation_mean_m": 0.0, "pose_rotation_mean_deg": 0.0}
+        return (
+            zero,
+            zero,
+            {
+                "pose_relative_translation_mean_m": 0.0,
+                "pose_rotation_mean_deg": 0.0,
+                "pose_center_mean_m": 0.0,
+                "no_motion_pose_baseline_center_mean_m": 0.0,
+                "pose_center_vs_no_motion_baseline_ratio": 0.0,
+                "student_pose_beats_no_motion_baseline_15pct": 1.0,
+            },
+        )
     pred_rel = _relative_transforms(pred_T)
     target_rel = _relative_transforms(target_T)
     weight = pose_weight.view(-1, 1)
@@ -168,13 +195,25 @@ def _pose_losses(
     relative = ((trans_error + rot_error) * weight).sum() / weight.sum().clamp(min=1e-12)
     centers = _TORCH.linalg.norm(pred_T[..., :3, 3] - target_T[..., :3, 3], dim=-1)
     center = (centers * pose_weight.view(-1, 1)).sum() / pose_weight.sum().clamp(min=1e-12)
+    target_centers = target_T[..., :3, 3]
+    no_motion_centers = target_centers[:, :1, :].expand_as(target_centers)
+    no_motion_error = _TORCH.linalg.norm(no_motion_centers - target_centers, dim=-1)
+    no_motion_baseline = no_motion_error.mean()
+    center_mean = centers.mean()
     return (
         relative,
         center,
         {
             "pose_relative_translation_mean_m": _float(trans_error.mean()),
             "pose_rotation_mean_deg": _float(rot_error.mean() * (180.0 / 3.141592653589793)),
-            "pose_center_mean_m": _float(centers.mean()),
+            "pose_center_mean_m": _float(center_mean),
+            "no_motion_pose_baseline_center_mean_m": _float(no_motion_baseline),
+            "pose_center_vs_no_motion_baseline_ratio": _float(
+                center_mean / no_motion_baseline.clamp(min=1e-12)
+            ),
+            "student_pose_beats_no_motion_baseline_15pct": float(
+                bool(center_mean <= 0.85 * no_motion_baseline)
+            ),
         },
     )
 

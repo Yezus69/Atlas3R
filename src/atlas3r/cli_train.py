@@ -197,6 +197,8 @@ def register_train_parser(subparsers: Any) -> None:
     smgt_parser.add_argument("--amp", action="store_true")
     smgt_parser.add_argument("--learning-rate", type=float, default=1e-4)
     smgt_parser.add_argument("--val-split", type=float, default=0.2)
+    smgt_parser.add_argument("--heldout-split", type=float, default=0.0)
+    smgt_parser.add_argument("--split-manifest", type=Path, default=None)
     smgt_parser.add_argument("--num-workers", type=int, default=2)
     smgt_parser.add_argument("--save-every", type=int, default=500)
     smgt_parser.add_argument("--seed", type=int, default=0)
@@ -372,6 +374,8 @@ def _run_train_smgt_tiny(args: argparse.Namespace) -> int:
                 amp=args.amp,
                 learning_rate=args.learning_rate,
                 val_split=args.val_split,
+                heldout_split=args.heldout_split,
+                split_manifest=args.split_manifest,
                 num_workers=args.num_workers,
                 save_every=args.save_every,
                 seed=args.seed,

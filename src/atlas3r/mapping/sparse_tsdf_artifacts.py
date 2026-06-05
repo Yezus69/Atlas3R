@@ -24,18 +24,16 @@ def write_sparse_tsdf_outputs(
 
     output.mkdir(parents=True, exist_ok=True)
     voxel_coords, tsdf, weight = mapper.active_voxel_arrays()
+    metadata = _sparse_output_metadata(mapper, surface)
     np.savez(
         output / "sparse_tsdf_state.npz",
         block_coords_xyz=mapper.block_coordinates(),
         voxel_coords_xyz=voxel_coords,
         tsdf=tsdf,
         weight=weight,
-        voxel_size_m=np.asarray(surface.metadata["voxel_size_m"], dtype=np.float32),
-        truncation_distance_m=np.asarray(
-            surface.metadata["truncation_distance_m"],
-            dtype=np.float32,
-        ),
-        block_size_voxels=np.asarray(surface.metadata["block_size_voxels"], dtype=np.int32),
+        voxel_size_m=np.asarray(metadata["voxel_size_m"], dtype=np.float32),
+        truncation_distance_m=np.asarray(metadata["truncation_distance_m"], dtype=np.float32),
+        block_size_voxels=np.asarray(metadata["block_size_voxels"], dtype=np.int32),
     )
     np.savez(
         output / "surface_points.npz",
@@ -44,7 +42,7 @@ def write_sparse_tsdf_outputs(
         uncertainty_m=surface.uncertainty_m,
         voxel_indices_xyz=surface.voxel_indices_xyz,
     )
-    _write_json(output / "metadata.json", surface.metadata)
+    _write_json(output / "metadata.json", metadata)
     _write_json(output / "metrics.json", metrics)
     return output
 
@@ -69,6 +67,20 @@ def _write_json(path: Path, record: dict[str, Any] | npt.NDArray[Any]) -> None:
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         json.dump(record, handle, indent=2, sort_keys=True)
         handle.write("\n")
+
+
+def _sparse_output_metadata(
+    mapper: SparseBlockTSDFMapper,
+    surface: TSDFSurface,
+) -> dict[str, Any]:
+    return {
+        "voxel_size_m": mapper.config.voxel_size_m,
+        "truncation_distance_m": mapper.config.truncation_distance_m,
+        "block_size_voxels": mapper.config.block_size_voxels,
+        "coordinate_frame": mapper.config.coordinate_frame,
+        "metric_scale_source": mapper.config.metric_scale_source,
+        **surface.metadata,
+    }
 
 
 __all__ = [

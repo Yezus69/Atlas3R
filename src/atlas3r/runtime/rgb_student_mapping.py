@@ -22,6 +22,15 @@ from atlas3r.pose.transforms import quaternion_xyzw_from_rotation_matrix
 from atlas3r.recording.schema import RECORDING_COORDINATE_FRAME
 from atlas3r.runtime.live_replay_types import LiveReplayEventRecorder
 from atlas3r.runtime.rgb_student_eval import write_rgb_student_eval_if_available
+from atlas3r.runtime.rgb_student_gating import (
+    StudentMapGateConfig,
+    aggregate_student_gate_stats,
+    resolve_student_map_valid_policy,
+    sanitize_student_confidence,
+    sanitize_student_depth,
+    sanitize_student_sigma,
+    student_mapping_valid_mask,
+)
 from atlas3r.runtime.rgb_student_outputs import (
     MAPPER_BACKEND,
     empty_student_mesh_status,
@@ -62,6 +71,12 @@ class RGBStudentMapConfig:
     mesh_min_weight: float = 0.0
     export_point_cloud: bool = False
     rgb_only: bool = False
+    student_confidence_threshold: float = 0.30
+    student_min_depth_m: float | None = None
+    student_max_depth_m: float | None = None
+    student_max_sigma_m: float | None = None
+    student_dynamic_threshold: float = 0.50
+    student_map_valid_policy: str | None = None
 
 
 def run_rgb_student_mapping(config: RGBStudentMapConfig) -> dict[str, object]:
@@ -75,6 +90,7 @@ def run_rgb_student_mapping(config: RGBStudentMapConfig) -> dict[str, object]:
     model = loaded.model
     checkpoint = loaded.checkpoint
     model_config = cast(dict[str, Any], checkpoint["model_config"])["config"]
+    gate_config = _resolved_gate_config(config, cast(Mapping[str, object], model_config))
     target_size = config.image_size or (
         int(model_config["image_height"]),
         int(model_config["image_width"]),
@@ -109,6 +125,7 @@ def run_rgb_student_mapping(config: RGBStudentMapConfig) -> dict[str, object]:
         output=config.output / "rgb_student_predictions",
         recorder=recorder,
         truth_boundary=truth,
+        gate_config=gate_config,
     )
     mapper, mesh_writer, mesh_manifest = _map_observations(
         config,
@@ -194,13 +211,13 @@ def _predict_observations(
     output: Path,
     recorder: LatencyRecorder,
     truth_boundary: Mapping[str, object],
+    gate_config: StudentMapGateConfig,
 ) -> tuple[tuple[DepthObservation, ...], dict[str, object]]:
     output.mkdir(parents=True, exist_ok=True)
     observations: list[DepthObservation] = []
     seen: set[int] = set()
     global_poses: dict[int, npt.NDArray[np.float32]] = {}
-    valid_pixels = 0
-    total_pixels = 0
+    gate_stats: list[dict[str, object]] = []
     for window_index, window_frames in enumerate(_windows(frames, clip_length, clip_overlap)):
         images_np, K_np, resized_rgb = _window_arrays(window_frames, target_size)
         images = torch.from_numpy(images_np).to(device)
@@ -232,17 +249,23 @@ def _predict_observations(
                 depth=payload["depth_m"][0, slot],
                 sigma=payload["depth_sigma_m"][0, slot],
                 confidence=payload["confidence"][0, slot],
+                dynamic_probability=payload["dynamic_probability"][0, slot],
                 T_world_camera=T_global,
                 checkpoint_truth=truth_boundary,
+                gate_config=gate_config,
             )
             observations.append(observation)
-            valid_pixels += int(np.count_nonzero(observation.confidence > 0.0))
-            total_pixels += int(observation.confidence.size)
+            gate_stats.append(
+                cast(dict[str, object], observation.pose.diagnostics["student_mapping_gate"])
+            )
     if not observations:
         raise ValueError("SMGTTiny prediction produced no observations")
+    aggregate_gate = aggregate_student_gate_stats(gate_stats)
     return tuple(observations), {
         "prediction_window_count": len(tuple(_windows(frames, clip_length, clip_overlap))),
-        "student_depth_valid_pixel_ratio": valid_pixels / max(total_pixels, 1),
+        "student_depth_valid_pixel_ratio": aggregate_gate["mapped_pixel_ratio"],
+        "student_mapping_gate": aggregate_gate,
+        **aggregate_gate,
         "student_pose_count": len(observations),
         "student_depth_count": len(observations),
         "student_intrinsics_count": len(observations),
@@ -297,6 +320,10 @@ def _map_observations(
                 "active_voxel_count": stats.active_voxel_count,
                 "dirty_block_count": stats.dirty_block_count,
                 "stage_timings_ns": stats.stage_timings_ns,
+                "mapped_pixel_ratio": observation.pose.diagnostics.get("mapped_pixel_ratio"),
+                "pose_translation_norm_m": float(
+                    np.linalg.norm(observation.pose.camera_center_world_m.astype(np.float64))
+                ),
             },
         )
         if mesh_writer is not None and pending_dirty:
@@ -366,12 +393,26 @@ def _observation_from_prediction_slot(
     depth: npt.NDArray[np.float32],
     sigma: npt.NDArray[np.float32],
     confidence: npt.NDArray[np.float32],
+    dynamic_probability: npt.NDArray[np.float32],
     T_world_camera: npt.NDArray[np.float32],
     checkpoint_truth: Mapping[str, object],
+    gate_config: StudentMapGateConfig,
 ) -> DepthObservation:
-    valid = np.isfinite(depth) & (depth > 0.0) & (confidence > 0.0)
-    mean_sigma = float(np.mean(sigma[valid])) if np.any(valid) else 1.0
+    sanitized_depth = sanitize_student_depth(depth)
+    sanitized_sigma = sanitize_student_sigma(sigma, fallback_m=gate_config.max_sigma_m or 1.0)
+    sanitized_confidence = sanitize_student_confidence(confidence)
+    sanitized_dynamic = sanitize_student_confidence(dynamic_probability)
+    gate = student_mapping_valid_mask(
+        depth_m=depth,
+        depth_sigma_m=sigma,
+        confidence=confidence,
+        dynamic_probability=sanitized_dynamic,
+        config=gate_config,
+    )
+    valid = gate.valid_mask
+    mean_sigma = float(np.mean(sanitized_sigma[valid])) if np.any(valid) else 1.0
     covariance = np.diag(np.full(6, max(mean_sigma * mean_sigma, 1e-8), dtype=np.float32))
+    diagnostics = dict(gate.stats)
     return DepthObservation(
         frame_id=frame.frame_id,
         camera=CameraModel(
@@ -393,18 +434,20 @@ def _observation_from_prediction_slot(
             ),
             camera_center_world_m=T_world_camera[:3, 3].astype(np.float32),
             covariance_6x6=covariance.astype(np.float32),
-            confidence=float(np.mean(confidence[valid])) if np.any(valid) else 0.0,
+            confidence=float(np.mean(sanitized_confidence[valid])) if np.any(valid) else 0.0,
             tracking_state="OK" if np.any(valid) else "LOW_CONFIDENCE",
             scale_source="rgb_prior",
             diagnostics={
                 "source": "smgt_tiny_student_rgb_checkpoint",
                 "truth_boundary": dict(checkpoint_truth),
                 "source_rgb_path": frame.source_path,
+                "student_mapping_gate": diagnostics,
+                "mapped_pixel_ratio": diagnostics["mapped_pixel_ratio"],
             },
         ),
-        depth_m=depth.astype(np.float32, copy=True),
-        depth_sigma_m=sigma.astype(np.float32, copy=True),
-        confidence=confidence.astype(np.float32, copy=True),
+        depth_m=sanitized_depth,
+        depth_sigma_m=sanitized_sigma,
+        confidence=sanitized_confidence,
         static_mask=valid,
         object_id=None,
         rgb_u8=rgb_u8.copy(),
@@ -453,6 +496,31 @@ def _prediction_payload(prediction: Mapping[str, Any]) -> dict[str, npt.NDArray[
     }
 
 
+def _resolved_gate_config(
+    config: RGBStudentMapConfig,
+    model_config: Mapping[str, object],
+) -> StudentMapGateConfig:
+    if config.student_min_depth_m is None:
+        raw_min_depth = model_config.get("min_depth_m", 0.05)
+        if not isinstance(raw_min_depth, int | float) or isinstance(raw_min_depth, bool):
+            raise ValueError("checkpoint model_config.min_depth_m must be numeric")
+        min_depth = float(raw_min_depth)
+    else:
+        min_depth = float(config.student_min_depth_m)
+    policy = resolve_student_map_valid_policy(
+        config.student_map_valid_policy,
+        config.student_max_sigma_m,
+    )
+    return StudentMapGateConfig(
+        min_depth_m=min_depth,
+        max_depth_m=config.student_max_depth_m,
+        confidence_threshold=config.student_confidence_threshold,
+        max_sigma_m=config.student_max_sigma_m,
+        dynamic_threshold=config.student_dynamic_threshold,
+        policy=policy,
+    )
+
+
 def _validate_config(config: RGBStudentMapConfig) -> None:
     if not config.rgb_only:
         raise ValueError("--rgb-only is required for runtime map-rgb-student")
@@ -476,6 +544,21 @@ def _validate_config(config: RGBStudentMapConfig) -> None:
         raise ValueError("mesh_format: must be npz, ply, or both")
     if config.mesh_min_weight < 0.0:
         raise ValueError("mesh_min_weight: must be non-negative")
+    if config.student_min_depth_m is not None and config.student_min_depth_m <= 0.0:
+        raise ValueError("student_min_depth_m: must be positive when provided")
+    if config.student_max_depth_m is not None and config.student_max_depth_m <= 0.0:
+        raise ValueError("student_max_depth_m: must be positive when provided")
+    if not 0.0 <= config.student_confidence_threshold <= 1.0:
+        raise ValueError("student_confidence_threshold: must be in [0, 1]")
+    if config.student_max_sigma_m is not None and config.student_max_sigma_m <= 0.0:
+        raise ValueError("student_max_sigma_m: must be positive when provided")
+    if not 0.0 <= config.student_dynamic_threshold <= 1.0:
+        raise ValueError("student_dynamic_threshold: must be in [0, 1]")
+    if config.student_map_valid_policy is not None:
+        resolve_student_map_valid_policy(
+            config.student_map_valid_policy,
+            config.student_max_sigma_m,
+        )
 
 
 __all__ = ["RGBStudentMapConfig", "run_rgb_student_mapping"]

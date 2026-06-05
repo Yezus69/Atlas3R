@@ -95,7 +95,12 @@ def write_student_report(path: Path, summary: Mapping[str, object]) -> None:
         f"- Frames used: `{summary['frame_count_used']}`",
         f"- Student poses/depths/intrinsics: `{summary['student_pose_count']}` / "
         f"`{summary['student_depth_count']}` / `{summary['student_intrinsics_count']}`",
-        f"- Student depth valid pixel ratio: `{summary['student_depth_valid_pixel_ratio']}`",
+        f"- Student map valid policy: `{summary['student_map_valid_policy']}`",
+        f"- Raw valid pixel ratio: `{summary['raw_valid_pixel_ratio']}`",
+        f"- Confidence-gated valid pixel ratio: `{summary['confidence_gated_valid_pixel_ratio']}`",
+        f"- Sigma-gated valid pixel ratio: `{summary['sigma_gated_valid_pixel_ratio']}`",
+        f"- Dynamic rejected pixel ratio: `{summary['dynamic_rejected_pixel_ratio']}`",
+        f"- Mapped pixel ratio: `{summary['mapped_pixel_ratio']}`",
         f"- Sparse map updates: `{summary['sparse_map_update_count']}`",
         f"- Active blocks/voxels: `{summary['active_blocks']}` / `{summary['active_voxels']}`",
         f"- Mesh chunks: `{summary['mesh_chunk_count']}`",

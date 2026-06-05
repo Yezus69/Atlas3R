@@ -1,49 +1,54 @@
-Core Phase B - Object/Dynamic Teacher Labels And Object-Aware Sparse Fusion
+Core Phase A3 - Replace Or Harden SMGT-Tiny Before Object Fusion
 
-Goal: extend the diagnostic RGB student mapping path with explicit object and
-dynamic-scene supervision/fusion boundaries, without claiming final RGB-only
-readiness or hidden-geometry completion.
+Goal: fix the student core and confidence calibration before any object/dynamic
+fusion work. Do not add SAM, object-aware sparse fusion, or dynamic-scene fusion
+until this phase passes heldout student-quality gates.
 
-Start from branch `codex/core-smgt-tiny-student-map`. Reload `README.md`,
-`PLANS.md`, `docs/01_SYSTEM_ARCHITECTURE.md`, `docs/08_API_CONTRACTS.md`,
-`docs/09_EVALUATION.md`, `docs/status/progress.md`,
-`docs/status/decisions.md`, `docs/status/active_task.md`, and
-`docs/status/core_smgt_tiny_student_map_report.md`.
+Start from branch `codex/core-smgt-tiny-generalization-gauntlet`. Reload
+`README.md`, `PLANS.md`, `docs/01_SYSTEM_ARCHITECTURE.md`,
+`docs/08_API_CONTRACTS.md`, `docs/09_EVALUATION.md`,
+`docs/status/progress.md`, `docs/status/decisions.md`,
+`docs/status/active_task.md`, and
+`docs/status/core_smgt_tiny_a2_generalization_report.md`.
 
 Context:
 
-- Core Phase A trained a learned diagnostic `SMGTTiny` from the Phase 6H VGGT
-  teacher temporal cache and mapped 64 Freiburg RGB frames without VGGT at
-  student inference.
-- The student output is observed-only sparse TSDF mesh chunks with unverified
-  RGB-prior scale, no object-aware fusion, no dynamic filtering, no loop
-  closure, and no realtime or benchmark accuracy claim.
-- Local evidence paths, when present:
-  `runs/core_smgt_tiny_weighted_freiburg1_xyz_val/checkpoint_best.pt` and
-  `runs/core_smgt_tiny_student_map_freiburg1_xyz_val`.
+- Core A2 added strict temporal split manifests, heldout metrics, confidence/
+  sigma/dynamic mapping gates, heldout RGB-only mapping, and a long-run replay.
+- The A2 training run:
+  `runs/core_smgt_tiny_a2_weighted_split_freiburg1_xyz_val`.
+- `checkpoint_best.pt` and `checkpoint_heldout_best.pt` selected step 1 by loss
+  and produced zero heldout mesh chunks with the required gate.
+- `checkpoint_last.pt` produced heldout mesh chunks, but `mapped_pixel_ratio`
+  was `0.999262` on heldout and `0.999353` on the 120-frame long run.
+- Heldout teacher-cache final pose was `22.526x` the no-motion baseline, so the
+  current student is a diagnostic/toy baseline.
 
 Required work:
 
-- Add a compact object/dynamic teacher-label cache contract or adapter boundary
-  that can ingest per-frame masks/object IDs/dynamic probabilities without
-  vendoring external model weights.
-- Extend training data adapters and losses so `SMGTTiny` can consume optional
-  object/dynamic labels while keeping missing labels unsupervised rather than
-  treating absence as background truth.
-- Add mapper-side object/dynamic fields to the RGB student `DepthObservation`
-  conversion path, with dynamic pixels excluded or downweighted from the static
-  sparse TSDF map.
-- Emit object/dynamic diagnostics in summaries, reports, mesh chunk metadata, and
-  tests while preserving conservative truth flags.
-- Run a synthetic or tiny real diagnostic that proves object IDs or dynamic
-  masks affect fusion behavior without poisoning the static map.
+- Improve checkpoint selection so validation quality cannot choose an untrained
+  step-1 checkpoint when heldout depth/pose gates are bad.
+- Replace or substantially harden `SMGTTiny` pose/depth/confidence learning
+  before object/dynamic fusion. Keep changes scoped to the student core,
+  training losses, confidence calibration, and mapping gates.
+- Add calibration diagnostics: confidence/sigma should correlate with heldout
+  error and reject a meaningful fraction of high-error pixels.
+- Train/evaluate on the existing strict split first. Add a second sequence/cache
+  only if available locally or generated through the existing teacher bridge.
+- Run heldout RGB-only mapping without VGGT at student inference using the
+  validation-selected checkpoint, not only `checkpoint_last.pt`.
 
 Acceptance:
 
-- Contracts and tests cover optional object labels, dynamic masks, missing-label
-  behavior, and mapper truth flags.
-- The student runtime still works without optional object/dynamic labels.
-- No optional external segmentation/tracking dependency imports at module import
-  time.
-- Verification includes format, lint, typecheck, focused tests, full unittest
-  discovery, `git diff --check`, and one object/dynamic fusion evidence command.
+- Heldout teacher-cache depth AbsRel `<= 0.20` or at least 25% better than the
+  constant-depth baseline.
+- Heldout teacher-cache pose center error beats the no-motion baseline by at
+  least 15%.
+- Validation-selected checkpoint produces nonzero heldout mesh chunks with
+  `confidence_sigma` gating.
+- `mapped_pixel_ratio` is materially below all-positive and the report explains
+  the chosen threshold.
+- Long-run replay has no explosive active-block growth, no nonfinite outputs,
+  and no near-1.0 mapped-pixel ratio under the accepted gate.
+- Full verification passes: format, lint, typecheck, full unittest discovery,
+  focused tests, `git diff --check`, and `make smoke`.

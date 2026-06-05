@@ -53,6 +53,11 @@ class SMGTTinyLossTest(unittest.TestCase):
         self.assertTrue(bool(self.torch.isfinite(loss)))
         self.assertGreater(metrics["loss_total"], 0.0)
         self.assertGreater(metrics["loss_depth_log"], 0.0)
+        self.assertGreaterEqual(metrics["confidence_brier"], 0.0)
+        self.assertGreaterEqual(metrics["constant_depth_baseline_absrel"], 0.0)
+        self.assertGreaterEqual(metrics["no_motion_pose_baseline_center_mean_m"], 0.0)
+        self.assertIn("student_depth_beats_constant_baseline_25pct", metrics)
+        self.assertIn("student_pose_beats_no_motion_baseline_15pct", metrics)
         self.assertGreaterEqual(metrics["loss_pose_relative"], 0.0)
         self.assertLess(metrics["valid_pixel_ratio"], 1.0)
 

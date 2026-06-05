@@ -53,21 +53,24 @@ production RGB-only mapping readiness, or realtime mapping:
   validated temporal teacher cache for SMGT student training.
 - `python -m atlas3r train smgt-tiny ...` trains the first learned diagnostic
   SMGT-tiny student from the Phase 6H teacher temporal cache with explicit
-  pseudo-label weights and conservative checkpoint truth flags.
+  pseudo-label weights, optional strict train/val/heldout split manifests,
+  stable metric windows, and conservative checkpoint truth flags.
 - `python -m atlas3r runtime map-rgb-student ... --rgb-only` loads an SMGT-tiny
   checkpoint, consumes only RGB/intrinsics at inference, does not import or run
-  VGGT, and maps predicted depth/pose/confidence through sparse TSDF and
-  observed mesh chunks.
+  VGGT, and maps predicted depth/pose/confidence through confidence/sigma/
+  dynamic-gated sparse TSDF and observed mesh chunks.
 - `python -m atlas3r runtime capture-adapters list` reports dependency-safe
   camera adapter status. The OpenCV adapter does not import `cv2` at module
   import time and reports an install hint when unavailable.
 
-The first real Freiburg SMGT-tiny student mapping evidence used 64 RGB frames
-and produced 70 observed mesh chunks with 35,944 vertices and 17,972 triangles.
-Eval-only measured depth/pose were not used for mapping; the student beat the
-constant-depth and no-motion baselines in that sidecar. The run still does not
-claim final RGB-only readiness, hidden geometry, object-aware fusion, loop
-closure, realtime readiness, benchmark accuracy, or millimeter accuracy.
+Core Phase A2 added the generalization gauntlet and falsified the current
+SMGT-tiny as a foundation for object/dynamic fusion. The strict heldout
+teacher-cache run met the absolute depth AbsRel target at final eval
+(`0.1889`) but failed pose badly (`22.53x` the no-motion baseline). The
+validation-selected checkpoint produced zero heldout mesh chunks; the trained
+last checkpoint produced heldout mesh chunks but mapped `0.9993` of pixels under
+the stricter gate. Treat SMGT-tiny as a diagnostic/toy baseline until the student
+core and confidence calibration are replaced or hardened.
 
 ## Useful Commands
 
@@ -79,8 +82,9 @@ python -m atlas3r runtime live-replay-recording --recording <recording> --output
 python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse --export-mesh-chunks --mesh-format ply
 python -m atlas3r runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output <run> --teacher vggt --device cuda:0 --max-frames 64 --frame-stride 2 --teacher-window-size 24 --teacher-window-overlap 8 --image-size 518 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --export-mesh-chunks --mesh-format ply --rgb-only --stitch-windows sim3-overlap --export-teacher-cache
 python -m atlas3r inspect teacher-temporal-cache --cache <run>/teacher_temporal_cache
-python -m atlas3r train smgt-tiny --teacher-cache <run>/teacher_temporal_cache --output <train_run> --steps 3000 --batch-size 4 --device cuda:0 --amp --val-split 0.2
-python -m atlas3r runtime map-rgb-student --input <recording-or-rgb-folder-or-video> --output <map_run> --checkpoint <train_run>/checkpoint_best.pt --device cuda:0 --max-frames 64 --frame-stride 1 --clip-length 8 --clip-overlap 4 --image-size 120x160 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --export-mesh-chunks --mesh-format ply --rgb-only
+python -m atlas3r train smgt-tiny --teacher-cache <run>/teacher_temporal_cache --output <train_run> --steps 5000 --batch-size 4 --device cuda:0 --amp --val-split 0.2 --heldout-split 0.2
+python -m atlas3r inspect smgt-tiny-split --teacher-cache <run>/teacher_temporal_cache --val-split 0.2 --heldout-split 0.2
+python -m atlas3r runtime map-rgb-student --input <recording-or-rgb-folder-or-video> --output <map_run> --checkpoint <train_run>/checkpoint_last.pt --device cuda:0 --max-frames 64 --frame-stride 1 --clip-length 8 --clip-overlap 4 --image-size 120x160 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --student-confidence-threshold 0.30 --student-max-sigma-m 1.0 --student-map-valid-policy confidence_sigma --export-mesh-chunks --mesh-format ply --rgb-only
 python -m atlas3r runtime fuse-recording --recording <recording> --output <run> --mode incremental --backend cpu-sparse
 ```
 

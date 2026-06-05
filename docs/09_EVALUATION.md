@@ -167,6 +167,16 @@ beat constant-depth and no-motion baselines. These are diagnostics only:
 pseudo training, unverified RGB prior scale, no object-aware fusion, no
 realtime proof, and no final RGB-only readiness claim.
 
+Core Phase A2 hardens this gate with strict temporal train/val/heldout splits,
+stable metric windows, confidence/sigma/dynamic mapping gates, heldout RGB-only
+mapping, and long-run diagnostics. The 5000-step Freiburg A2 run reached final
+heldout teacher-cache depth AbsRel `0.1889`, but depth remained worse than the
+constant-depth baseline ratio (`1.8837`) and pose was `22.5262x` the no-motion
+baseline. The validation-selected checkpoint produced zero heldout mesh chunks;
+the trained last checkpoint produced mesh but mapped `0.9993` of pixels under
+the stricter gate. Gate 2 therefore marks current SMGT-tiny as diagnostic/toy,
+not ready for object/dynamic fusion.
+
 ### Gate 3: real validation
 
 - student beats a naive DepthPro+PnP baseline on held-out validation;

@@ -168,6 +168,20 @@ def register_runtime_parser(subparsers: Any) -> None:
     rgb_student_parser.add_argument("--mesh-min-weight", type=float, default=0.0)
     rgb_student_parser.add_argument("--export-point-cloud", action="store_true")
     rgb_student_parser.add_argument("--rgb-only", action="store_true")
+    rgb_student_parser.add_argument("--student-confidence-threshold", type=float, default=0.30)
+    rgb_student_parser.add_argument("--student-min-depth-m", type=float, default=None)
+    rgb_student_parser.add_argument("--student-max-depth-m", type=float, default=None)
+    rgb_student_parser.add_argument("--student-max-sigma-m", type=float, default=None)
+    rgb_student_parser.add_argument("--student-dynamic-threshold", type=float, default=0.50)
+    rgb_student_parser.add_argument(
+        "--student-map-valid-policy",
+        choices=("confidence", "confidence_sigma", "all_positive"),
+        default=None,
+        help=(
+            "Default is confidence_sigma when --student-max-sigma-m is provided, "
+            "otherwise confidence; all_positive is unsafe diagnostic-only."
+        ),
+    )
     rgb_student_parser.set_defaults(handler=_run_map_rgb_student)
     capture_adapters_parser = runtime_subparsers.add_parser(
         "capture-adapters",
@@ -360,6 +374,12 @@ def _run_map_rgb_student(args: argparse.Namespace) -> int:
                 mesh_min_weight=args.mesh_min_weight,
                 export_point_cloud=args.export_point_cloud,
                 rgb_only=args.rgb_only,
+                student_confidence_threshold=args.student_confidence_threshold,
+                student_min_depth_m=args.student_min_depth_m,
+                student_max_depth_m=args.student_max_depth_m,
+                student_max_sigma_m=args.student_max_sigma_m,
+                student_dynamic_threshold=args.student_dynamic_threshold,
+                student_map_valid_policy=args.student_map_valid_policy,
             )
         )
     except (TorchDependencyError, RuntimeError, ValueError) as exc:

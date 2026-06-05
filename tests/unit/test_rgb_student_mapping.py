@@ -76,6 +76,10 @@ class RGBStudentMappingTest(unittest.TestCase):
         self.assertEqual(
             summary["truth_boundary"]["metric_scale_source"], "student_rgb_prior_unverified"
         )
+        self.assertIn("student_mapping_gate", summary)
+        self.assertEqual(summary["student_map_valid_policy"], "confidence")
+        self.assertGreater(summary["confidence_gated_valid_pixel_ratio"], 0.0)
+        self.assertGreater(summary["mapped_pixel_ratio"], 0.0)
 
     def test_runtime_does_not_import_vggt_modules(self) -> None:
         removed = {
@@ -112,6 +116,39 @@ class RGBStudentMappingTest(unittest.TestCase):
             sys.modules.update(removed)
 
         self.assertEqual(imported, [])
+
+    def test_strict_confidence_gate_reports_zero_mesh_without_artifact_crash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = _write_npz_image_folder(root / "images", frame_count=2)
+            checkpoint = _write_checkpoint(root / "checkpoint_best.pt", self.torch)
+            output = root / "student_map"
+
+            with self.assertRaisesRegex(RuntimeError, "no observed mesh chunks"):
+                run_rgb_student_mapping(
+                    RGBStudentMapConfig(
+                        input=input_dir,
+                        output=output,
+                        checkpoint=checkpoint,
+                        device="cpu",
+                        max_frames=2,
+                        clip_length=2,
+                        clip_overlap=1,
+                        image_size=(8, 8),
+                        voxel_size_m=0.25,
+                        pixel_stride=1,
+                        export_mesh_chunks=True,
+                        student_confidence_threshold=0.99,
+                        rgb_only=True,
+                    )
+                )
+
+            self.assertTrue((output / "sparse_tsdf" / "sparse_tsdf_state.npz").is_file())
+            metadata = json.loads((output / "sparse_tsdf" / "metadata.json").read_text("utf-8"))
+
+        self.assertEqual(metadata["surface_count"], 0)
+        self.assertEqual(metadata["voxel_size_m"], 0.25)
+        self.assertIn("empty_surface_reason", metadata)
 
     def test_cli_help_and_missing_checkpoint_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,6 +220,9 @@ def _write_checkpoint(path: Path, torch: object) -> Path:
         )
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    with torch.no_grad():
+        model.confidence_head.bias.fill_(2.0)
+        model.dynamic_head.bias.fill_(-2.0)
     save_smgt_tiny_checkpoint(
         path,
         model=model,
