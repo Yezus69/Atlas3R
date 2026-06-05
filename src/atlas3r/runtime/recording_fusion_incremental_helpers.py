@@ -32,6 +32,7 @@ from atlas3r.runtime.student_map_reports import LatencyRecorder
 CPU_REBUILD_UPDATE_IMPLEMENTATION = "cpu_tsdf_full_rebuild_per_selected_keyframe"
 CPU_REBUILD_BACKEND = "cpu-rebuild"
 CPU_PERSISTENT_BACKEND = "cpu-persistent"
+CPU_SPARSE_BACKEND = "cpu-sparse"
 
 
 @dataclass(frozen=True)
@@ -344,6 +345,13 @@ def _incremental_limitations(backend: str) -> list[str]:
         "No object-aware fusion is performed.",
         "No realtime, benchmark accuracy, or millimeter-level claim is made.",
     ]
+    if backend == CPU_SPARSE_BACKEND:
+        return [
+            "Sparse block CPU TSDF grows online without fixed dense world bounds.",
+            "Sparse integration uses measured depth and pose with deterministic pixel stride.",
+            "Final dense persistent comparison is diagnostic and runs after sparse replay.",
+            *shared,
+        ]
     if backend == CPU_PERSISTENT_BACKEND:
         return [
             "Fixed TSDF bounds are precomputed offline from selected measured observations.",
@@ -394,5 +402,6 @@ def _event_int(event: dict[str, object], key: str) -> int:
 __all__ = [
     "CPU_PERSISTENT_BACKEND",
     "CPU_REBUILD_BACKEND",
+    "CPU_SPARSE_BACKEND",
     "CPU_REBUILD_UPDATE_IMPLEMENTATION",
 ]

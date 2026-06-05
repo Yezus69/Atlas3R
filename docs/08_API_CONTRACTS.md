@@ -434,17 +434,17 @@ coordinate frame, calibration metadata, safe relative RGB/depth paths, finite
 K/poses/timestamps, image dimensions, positive PNG depth scale, and no-claim
 truth flags including `realtime_claim=false`.
 ### Recording Fusion Runtime
-`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, CPU TSDF, events/reports, `tsdf/`, `surface_points.ply`, mesh status/optional OBJ, and preview HTML.
-`--mode batch|incremental` defaults to `batch`; incremental accepts
-`--backend cpu-persistent|cpu-rebuild` and defaults to `cpu-persistent`.
-Persistent writes `per_frame_events.jsonl` plus `backend_comparison.json`;
-reports include diagnostic/no-accuracy/no-performance/no-realtime flags.
+`runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, events/reports, final surface
+output, mesh status, and preview HTML. Incremental accepts
+`--backend cpu-persistent|cpu-rebuild|cpu-sparse`; dense backends write `tsdf/`,
+while `cpu-sparse` writes `sparse_tsdf/sparse_tsdf_state.npz`, active state
+counters, final-only surface output, and non-exact sparse-vs-dense
+`backend_comparison.json`. All reports keep diagnostic/no-accuracy/no-performance/
+no-realtime/no-mapping-ready flags. `runtime sparse-tsdf-stress` writes dense
+apartment-box memory estimates and sparse active-state estimates.
 ### `.atlas3r` Session Folder
 Layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
-`mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files, optional depth
-NPZs, and `logs/runtime_profile.json`. The reader reconstructs
-`PoseEstimate`, `CameraModel`, `ObjectInstance`, and `MeshChunk` from sidecars
-without loading all depth arrays. `inspect session` writes deterministic
-HTML/SVG previews. Exports preserve coordinate convention, units, scale source,
-camera metadata source, checkpoint hash or `null`, voxel size when relevant,
-accuracy report path or `null`, and RGB-only warnings.
+mesh chunk sidecars, optional GLB/depth NPZs, and `logs/runtime_profile.json`.
+Readers reconstruct contracts from sidecars; exports preserve coordinate
+convention, units, scale source, camera metadata, checkpoint hash, voxel size,
+accuracy report path, and RGB-only warnings.

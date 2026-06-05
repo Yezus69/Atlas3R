@@ -30,6 +30,12 @@ from atlas3r.mapping.mesh_sidecar import (
     write_tsdf_surface_mesh_sidecar_from_artifacts,
 )
 from atlas3r.mapping.observations import DepthObservation
+from atlas3r.mapping.sparse_tsdf import (
+    SPARSE_TSDF_UPDATE_IMPLEMENTATION,
+    SparseBlockTSDFMapper,
+    SparseTSDFConfig,
+    SparseTSDFUpdateStats,
+)
 from atlas3r.mapping.teacher_cache_replay import (
     TeacherCacheTSDFReplayFrame,
     TeacherCacheTSDFReplayResult,
@@ -72,6 +78,10 @@ __all__ = [
     "IncrementalTSDFUpdateStats",
     "PERSISTENT_CPU_UPDATE_IMPLEMENTATION",
     "PersistentIncrementalTSDFMapper",
+    "SPARSE_TSDF_UPDATE_IMPLEMENTATION",
+    "SparseBlockTSDFMapper",
+    "SparseTSDFConfig",
+    "SparseTSDFUpdateStats",
     "DEFAULT_MAX_SURFACE_SAMPLES",
     "TSDF_OUTPUT_INSPECTION_FORMAT_NAME",
     "TSDF_OUTPUT_INSPECTION_FORMAT_VERSION",

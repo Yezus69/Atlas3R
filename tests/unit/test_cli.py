@@ -59,6 +59,19 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--export-mesh", fuse_result.stdout)
         self.assertIn("--mode", fuse_result.stdout)
         self.assertIn("--backend", fuse_result.stdout)
+        self.assertIn("cpu-sparse", fuse_result.stdout)
+
+        stress_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "sparse-tsdf-stress", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(stress_result.returncode, 0, stress_result.stderr)
+        self.assertIn("--room-size-m", stress_result.stdout)
+        self.assertIn("--voxel-size-m", stress_result.stdout)
 
         invalid_backend_combo = subprocess.run(
             [

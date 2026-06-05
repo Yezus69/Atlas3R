@@ -474,8 +474,9 @@ def _validate_config(config: FuseRecordingConfig) -> None:
         raise ValueError("export_mesh: must be off, auto, or required")
     if config.mode not in {"batch", "incremental"}:
         raise ValueError("mode: must be batch or incremental")
-    if config.backend is not None and config.backend not in {"cpu-persistent", "cpu-rebuild"}:
-        raise ValueError("backend: must be cpu-persistent or cpu-rebuild")
+    valid_backends = {"cpu-persistent", "cpu-rebuild", "cpu-sparse"}
+    if config.backend is not None and config.backend not in valid_backends:
+        raise ValueError("backend: must be cpu-persistent, cpu-rebuild, or cpu-sparse")
     if config.mode == "batch" and config.backend is not None:
         raise ValueError("backend: only valid with mode incremental")
 

@@ -1,31 +1,31 @@
-# Active Task - Phase 6C True Persistent Incremental TSDF Backend
+# Active Task - Phase 6D Sparse Block TSDF Live-Replay Diagnostic
 
-Goal: replace the Phase 6B rebuild-per-keyframe incremental path with a true
-persistent CPU TSDF backend that integrates only each new measured
-`DepthObservation`, compares final output against batch CPU TSDF, and reports
-honest timing without realtime, accuracy, or hidden-geometry claims.
+Goal: add a sparse/chunked incremental TSDF backend that grows online from one
+measured `DepthObservation` at a time, preserves dense `cpu-persistent` and
+`cpu-rebuild` baselines, compares sparse output against dense persistent output
+on the same small recording, and reports apartment-scale memory/timing
+diagnostics without realtime, accuracy, mapping-ready, or hidden-geometry
+claims.
 
-Branch: `codex/phase6c-true-incremental-tsdf-backend`
+Branch: `codex/phase6d-sparse-block-tsdf-live-replay`
 
 Checklist:
 
-- [x] Start from `codex/phase6b-real-capture-incremental-mapper` and create the
-  Phase 6C branch.
-- [x] Read the Phase 6C goal file and constrained repo context.
-- [x] Add a mapping-only persistent incremental TSDF backend behind the
-  existing `DepthObservation` contract.
-- [x] Extend `runtime fuse-recording --mode incremental` with
-  `--backend cpu-persistent|cpu-rebuild`, defaulting incremental to
-  `cpu-persistent` while preserving Phase 6B `cpu-rebuild`.
-- [x] Emit Phase 6B artifact paths plus `backend_comparison.json` for
-  persistent-vs-batch CPU TSDF deltas.
-- [x] Keep per-frame events focused on observation load and one-observation map
-  update latency; avoid per-frame surface extraction on the persistent fast path.
-- [x] Add focused mapper, runtime artifact, comparison, truth-flag, and CLI
-  validation tests.
+- [x] Start from `codex/phase6c-true-incremental-tsdf-backend` and create the
+  Phase 6D branch.
+- [x] Read the Phase 6D goal file and constrained repo context.
+- [x] Add a mapping-only sparse block TSDF backend behind `DepthObservation`.
+- [x] Extend `runtime fuse-recording --mode incremental --backend cpu-sparse`
+  while preserving `cpu-persistent` and `cpu-rebuild`.
+- [x] Write sparse backend artifacts, per-frame events, memory counters, and
+  final observed surface output.
+- [x] Add sparse-vs-dense persistent diagnostic comparison on the same selected
+  observations.
+- [x] Add apartment-scale sparse TSDF stress diagnostic command/output.
+- [x] Add focused mapper, runtime, comparison, stress, truth-flag, and CLI tests.
 - [x] Run required format, lint, typecheck, unit, diff, and available make
   verification commands.
-- [x] Run the Phase 6A TUM recording evidence path if it exists and record real
-  p50/p95/max map update timing.
-- [x] Update compact progress, decisions, API contracts, Phase 6C report, and
+- [x] Run the existing Phase 6A TUM recording evidence path if present and
+  record results or the exact missing path.
+- [x] Update compact progress, decisions, API contracts, Phase 6D report, and
   next-task handoff.

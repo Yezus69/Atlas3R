@@ -15,6 +15,7 @@ from atlas3r.recording.schema import (
     write_recording_files,
 )
 from atlas3r.runtime.recording_fusion import FuseRecordingConfig, run_fuse_recording
+from atlas3r.runtime.sparse_tsdf_stress import SparseTSDFStressConfig, run_sparse_tsdf_stress
 
 
 class RecordingRuntimeTest(unittest.TestCase):
@@ -147,6 +148,93 @@ class RecordingRuntimeTest(unittest.TestCase):
         )
         self.assertTrue(all(event["backend"] == "cpu-rebuild" for event in events))
         self.assertTrue(all(event["surface_point_count"] > 0 for event in events))
+
+    def test_incremental_cpu_sparse_backend_writes_sparse_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recording = root / "recording"
+            _write_runtime_recording(recording, frame_count=3)
+            output = root / "run"
+
+            summary = run_fuse_recording(
+                FuseRecordingConfig(
+                    recording=recording,
+                    output=output,
+                    max_frames=2,
+                    keyframe_stride=1,
+                    voxel_size_m=0.25,
+                    truncation_voxels=3.0,
+                    export_point_cloud=True,
+                    export_mesh="off",
+                    mode="incremental",
+                    backend="cpu-sparse",
+                )
+            )
+            events = [
+                json.loads(line)
+                for line in (output / "per_frame_events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            comparison = json.loads(
+                (output / "backend_comparison.json").read_text(encoding="utf-8")
+            )
+            sparse_state_exists = (output / "sparse_tsdf" / "sparse_tsdf_state.npz").is_file()
+            point_cloud_exists = (output / "surface_points.ply").is_file()
+
+        self.assertEqual(summary["mode"], "incremental")
+        self.assertEqual(summary["backend"], "cpu-sparse")
+        self.assertFalse(summary["fixed_bounds_precomputed_offline"])
+        self.assertFalse(summary["accuracy_report"])
+        self.assertFalse(summary["performance_report"])
+        self.assertFalse(summary["realtime_claim"])
+        self.assertFalse(summary["mapping_ready"])
+        self.assertEqual(summary["artifacts"]["sparse_tsdf"], "sparse_tsdf")
+        self.assertGreater(summary["sparse_tsdf"]["active_block_count"], 0)
+        self.assertTrue(sparse_state_exists)
+        self.assertTrue(point_cloud_exists)
+        self.assertEqual(len(events), 2)
+        self.assertTrue(all(event["backend"] == "cpu-sparse" for event in events))
+        self.assertTrue(all(event["active_block_count"] > 0 for event in events))
+        self.assertTrue(all(event["active_voxel_count"] > 0 for event in events))
+        self.assertTrue(all(event["approximate_state_bytes"] > 0 for event in events))
+        self.assertTrue(all(event["surface_point_count"] is None for event in events))
+        self.assertEqual(
+            comparison["format_name"],
+            "atlas3r_phase6d_sparse_vs_dense_persistent_comparison",
+        )
+        self.assertIn("symmetric_chamfer_like_mean_m", comparison["point_set"])
+        self.assertIn("precision_like_within_5cm_percent", comparison["point_set"])
+        self.assertIn("recall_like_within_5cm_percent", comparison["point_set"])
+        self.assertNotIn("matches_batch_within_tolerance", comparison)
+        self.assertFalse(comparison["accuracy_report"])
+        self.assertFalse(comparison["performance_report"])
+        self.assertFalse(comparison["realtime_claim"])
+
+    def test_sparse_tsdf_stress_reports_dense_and_sparse_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "stress"
+
+            summary = run_sparse_tsdf_stress(
+                SparseTSDFStressConfig(
+                    output=output,
+                    room_size_m=(2.0, 2.0, 1.0),
+                    voxel_size_m=0.1,
+                    truncation_voxels=2.0,
+                    observation_count=2,
+                )
+            )
+            summary_json = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(summary["format_name"], "atlas3r_phase6d_sparse_tsdf_stress_summary")
+        self.assertGreater(summary["dense_memory_estimate"]["dense_voxel_count"], 0)
+        self.assertGreater(summary["sparse_memory_estimate"]["active_block_count"], 0)
+        self.assertGreater(summary["sparse_memory_estimate"]["approximate_state_bytes"], 0)
+        self.assertGreater(summary["surface_point_count"], 0)
+        self.assertFalse(summary["accuracy_report"])
+        self.assertFalse(summary["performance_report"])
+        self.assertFalse(summary["realtime_claim"])
+        self.assertEqual(summary_json["format_name"], summary["format_name"])
 
     def test_rejects_invalid_backend_mode_combination(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

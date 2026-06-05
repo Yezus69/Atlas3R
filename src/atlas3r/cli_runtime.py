@@ -53,8 +53,22 @@ def register_runtime_parser(subparsers: Any) -> None:
     fuse_parser.add_argument("--export-point-cloud", action="store_true")
     fuse_parser.add_argument("--export-mesh", choices=("off", "auto", "required"), default="auto")
     fuse_parser.add_argument("--mode", choices=("batch", "incremental"), default="batch")
-    fuse_parser.add_argument("--backend", choices=("cpu-persistent", "cpu-rebuild"), default=None)
+    fuse_parser.add_argument(
+        "--backend",
+        choices=("cpu-persistent", "cpu-rebuild", "cpu-sparse"),
+        default=None,
+    )
     fuse_parser.set_defaults(handler=_run_fuse_recording)
+    stress_parser = runtime_subparsers.add_parser(
+        "sparse-tsdf-stress",
+        help="Estimate apartment-scale dense memory and sparse block TSDF state.",
+    )
+    stress_parser.add_argument("--output", type=Path, required=True)
+    stress_parser.add_argument("--room-size-m", default="10,10,3")
+    stress_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    stress_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    stress_parser.add_argument("--observation-count", type=int, default=3)
+    stress_parser.set_defaults(handler=_run_sparse_tsdf_stress)
 
 
 def _run_stream_student_map(args: argparse.Namespace) -> int:
@@ -104,6 +118,30 @@ def _run_fuse_recording(args: argparse.Namespace) -> int:
                 export_mesh=args.export_mesh,
                 mode=args.mode,
                 backend=args.backend,
+            )
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_sparse_tsdf_stress(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.sparse_tsdf_stress import (
+        SparseTSDFStressConfig,
+        parse_room_size_m,
+        run_sparse_tsdf_stress,
+    )
+
+    try:
+        result = run_sparse_tsdf_stress(
+            SparseTSDFStressConfig(
+                output=args.output,
+                room_size_m=parse_room_size_m(args.room_size_m),
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                observation_count=args.observation_count,
             )
         )
     except ValueError as exc:
