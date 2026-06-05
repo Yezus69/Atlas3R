@@ -43,6 +43,7 @@ class FuseRecordingConfig:
     export_point_cloud: bool = False
     export_mesh: str = "auto"
     mode: str = "batch"
+    backend: str | None = None
 
 
 def run_fuse_recording(config: FuseRecordingConfig) -> dict[str, object]:
@@ -473,6 +474,10 @@ def _validate_config(config: FuseRecordingConfig) -> None:
         raise ValueError("export_mesh: must be off, auto, or required")
     if config.mode not in {"batch", "incremental"}:
         raise ValueError("mode: must be batch or incremental")
+    if config.backend is not None and config.backend not in {"cpu-persistent", "cpu-rebuild"}:
+        raise ValueError("backend: must be cpu-persistent or cpu-rebuild")
+    if config.mode == "batch" and config.backend is not None:
+        raise ValueError("backend: only valid with mode incremental")
 
 
 def _stable_strings(values: list[str]) -> list[str]:

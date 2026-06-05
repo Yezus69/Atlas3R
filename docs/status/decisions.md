@@ -44,6 +44,7 @@ tests, and the contract docs.
 | D-0037 | Real VGGT teacher runner | Phase 5H adds `atlas3r teachers run-vggt` as a dependency-safe external runner that writes only stable pseudo-label teacher-signal caches and diagnostic JSON/Markdown evaluation reports; optional source-pose alignment remains diagnostic and non-measured. | Yes |
 | D-0038 | Recording fusion product slice | Phase 6A adds `atlas3r_recording` as the stable measured capture boundary and `runtime fuse-recording` as a diagnostic measured depth+pose to CPU TSDF path with PLY export and optional `scikit-image` marching cubes mesh export. | Yes |
 | D-0039 | Real capture incremental timing | Phase 6B adds `recording from-sensor-folder` for pre-calibrated measured RGB-D/pose folders and `fuse-recording --mode incremental`, which records per-keyframe load/update timing while honestly labeling the current CPU TSDF full-rebuild implementation. | Yes |
+| D-0040 | Persistent TSDF backend | Phase 6C makes `fuse-recording --mode incremental` default to `--backend cpu-persistent`, with fixed offline bounds, one-observation persistent TSDF updates, and batch CPU TSDF comparison; `cpu-rebuild` remains for Phase 6B regression. | Yes |
 
 Active cross-cutting constraints:
 

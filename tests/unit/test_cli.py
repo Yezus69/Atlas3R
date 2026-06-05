@@ -58,6 +58,30 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--recording", fuse_result.stdout)
         self.assertIn("--export-mesh", fuse_result.stdout)
         self.assertIn("--mode", fuse_result.stdout)
+        self.assertIn("--backend", fuse_result.stdout)
+
+        invalid_backend_combo = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "atlas3r",
+                "runtime",
+                "fuse-recording",
+                "--recording",
+                str(ROOT / "missing-recording"),
+                "--output",
+                str(ROOT / "missing-output"),
+                "--backend",
+                "cpu-persistent",
+            ],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(invalid_backend_combo.returncode, 2)
+        self.assertIn("backend: only valid with mode incremental", invalid_backend_combo.stderr)
 
 
 if __name__ == "__main__":

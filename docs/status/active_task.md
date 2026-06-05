@@ -1,27 +1,31 @@
-# Active Task - Phase 6B Real Capture Incremental Mapper
+# Active Task - Phase 6C True Persistent Incremental TSDF Backend
 
-Goal: add a dependency-light real sensor-folder import boundary and expose
-incremental measured recording fusion timing without claiming realtime,
-accuracy, hidden geometry completion, or mesh quality beyond measured artifacts.
+Goal: replace the Phase 6B rebuild-per-keyframe incremental path with a true
+persistent CPU TSDF backend that integrates only each new measured
+`DepthObservation`, compares final output against batch CPU TSDF, and reports
+honest timing without realtime, accuracy, or hidden-geometry claims.
 
-Branch: `codex/phase6b-real-capture-incremental-mapper`
+Branch: `codex/phase6c-true-incremental-tsdf-backend`
 
 Checklist:
 
-- [x] Start from `codex/phase6a-product-slice-mapper-recording-mesh` and create
-  the Phase 6B branch.
-- [x] Read the Phase 6B goal file and constrained repo context.
-- [x] Add `atlas3r recording from-sensor-folder` with strict input validation
-  and conversion to the existing `atlas3r_recording` format.
-- [x] Add deterministic tiny sensor-capture fixture support for tests only.
-- [x] Add `runtime fuse-recording --mode batch|incremental`; keep batch
-  behavior and report incremental per-frame load/update timings honestly.
-- [x] Preserve optional mesh export behavior and clear missing-dependency
-  status for `scikit-image`.
-- [x] Add focused importer, validation, runtime, mesh fallback, and CLI tests.
+- [x] Start from `codex/phase6b-real-capture-incremental-mapper` and create the
+  Phase 6C branch.
+- [x] Read the Phase 6C goal file and constrained repo context.
+- [x] Add a mapping-only persistent incremental TSDF backend behind the
+  existing `DepthObservation` contract.
+- [x] Extend `runtime fuse-recording --mode incremental` with
+  `--backend cpu-persistent|cpu-rebuild`, defaulting incremental to
+  `cpu-persistent` while preserving Phase 6B `cpu-rebuild`.
+- [x] Emit Phase 6B artifact paths plus `backend_comparison.json` for
+  persistent-vs-batch CPU TSDF deltas.
+- [x] Keep per-frame events focused on observation load and one-observation map
+  update latency; avoid per-frame surface extraction on the persistent fast path.
+- [x] Add focused mapper, runtime artifact, comparison, truth-flag, and CLI
+  validation tests.
 - [x] Run required format, lint, typecheck, unit, diff, and available make
   verification commands.
-- [x] Run Phase 6A local TUM recording incremental fusion if the recording
-  exists; otherwise record the missing-data blocker.
-- [x] Update compact progress, decisions, API contracts, Phase 6B report, and
+- [x] Run the Phase 6A TUM recording evidence path if it exists and record real
+  p50/p95/max map update timing.
+- [x] Update compact progress, decisions, API contracts, Phase 6C report, and
   next-task handoff.

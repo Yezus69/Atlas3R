@@ -1,37 +1,31 @@
-Phase 6C - Accelerated Incremental Mapper Prototype
+Phase 6D - Live-Ready Incremental Mapper Scheduler
 
-Goal: create a bounded incremental mapper prototype that replaces the
-diagnostic CPU TSDF rebuild-per-keyframe path for measured RGB-D/pose
-observations.
+Goal: turn the Phase 6C persistent CPU TSDF diagnostic into a live-ready
+runtime slice with explicit scheduling, bounded memory, and honest end-to-end
+latency accounting.
 
-Start from branch `codex/phase6b-real-capture-incremental-mapper`. Reload
+Start from branch `codex/phase6c-true-incremental-tsdf-backend`. Reload
 `README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`,
 `docs/status/progress.md`, `docs/status/decisions.md`,
 `docs/status/active_task.md`, and
-`docs/status/phase6b_real_capture_incremental_mapper_report.md`.
+`docs/status/phase6c_true_incremental_tsdf_backend_report.md`.
 
 Required work:
 
-- Keep the measured-input boundary: no RGB-only fake depth, fake pose, hidden
-  surface completion, realtime claim, or millimeter accuracy claim.
-- Add a mapper interface that can support true incremental updates behind the
-  current `DepthObservation` contract.
-- Prototype either a vectorized CPU block update, GPU/Metal/CUDA TSDF path, or
-  a small bounded-volume mapper; isolate optional acceleration dependencies.
-- Preserve `runtime fuse-recording --mode batch|incremental` and add a new mode
-  or backend selector only if the report names the backend honestly.
-- Emit the same artifacts as Phase 6B: TSDF outputs, `surface_points.ply`,
-  mesh status/optional mesh, `per_frame_events.jsonl`, latency, memory,
-  quality, summary, and preview reports.
-- Compare against the Phase 6B TUM evidence path and report p50/p95/max update
-  latency plus deterministic array-byte counters.
-- Add focused tests for backend selection, bounded state, report truth flags,
-  and fallback behavior when optional acceleration is unavailable.
+- Keep the measured-input boundary: no fake RGB-only depth, fake pose, hidden
+  surface completion, object fusion, live camera API, or realtime/mm claim.
+- Add a runtime scheduler diagnostic that separates frame load, keyframe
+  selection, map update, surface extraction, export, and report costs.
+- Make queue/backpressure and dropped-keyframe behavior explicit with bounded
+  counters in `runtime_events.jsonl`.
+- Preserve `runtime fuse-recording --mode incremental --backend
+  cpu-persistent|cpu-rebuild` for regression and comparison.
+- Add tests for scheduler counters, bounded queues, no per-frame surface
+  extraction in the fast path, and truth flags.
 - Run the required format, lint, typecheck, unit, diff, and available `make`
   verification commands.
 
 Expected output:
 
-- A measured-recording incremental mapper backend with honest timing evidence.
-- A compact report stating whether acceleration reduced the Phase 6B CPU TSDF
-  rebuild bottleneck and what remains before live apartment mapping.
+- A measured-recording scheduler diagnostic that states whether the separated
+  map update stays near 30 FPS and what still blocks live apartment mapping.

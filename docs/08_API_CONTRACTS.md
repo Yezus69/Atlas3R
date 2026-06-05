@@ -435,10 +435,10 @@ K/poses/timestamps, image dimensions, positive PNG depth scale, and no-claim
 truth flags including `realtime_claim=false`.
 ### Recording Fusion Runtime
 `runtime fuse-recording --recording <recording_dir> --output <run_dir>` streams measured depth+pose to `DepthObservation`, CPU TSDF, events/reports, `tsdf/`, `surface_points.ply`, mesh status/optional OBJ, and preview HTML.
-`--mode batch|incremental` defaults to `batch`; `incremental` writes `per_frame_events.jsonl` and honestly reports CPU TSDF full rebuilds.
-Reports include `mode`, diagnostic/no-accuracy/no-performance/no-realtime flags.
-`--export-mesh auto` uses optional `scikit-image` marching cubes or writes
-`mesh_exported=false` with an install hint.
+`--mode batch|incremental` defaults to `batch`; incremental accepts
+`--backend cpu-persistent|cpu-rebuild` and defaults to `cpu-persistent`.
+Persistent writes `per_frame_events.jsonl` plus `backend_comparison.json`;
+reports include diagnostic/no-accuracy/no-performance/no-realtime flags.
 ### `.atlas3r` Session Folder
 Layout: `metadata.json`, `poses.jsonl`, `cameras.jsonl`, `objects.jsonl`,
 `mesh_chunks/chunk_<id>_v<version>.json`, optional GLB files, optional depth

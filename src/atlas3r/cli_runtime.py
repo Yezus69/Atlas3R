@@ -53,6 +53,7 @@ def register_runtime_parser(subparsers: Any) -> None:
     fuse_parser.add_argument("--export-point-cloud", action="store_true")
     fuse_parser.add_argument("--export-mesh", choices=("off", "auto", "required"), default="auto")
     fuse_parser.add_argument("--mode", choices=("batch", "incremental"), default="batch")
+    fuse_parser.add_argument("--backend", choices=("cpu-persistent", "cpu-rebuild"), default=None)
     fuse_parser.set_defaults(handler=_run_fuse_recording)
 
 
@@ -102,6 +103,7 @@ def _run_fuse_recording(args: argparse.Namespace) -> int:
                 export_point_cloud=args.export_point_cloud,
                 export_mesh=args.export_mesh,
                 mode=args.mode,
+                backend=args.backend,
             )
         )
     except ValueError as exc:

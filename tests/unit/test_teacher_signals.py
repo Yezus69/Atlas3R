@@ -353,11 +353,11 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase6c(self) -> None:
+    def test_status_handoff_points_to_phase6d(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 6C - Accelerated Incremental Mapper Prototype", text)
-        self.assertIn("bounded incremental mapper", text)
-        self.assertIn("Phase 6B CPU TSDF", text)
+        self.assertIn("Phase 6D - Live-Ready Incremental Mapper Scheduler", text)
+        self.assertIn("bounded memory", text)
+        self.assertIn("phase6c_true_incremental_tsdf_backend_report.md", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

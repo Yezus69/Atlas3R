@@ -11,6 +11,12 @@ from atlas3r.mapping.cpu_tsdf import (
     run_tsdf_cube_room_smoke,
     write_tsdf_cube_room_smoke,
 )
+from atlas3r.mapping.incremental_tsdf import (
+    PERSISTENT_CPU_UPDATE_IMPLEMENTATION,
+    IncrementalTSDFConfig,
+    IncrementalTSDFUpdateStats,
+    PersistentIncrementalTSDFMapper,
+)
 from atlas3r.mapping.mesh_sidecar import (
     DEFAULT_MAX_SURFACE_SAMPLES,
     MESH_SIDECAR_FILENAME,
@@ -62,6 +68,10 @@ __all__ = [
     "TeacherCacheTSDFReplayFrame",
     "TeacherCacheTSDFReplayResult",
     "DepthObservation",
+    "IncrementalTSDFConfig",
+    "IncrementalTSDFUpdateStats",
+    "PERSISTENT_CPU_UPDATE_IMPLEMENTATION",
+    "PersistentIncrementalTSDFMapper",
     "DEFAULT_MAX_SURFACE_SAMPLES",
     "TSDF_OUTPUT_INSPECTION_FORMAT_NAME",
     "TSDF_OUTPUT_INSPECTION_FORMAT_VERSION",

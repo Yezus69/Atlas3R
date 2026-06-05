@@ -78,15 +78,100 @@ class RecordingRuntimeTest(unittest.TestCase):
             latency_report = json.loads(
                 (output / "latency_report.json").read_text(encoding="utf-8")
             )
+            comparison = json.loads(
+                (output / "backend_comparison.json").read_text(encoding="utf-8")
+            )
             surface_points_exists = (output / "surface_points.ply").is_file()
 
         self.assertEqual(summary["mode"], "incremental")
+        self.assertEqual(summary["backend"], "cpu-persistent")
+        self.assertEqual(summary["update_implementation"], "persistent_cpu_tsdf_single_observation")
         self.assertEqual(summary["frame_count"], 2)
+        self.assertEqual(summary["artifacts"]["backend_comparison"], "backend_comparison.json")
         self.assertEqual(len(events), 2)
         self.assertTrue(all(event["selected_keyframe"] for event in events))
+        self.assertTrue(all(event["backend"] == "cpu-persistent" for event in events))
+        self.assertTrue(all(event["surface_point_count"] is None for event in events))
+        self.assertTrue(all(event["observed_voxel_count"] > 0 for event in events))
         self.assertIn("per_frame_observation_load", latency_report["segments"])
         self.assertIn("per_frame_map_update", latency_report["segments"])
+        self.assertIn("fixed_grid_bounds_precompute", latency_report["segments"])
+        self.assertTrue(comparison["matches_batch_within_tolerance"])
+        self.assertEqual(comparison["observed_voxel_count_delta"], 0)
+        self.assertEqual(comparison["surface_point_count_delta"], 0)
+        self.assertFalse(comparison["accuracy_report"])
+        self.assertFalse(comparison["performance_report"])
+        self.assertFalse(comparison["realtime_claim"])
         self.assertTrue(surface_points_exists)
+
+    def test_incremental_cpu_rebuild_backend_still_works(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recording = root / "recording"
+            _write_runtime_recording(recording, frame_count=2)
+            output = root / "run"
+
+            summary = run_fuse_recording(
+                FuseRecordingConfig(
+                    recording=recording,
+                    output=output,
+                    max_frames=2,
+                    keyframe_stride=1,
+                    voxel_size_m=0.25,
+                    truncation_voxels=3.0,
+                    export_mesh="off",
+                    mode="incremental",
+                    backend="cpu-rebuild",
+                )
+            )
+            events = [
+                json.loads(line)
+                for line in (output / "per_frame_events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            latency_report = json.loads(
+                (output / "latency_report.json").read_text(encoding="utf-8")
+            )
+            comparison_exists = (output / "backend_comparison.json").exists()
+
+        self.assertEqual(summary["mode"], "incremental")
+        self.assertEqual(summary["backend"], "cpu-rebuild")
+        self.assertEqual(
+            summary["update_implementation"],
+            "cpu_tsdf_full_rebuild_per_selected_keyframe",
+        )
+        self.assertFalse(comparison_exists)
+        self.assertEqual(
+            latency_report["format_name"], "atlas3r_phase6b_incremental_latency_report"
+        )
+        self.assertTrue(all(event["backend"] == "cpu-rebuild" for event in events))
+        self.assertTrue(all(event["surface_point_count"] > 0 for event in events))
+
+    def test_rejects_invalid_backend_mode_combination(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            recording = root / "recording"
+            _write_runtime_recording(recording)
+
+            with self.assertRaisesRegex(ValueError, "backend: only valid"):
+                run_fuse_recording(
+                    FuseRecordingConfig(
+                        recording=recording,
+                        output=root / "run",
+                        backend="cpu-persistent",
+                    )
+                )
+
+            with self.assertRaisesRegex(ValueError, "backend: must be"):
+                run_fuse_recording(
+                    FuseRecordingConfig(
+                        recording=recording,
+                        output=root / "run",
+                        mode="incremental",
+                        backend="bogus",
+                    )
+                )
 
     def test_mesh_auto_records_missing_optional_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
