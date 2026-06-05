@@ -1,20 +1,39 @@
+# Generated local outputs
+runs/
 build/
-/data/
-/datasets/
-/runs/
-/checkpoints/
+dist/
+htmlcov/
+coverage/
+.coverage
 *.atlas3r/
-*.pt
-*.pth
-*.ckpt
-*.tgz
-*.tar
-*.tar.gz
-*.npz
-prediction_preview.html
-prediction_preview.svg
+
+# Python/test/tool caches
 __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+
+# Data and external dependencies
+/data/
+/datasets/
+/external/
+/external_repos/
+/model_weights/
+/teacher_caches/
+/teacher_cache/
+*/teacher_cache/
+*/teacher_temporal_cache/
+
+# Model weights and deployment artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.mlpackage
+
+# Generated arrays and previews
+*.npz
+prediction_preview.html
+prediction_preview.svg

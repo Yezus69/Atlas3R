@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "atlas3r"
-version = "0.1.0"
-description = "Real-time RGB neural metric mapping toolkit."
+version = "0.2.0"
+description = "Offline RGB world-builder foundation."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Atlas3R contributors" }]
@@ -16,15 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.10",
-  "pytest>=8.2",
   "ruff>=0.5",
-]
-train = [
-  "torch",
-  "Pillow",
-]
-mesh = [
-  "scikit-image",
 ]
 
 [project.scripts]

@@ -1,290 +1,71 @@
-import os
+from __future__ import annotations
+
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src"
-sys.path.insert(0, str(SRC))
 
-import atlas3r  # noqa: E402
+class CliTest(unittest.TestCase):
+    def test_small_cli_surface_works(self) -> None:
+        smoke = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "smoke", "contracts"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        teachers = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "teachers", "list"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
 
+        self.assertEqual(smoke.returncode, 0, smoke.stderr)
+        self.assertIn("contracts ok", smoke.stdout)
+        self.assertEqual(teachers.returncode, 0, teachers.stderr)
+        self.assertIn("depth_pro", teachers.stdout)
 
-class Atlas3RCliTest(unittest.TestCase):
-    def test_package_import_and_cli_help(self) -> None:
-        self.assertIsInstance(atlas3r.__version__, str)
+    def test_offline_inspect_video_writes_skeleton_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "capture.mp4"
+            output = root / "run"
+            video.write_bytes(b"not a real mp4")
 
-        env = os.environ.copy()
-        env["PYTHONPATH"] = str(SRC)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "offline",
+                    "inspect-video",
+                    "--input",
+                    str(video),
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
 
-        result = subprocess.run(
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((output / "video_inspection.json").is_file())
+            self.assertTrue((output / "quality_report_skeleton.json").is_file())
+
+    def test_old_commands_are_not_advertised(self) -> None:
+        help_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "--help"],
             check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
             capture_output=True,
+            text=True,
         )
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Atlas3R", result.stdout)
-        self.assertIn("smoke", result.stdout)
-        self.assertIn("profile", result.stdout)
-
-        recording_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "recording", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(recording_result.returncode, 0, recording_result.stderr)
-        self.assertIn("validate", recording_result.stdout)
-        self.assertIn("from-tum", recording_result.stdout)
-        self.assertIn("from-clip-cache", recording_result.stdout)
-        self.assertIn("from-sensor-folder", recording_result.stdout)
-
-        fuse_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "fuse-recording", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(fuse_result.returncode, 0, fuse_result.stderr)
-        self.assertIn("--recording", fuse_result.stdout)
-        self.assertIn("--export-mesh", fuse_result.stdout)
-        self.assertIn("--mode", fuse_result.stdout)
-        self.assertIn("--backend", fuse_result.stdout)
-        self.assertIn("cpu-sparse", fuse_result.stdout)
-
-        live_replay_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "live-replay-recording", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(live_replay_result.returncode, 0, live_replay_result.stderr)
-        self.assertIn("--target-fps", live_replay_result.stdout)
-        self.assertIn("--max-capture-queue", live_replay_result.stdout)
-        self.assertIn("--max-map-queue", live_replay_result.stdout)
-        self.assertIn("--drop-policy", live_replay_result.stdout)
-        self.assertIn("--pixel-stride", live_replay_result.stdout)
-        self.assertIn("--export-mesh-chunks", live_replay_result.stdout)
-        self.assertIn("--mesh-format", live_replay_result.stdout)
-        self.assertIn("--mesh-update-interval-frames", live_replay_result.stdout)
-        self.assertIn("--mesh-min-weight", live_replay_result.stdout)
-        self.assertIn("cpu-sparse", live_replay_result.stdout)
-
-        rgb_teacher_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-teacher", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(rgb_teacher_result.returncode, 0, rgb_teacher_result.stderr)
-        self.assertIn("--input", rgb_teacher_result.stdout)
-        self.assertIn("--teacher", rgb_teacher_result.stdout)
-        self.assertIn("--teacher-window-size", rgb_teacher_result.stdout)
-        self.assertIn("--export-mesh-chunks", rgb_teacher_result.stdout)
-
-        rgb_student_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-student", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(rgb_student_result.returncode, 0, rgb_student_result.stderr)
-        self.assertIn("--checkpoint", rgb_student_result.stdout)
-        self.assertIn("--clip-length", rgb_student_result.stdout)
-        self.assertIn("--rgb-only", rgb_student_result.stdout)
-        self.assertIn("--student-confidence-threshold", rgb_student_result.stdout)
-        self.assertIn("--student-max-sigma-m", rgb_student_result.stdout)
-        self.assertIn("--student-map-valid-policy", rgb_student_result.stdout)
-
-        teacher_temporal_cache_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "atlas3r",
-                "inspect",
-                "teacher-temporal-cache",
-                "--help",
-            ],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(
-            teacher_temporal_cache_result.returncode,
-            0,
-            teacher_temporal_cache_result.stderr,
-        )
-        self.assertIn("--cache", teacher_temporal_cache_result.stdout)
-
-        capture_adapters_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "capture-adapters", "list"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(capture_adapters_result.returncode, 0, capture_adapters_result.stderr)
-        self.assertIn("opencv-camera", capture_adapters_result.stdout)
-        self.assertIn("replay-recording", capture_adapters_result.stdout)
-
-        smgt_train_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "train", "smgt-tiny", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(smgt_train_result.returncode, 0, smgt_train_result.stderr)
-        self.assertIn("--heldout-split", smgt_train_result.stdout)
-        self.assertIn("--split-manifest", smgt_train_result.stdout)
-
-        measured_cache_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "atlas3r",
-                "train",
-                "build-measured-temporal-cache",
-                "--help",
-            ],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(measured_cache_result.returncode, 0, measured_cache_result.stderr)
-        self.assertIn("--recording", measured_cache_result.stdout)
-        self.assertIn("--image-size", measured_cache_result.stdout)
-
-        smgt_v2_train_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "train", "smgt-v2", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(smgt_v2_train_result.returncode, 0, smgt_v2_train_result.stderr)
-        self.assertIn("--measured-cache", smgt_v2_train_result.stdout)
-        self.assertIn("--pseudo-cache", smgt_v2_train_result.stdout)
-        self.assertIn("--val-source", smgt_v2_train_result.stdout)
-
-        smgt_v2_calibration_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "eval", "smgt-v2-calibrate-gate", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(
-            smgt_v2_calibration_result.returncode,
-            0,
-            smgt_v2_calibration_result.stderr,
-        )
-        self.assertIn("--checkpoint", smgt_v2_calibration_result.stdout)
-        self.assertIn("--cache", smgt_v2_calibration_result.stdout)
-
-        rgb_student_v2_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-student-v2", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(rgb_student_v2_result.returncode, 0, rgb_student_v2_result.stderr)
-        self.assertIn("--checkpoint", rgb_student_v2_result.stdout)
-        self.assertIn("--calibration", rgb_student_v2_result.stdout)
-
-        measured_cache_inspect_result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "atlas3r",
-                "inspect",
-                "measured-temporal-cache",
-                "--help",
-            ],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(
-            measured_cache_inspect_result.returncode,
-            0,
-            measured_cache_inspect_result.stderr,
-        )
-        self.assertIn("--cache", measured_cache_inspect_result.stdout)
-
-        smgt_split_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "inspect", "smgt-tiny-split", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(smgt_split_result.returncode, 0, smgt_split_result.stderr)
-        self.assertIn("--teacher-cache", smgt_split_result.stdout)
-        self.assertIn("--heldout-split", smgt_split_result.stdout)
-
-        stress_result = subprocess.run(
-            [sys.executable, "-m", "atlas3r", "runtime", "sparse-tsdf-stress", "--help"],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(stress_result.returncode, 0, stress_result.stderr)
-        self.assertIn("--room-size-m", stress_result.stdout)
-        self.assertIn("--voxel-size-m", stress_result.stdout)
-
-        invalid_backend_combo = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "atlas3r",
-                "runtime",
-                "fuse-recording",
-                "--recording",
-                str(ROOT / "missing-recording"),
-                "--output",
-                str(ROOT / "missing-output"),
-                "--backend",
-                "cpu-persistent",
-            ],
-            check=False,
-            cwd=ROOT,
-            env=env,
-            text=True,
-            capture_output=True,
-        )
-        self.assertEqual(invalid_backend_combo.returncode, 2)
-        self.assertIn("backend: only valid with mode incremental", invalid_backend_combo.stderr)
+        self.assertNotIn("smgt-tiny", help_result.stdout)
+        self.assertNotIn("map-rgb-student", help_result.stdout)
+        self.assertNotIn("live-replay-recording", help_result.stdout)
 
 
 if __name__ == "__main__":

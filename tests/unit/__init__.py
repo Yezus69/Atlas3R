@@ -1,1 +1,1 @@
-"""Atlas3R unit tests."""
+"""Unit tests for the reset foundation."""

@@ -1,1 +1,1 @@
-"""Atlas3R test suite."""
+"""Atlas3R tests."""
