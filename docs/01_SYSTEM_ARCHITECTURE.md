@@ -17,6 +17,25 @@ FramePacket
   -> RuntimeAPI / Exporters
 ```
 
+## Phase 6G temporary RGB teacher bridge
+
+Phase 6G adds an offline diagnostic bridge for environment mapping before SMGT
+is ready:
+
+```text
+RGB video / image folder / recording RGB frames only
+  -> external VGGT teacher
+  -> pseudo depth + pseudo T_world_camera + intrinsics + confidence
+  -> pseudo atlas3r_recording + DepthObservation stream
+  -> existing sparse TSDF mapper
+  -> existing observed mesh chunk writer
+```
+
+This bridge is teacher-pseudo geometry, not measured truth and not the final
+runtime. Measured recording depth/pose may be loaded only for eval-only
+diagnostics; mapping output keeps `measured_depth_used=false` and
+`measured_pose_used=false`.
+
 ## Module 1: Frame IO and preprocessing
 
 ### Inputs

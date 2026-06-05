@@ -109,6 +109,23 @@ unless the run is intentionally defined and recorded as a performance benchmark.
 - no crashes when optional teachers are missing;
 - output metadata marks scale source honestly.
 
+Phase 6G RGB teacher diagnostics satisfy only the teacher-baseline evidence
+slice. A `runtime map-rgb-teacher` run may report:
+
+- teacher-pseudo frame count, window count, depth valid pixel ratio, sparse TSDF
+  active blocks/voxels, surface point count, mesh chunk/update counts, and
+  vertex/triangle counts;
+- teacher inference, map update, mesh update, and total pipeline latency
+  percentiles as diagnostics, not realtime claims;
+- if the RGB source is a measured recording, eval-only depth AbsRel/RMSE after
+  median scale alignment and Sim3-aligned camera-center ATE. These metrics do
+  not change the map and are not benchmark accuracy claims.
+
+Required truth boundary: teacher-pseudo depth/pose are not measured geometry;
+measured depth/pose are false for mapping, may be true only for eval sidecars,
+and `metric_scale_source=teacher_scale_unverified` unless a named calibration
+or benchmark report proves metric scale.
+
 ### Gate 2: student overfit
 
 - model overfits synthetic sequence;

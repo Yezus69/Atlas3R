@@ -148,13 +148,17 @@ Acceptance on Apple M-series:
   triangle payloads, manifest/update logs, loadability tests, and measured
   replay/profile evidence without RGB-only, hidden-geometry, realtime, or
   accuracy claims.
+- **6G:** offline RGB teacher-assisted mapping bridge: RGB-only recording/image
+  input through VGGT teacher-pseudo depth/pose/intrinsics, pseudo recording
+  artifacts, existing sparse TSDF fusion, observed mesh chunks, and diagnostic
+  eval on TUM source measurements without using measured truth for mapping.
 
-### Next likely Phase 6G
+### Next likely Phase 6H
 
-Accelerate the sparse mapper and mesh update path. Phase 6F proved loadable
-observed mesh chunks, but preview map+mesh p95 remained above a frame budget, so
-Phase 6G should focus on reducing sparse candidate generation and mesh update
-latency before expanding RGB teacher-assisted mapping.
+Distill RGB teacher outputs into SMGT training data and tighten the pseudo
+recording/cache path. Phase 6G proved real RGB teacher-pseudo geometry can drive
+existing sparse TSDF mesh chunks, but it is offline, teacher-heavy, unlooped, and
+not student runtime.
 
 ## Phase 7 - Evaluation and release gates
 

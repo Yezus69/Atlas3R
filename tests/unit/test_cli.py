@@ -81,6 +81,20 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--mesh-min-weight", live_replay_result.stdout)
         self.assertIn("cpu-sparse", live_replay_result.stdout)
 
+        rgb_teacher_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "map-rgb-teacher", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(rgb_teacher_result.returncode, 0, rgb_teacher_result.stderr)
+        self.assertIn("--input", rgb_teacher_result.stdout)
+        self.assertIn("--teacher", rgb_teacher_result.stdout)
+        self.assertIn("--teacher-window-size", rgb_teacher_result.stdout)
+        self.assertIn("--export-mesh-chunks", rgb_teacher_result.stdout)
+
         capture_adapters_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "runtime", "capture-adapters", "list"],
             check=False,

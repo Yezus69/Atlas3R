@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -36,6 +37,8 @@ class MeshChunkArtifactWriter:
         *,
         mesh_format: str,
         mesher_config: SparseTSDFMesherConfig,
+        truth_flags: Mapping[str, object] | None = None,
+        truth_boundary: Mapping[str, object] | None = None,
     ) -> None:
         if mesh_format not in {"npz", "ply", "both"}:
             raise ValueError("mesh_format: must be npz, ply, or both")
@@ -43,6 +46,8 @@ class MeshChunkArtifactWriter:
         self.chunks_dir = self.output_dir / "chunks"
         self.mesh_format = mesh_format
         self.mesher_config = mesher_config
+        self.truth_flags = dict(MESH_TRUTH_FLAGS if truth_flags is None else truth_flags)
+        self.truth_boundary = None if truth_boundary is None else dict(truth_boundary)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.chunks_dir.mkdir(parents=True, exist_ok=True)
         self._versions: dict[str, int] = {}
@@ -105,6 +110,7 @@ class MeshChunkArtifactWriter:
                 if delete_event is not None:
                     events.append(delete_event)
                 continue
+            chunk.truth_flags = dict(self.truth_flags)
             event = self._write_upsert_event(
                 chunk=chunk,
                 frame_id=frame_id,
@@ -128,7 +134,7 @@ class MeshChunkArtifactWriter:
         total_vertices = sum(_record_int(record, "vertex_count") for record in chunks)
         total_triangles = sum(_record_int(record, "triangle_count") for record in chunks)
         manifest = {
-            **MESH_TRUTH_FLAGS,
+            **self.truth_flags,
             "active_chunk_count": len(chunks),
             "chunk_count": len(chunks) + len(self._deleted_chunk_ids),
             "chunks": chunks,
@@ -145,10 +151,8 @@ class MeshChunkArtifactWriter:
             "total_triangle_count": int(total_triangles),
             "total_vertex_count": int(total_vertices),
             "truth_boundary": {
-                **MESH_TRUTH_FLAGS,
+                **self._manifest_truth_boundary(source_frame_ids_mapped),
                 "diagnostic_only": True,
-                "measured_depth_used": bool(source_frame_ids_mapped),
-                "measured_pose_used": bool(source_frame_ids_mapped),
             },
             "update_count": len(self._updates),
             "updates": "mesh_chunk_updates.jsonl",
@@ -161,7 +165,7 @@ class MeshChunkArtifactWriter:
     def status(self) -> dict[str, object]:
         chunks = [self._active_chunks[key] for key in sorted(self._active_chunks)]
         return {
-            **MESH_TRUTH_FLAGS,
+            **self.truth_flags,
             "active_mesh_chunk_count": len(chunks),
             "deleted_mesh_chunk_count": len(self._deleted_chunk_ids),
             "format_name": "atlas3r_phase6f_live_replay_mesh_status",
@@ -278,7 +282,7 @@ class MeshChunkArtifactWriter:
         map_queue_depth: int,
     ) -> dict[str, object]:
         return {
-            **MESH_TRUTH_FLAGS,
+            **self.truth_flags,
             "capture_queue_depth": int(capture_queue_depth),
             "chunk_coord_xyz": list(block_coord),
             "chunk_id": chunk_id,
@@ -296,6 +300,15 @@ class MeshChunkArtifactWriter:
             "update_type": update_type,
             "version": int(version),
             "vertex_count": int(vertex_count),
+        }
+
+    def _manifest_truth_boundary(self, source_frame_ids_mapped: list[int]) -> dict[str, object]:
+        if self.truth_boundary is not None:
+            return dict(self.truth_boundary)
+        return {
+            **MESH_TRUTH_FLAGS,
+            "measured_depth_used": bool(source_frame_ids_mapped),
+            "measured_pose_used": bool(source_frame_ids_mapped),
         }
 
 

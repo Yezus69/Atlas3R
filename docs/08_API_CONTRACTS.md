@@ -225,37 +225,48 @@ confidence, and mean/p95 uncertainty.
 
 `atlas3r smoke runtime-fixture --output <folder>` writes deterministic
 `runtime_events.jsonl`, `runtime_summary.json`, a synthetic session, teacher
-cache, and complete TSDF replay. Events use
-`format_name=atlas3r_runtime_fixture_event_log`, monotonic `event_index`,
-known `stage_name`, optional `frame_id`, deterministic timestamps/latencies,
-`dropped_frame`, bounded `memory_counters`, relative `paths`, and metadata.
-`inspect runtime-fixture` validates the folder. `runtime stream-student-map`
-emits diagnostic `DepthObservation`s from temporal checkpoints; pose modes are
-`oracle`, `student-relative`, `student-odometry`, or `both`, and truth claims
-stay false.
+cache, and complete TSDF replay. Events use format
+`atlas3r_runtime_fixture_event_log`, monotonic indexes, known stages, bounded
+memory counters, relative paths, and deterministic timings. `inspect
+runtime-fixture` validates the folder. `runtime stream-student-map` emits
+diagnostic checkpoint `DepthObservation`s; pose modes are `oracle`,
+`student-relative`, `student-odometry`, or `both`, and truth claims stay false.
 
+### RGB Teacher Mapping
+`runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output
+<run> --teacher vggt --rgb-only` converts VGGT teacher-pseudo
+depth/pose/intrinsics into validated `DepthObservation`s, then reuses sparse
+TSDF and observed mesh chunks. Fixture teacher mode is test-only; optional
+teacher/image/video deps raise explicit errors. Inputs include RGB-only
+`atlas3r_recording`, NPZ/PPM, image folders, or videos; recording measured
+depth/pose are mapping-ignored and eval-only.
+Outputs include `rgb_teacher_frames/`, `rgb_teacher_predictions/`,
+`rgb_teacher_recording/`, `rgb_teacher_summary.json`,
+`rgb_teacher_report.md`, live replay JSON/Markdown, `sparse_tsdf/`,
+`mesh_chunks/`, optional point cloud, and optional eval sidecars. Summary
+format `atlas3r_rgb_teacher_mapping_summary` records teacher metadata, frame
+counts, pseudo counts, sparse/mesh counters, latency, artifacts, limitations,
+and `truth_boundary`. VGGT OpenCV camera-from-world extrinsics are inverted to
+`T_world_camera`; missing teacher pose is rejected. Teacher scale is
+`rgb_prior` / `teacher_scale_unverified`. Truth flags keep pseudo/teacher/
+observed diagnostic flags true and measured mapping, hidden geometry,
+completion, student RGB-only, accuracy, and realtime flags false.
 ### Capture Adapter Boundary
-
-Runtime capture adapters live under `atlas3r.runtime`, must not import optional
-camera dependencies at module import time, and expose `CaptureAdapterStatus`
-fields `name`, `display_name`, `available`, optional `reason`/`install_hint`,
-`capabilities`, and optional dependency versions. `CaptureFrame` fields are
-`frame_id`, `timestamp_ns`, optional `FramePacket`, source metadata,
-measured-depth/pose booleans, and optional measured depth path.
-`OpenCVCameraAdapter.status()` reports missing `cv2` with an install hint;
-`open()` raises explicit dependency/config errors. `ReplayRecordingAdapter`
-streams validated `atlas3r_recording` metadata. Public command:
+Runtime capture adapters live under `atlas3r.runtime`, import no optional
+camera deps at module import time, and expose `CaptureAdapterStatus` fields
+`name`, `display_name`, `available`, optional `reason`/`install_hint`,
+`capabilities`, and dependency versions. `CaptureFrame` has `frame_id`,
+`timestamp_ns`, optional `FramePacket`, metadata, measured-depth/pose booleans,
+and optional measured depth path. Public command:
 `atlas3r runtime capture-adapters list`.
 
 ### Live Replay Recording
-
 `atlas3r runtime live-replay-recording --recording <recording_dir> --output
 <run_dir> --target-fps N --mapper-backend cpu-sparse` replays a measured
 recording through bounded capture/map queues. Default pacing is deterministic
 simulation; `--wall-clock-pacing` is opt-in. Pose output is separate from map
 updates. Mapping only uses `DepthObservation`s built from measured recording
 depth and measured `T_world_camera`; missing depth/pose skips mapping.
-
 `live_replay_events.jsonl` uses `format_name=atlas3r_live_replay_event`,
 `format_version=1`, monotonic `event_index`, `stage_name`, optional `frame_id`,
 queue depths, latency, `drop_reason`, `keyframe_selected`, and
@@ -264,15 +275,11 @@ queue depths, latency, `drop_reason`, `keyframe_selected`, and
 `scheduler_shutdown`, or `other`. Keyframe reasons are `first_frame`, `stride`,
 `translation_threshold`, `rotation_threshold`, `uncertainty_threshold`,
 `forced`, or `not_selected`.
-
 `live_replay_summary.json` uses `format_name=atlas3r_live_replay_summary` and records source metadata, target FPS, simulated pacing, frame/pose/keyframe/map/drop/queue counts, latency p50/p95/max, mapper backend, voxel size, sparse/dirty/mesh counters, memory counters, artifacts, and `truth_boundary` flags: `diagnostic_only=true`, `accuracy_report=false`, `performance_report=false`, `realtime_claim=false`, `rgb_only_mapping_ready=false`, `hidden_geometry_measured=false`, `observed_only=true`, `predicted_completion=false`, measured depth/pose booleans, and `student_rgb_only_used=false`. Outputs include `live_replay_report.md`, `sparse_tsdf/`, optional `surface_points.ply`, and optional observed mesh chunks.
 
 ### Observed Mesh Chunk Artifacts
-
 `runtime live-replay-recording --export-mesh-chunks` writes `mesh_chunks/mesh_chunk_manifest.json`, `mesh_chunks/mesh_chunk_updates.jsonl`, `mesh_chunks/chunks/*.npz`, and `*.ply` when `--mesh-format ply|both` is requested. NPZ is the canonical array payload; PLY is a loadability/debug export. Stable chunk IDs are `block_<x>_<y>_<z>`.
-
 `MeshChunk` metadata uses `format_name=atlas3r_observed_mesh_chunk`, `format_version=1`, `chunk_id`, `chunk_coord_xyz [int,int,int]`, `version`, `update_type upsert|delete`, `coordinate_frame`, `T_world_chunk 4x4`, `voxel_size_m`, `truncation_distance_m`, `block_size_voxels`, `bbox_world_min_m/max_m`, `source_frame_ids`, `first_source_frame_id`, `last_source_frame_id`, `active_voxel_count`, `surface_voxel_count`, `vertex_count`, `triangle_count`, `uncertainty_summary_m mean/p50/p95/max`, `confidence_summary mean/p50/p95/max`, `observed_coverage_estimate`, `metric_scale_source`, `mesher_backend`, and truth flags `observed_only=true`, `predicted_completion=false`, `hidden_geometry_measured=false`, `rgb_only_mapping_ready=false`, `student_rgb_only_used=false`, `accuracy_report=false`, `realtime_claim=false`. Payload arrays: `vertices_world_m float32[N,3]`, `normals_world float32[N,3]`, `triangles uint32[M,3]`.
-
 `MeshChunkUpdateEvent` records monotonic `event_index`, `frame_id`, `timestamp_ns`, `chunk_id`, `chunk_coord_xyz`, `version`, `update_type`, relative `payload_npz`, optional relative `payload_ply`, `vertex_count`, `triangle_count`, `dirty_reason`, `mesh_latency_ns`, capture/map queue depths, and the same truth flags. `MeshChunkManifest` uses `format_name=atlas3r_observed_mesh_chunk_manifest`, `format_version=1`, `chunk_count`, `active_chunk_count`, `deleted_chunk_count`, `total_vertex_count`, `total_triangle_count`, `source_frame_ids_mapped`, `coordinate_frame`, `voxel_size_m`, `mapper_backend`, `mesher_backend`, `truth_boundary`, and a `chunks` index of active latest payloads.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future

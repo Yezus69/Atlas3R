@@ -25,10 +25,10 @@ scale, visibility, motion, calibration, and dynamic-scene ambiguities. Hidden
 or completed geometry must be marked predicted/uncertain, not measured. Every
 geometry output carries confidence or uncertainty.
 
-## Current Phase 6F State
+## Current Phase 6G State
 
-The current implemented slice is still measured/replay diagnostic runtime
-plumbing, not final RGB-only mapping:
+The current implemented slice includes an offline diagnostic RGB teacher bridge,
+not final RGB-only student mapping or realtime mapping:
 
 - `atlas3r_recording` folders store RGB plus optional measured depth and
   measured `T_world_camera`.
@@ -44,14 +44,19 @@ plumbing, not final RGB-only mapping:
   stable `block_<x>_<y>_<z>` chunk IDs, versioned NPZ payloads, optional PLY
   payloads, a manifest, update events, conservative truth flags, and latency
   profile counters.
+- `python -m atlas3r runtime map-rgb-teacher ... --teacher vggt --rgb-only`
+  runs RGB frames through VGGT teacher-pseudo depth/pose/intrinsics, writes a
+  pseudo recording, fuses pseudo observations through the existing sparse TSDF
+  mapper, and emits observed mesh chunks through the Phase 6F writer.
 - `python -m atlas3r runtime capture-adapters list` reports dependency-safe
   camera adapter status. The OpenCV adapter does not import `cv2` at module
   import time and reports an install hint when unavailable.
 
-Phase 6F outputs are diagnostics. They use measured pose/depth only when
-present, skip mapping when those inputs are missing, and do not invent RGB-only
-depth, pose, hidden geometry, object-aware fusion, loop closure, realtime
-readiness, benchmark accuracy, or millimeter accuracy.
+Phase 6G RGB teacher outputs are diagnostics. They use teacher-pseudo depth and
+pose for mapping, do not use measured depth/pose for mapping in `--rgb-only`
+mode, and do not claim final RGB-only student readiness, hidden geometry,
+object-aware fusion, loop closure, realtime readiness, benchmark accuracy, or
+millimeter accuracy.
 
 ## Useful Commands
 
@@ -61,6 +66,7 @@ python -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_
 python -m atlas3r runtime capture-adapters list
 python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse
 python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse --export-mesh-chunks --mesh-format ply
+python -m atlas3r runtime map-rgb-teacher --input <recording-or-rgb-folder-or-video> --output <run> --teacher vggt --device cuda:0 --max-frames 64 --frame-stride 2 --teacher-window-size 24 --teacher-window-overlap 8 --image-size 518 --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 12 --export-mesh-chunks --mesh-format ply --rgb-only
 python -m atlas3r runtime fuse-recording --recording <recording> --output <run> --mode incremental --backend cpu-sparse
 ```
 

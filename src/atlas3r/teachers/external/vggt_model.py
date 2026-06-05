@@ -42,9 +42,12 @@ def load_vggt_predictor(
     vggt_repo: Path | None,
     checkpoint: str | None,
     device: str,
+    image_size: int = MODEL_INPUT_RESOLUTION,
 ) -> LoadedVGGTPredictor:
     """Load VGGT and return a per-clip prediction callable."""
 
+    if image_size <= 0:
+        raise ValueError("image_size: must be positive")
     if vggt_repo is not None:
         _add_repo_to_path(vggt_repo)
     try:
@@ -81,7 +84,7 @@ def load_vggt_predictor(
         images = images.to(resolved_device) / 255.0
         images = functional.interpolate(
             images,
-            size=(MODEL_INPUT_RESOLUTION, MODEL_INPUT_RESOLUTION),
+            size=(image_size, image_size),
             mode="bilinear",
             align_corners=False,
         )
@@ -98,7 +101,7 @@ def load_vggt_predictor(
                 extrinsic, intrinsic = pose_decode(output["pose_enc"], images.shape[-2:])
             output["extrinsic"] = extrinsic
             output["intrinsic"] = intrinsic
-        output["model_input_resolution"] = MODEL_INPUT_RESOLUTION
+        output["model_input_resolution"] = int(image_size)
         return output
 
     return LoadedVGGTPredictor(
@@ -106,7 +109,7 @@ def load_vggt_predictor(
         resolved_device=resolved_device,
         model_source=model_source,
         checkpoint=checkpoint,
-        input_resolution=MODEL_INPUT_RESOLUTION,
+        input_resolution=int(image_size),
     )
 
 
@@ -131,8 +134,15 @@ def _add_repo_to_path(vggt_repo: Path) -> None:
 
 def _resolve_device(torch: Any, device: str) -> str:
     normalized = device.lower()
-    if normalized not in {"auto", "cuda", "mps", "cpu"}:
-        raise ValueError("device: must be one of auto, cuda, mps, or cpu")
+    if normalized.startswith("cuda:"):
+        try:
+            cuda_index = int(normalized.split(":", maxsplit=1)[1])
+        except ValueError as exc:
+            raise ValueError("device: cuda device must be cuda or cuda:<index>") from exc
+        if cuda_index < 0:
+            raise ValueError("device: cuda index must be non-negative")
+    elif normalized not in {"auto", "cuda", "mps", "cpu"}:
+        raise ValueError("device: must be one of auto, cuda, cuda:<index>, mps, or cpu")
     if normalized == "cpu":
         return "cpu"
     cuda_available = bool(torch.cuda.is_available())
@@ -144,7 +154,7 @@ def _resolve_device(torch: Any, device: str) -> str:
         if mps_available:
             return "mps"
         return "cpu"
-    if normalized == "cuda" and not cuda_available:
+    if normalized.startswith("cuda") and not cuda_available:
         raise ValueError("device: cuda was requested but torch.cuda is not available")
     if normalized == "mps" and not mps_available:
         raise ValueError("device: mps was requested but torch.backends.mps is not available")
@@ -173,14 +183,17 @@ def _construct_model(torch: Any, model_class: Any, checkpoint: str | None) -> tu
 
 
 def _autocast_dtype(torch: Any, device: str) -> Any:
-    if device != "cuda":
+    if not device.startswith("cuda"):
         return None
-    major = torch.cuda.get_device_capability()[0]
+    index = None
+    if ":" in device:
+        index = int(device.split(":", maxsplit=1)[1])
+    major = torch.cuda.get_device_capability(index)[0]
     return torch.bfloat16 if major >= 8 else torch.float16
 
 
 def _autocast_context(torch: Any, device: str, dtype: Any) -> Any:
-    if device == "cuda" and dtype is not None:
+    if device.startswith("cuda") and dtype is not None:
         return torch.cuda.amp.autocast(dtype=dtype)
     return nullcontext()
 

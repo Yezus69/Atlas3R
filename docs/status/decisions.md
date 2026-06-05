@@ -48,6 +48,7 @@ tests, and the contract docs.
 | D-0041 | Sparse block TSDF backend | Phase 6D adds `--backend cpu-sparse`, which lazily allocates sparse TSDF blocks from measured `DepthObservation`s without fixed dense world bounds, skips duplicate frame IDs deterministically, writes sparse state artifacts, and compares final surface points against dense persistent diagnostics. | Yes |
 | D-0042 | Live replay scheduler boundary | Phase 6E adds `runtime live-replay-recording` as a measured-recording scheduler diagnostic with bounded capture/map queues, explicit drop and keyframe reasons, sparse TSDF updates, conservative truth flags, and dependency-safe runtime capture adapter status including lazy OpenCV handling. | Yes |
 | D-0043 | Observed mesh chunk streaming | Phase 6F mesh chunks are observed-only sparse TSDF block payloads with stable `block_<x>_<y>_<z>` IDs, versioned NPZ arrays, optional PLY debug export, manifest/update logs, dirty-block scheduling, and no hidden-geometry/RGB-only/realtime/accuracy claim. | Yes |
+| D-0044 | RGB teacher map bridge | Phase 6G maps RGB input by converting VGGT teacher-pseudo depth/pose/intrinsics into pseudo `DepthObservation`s, writing a pseudo recording, and reusing sparse TSDF plus observed mesh chunk artifacts with measured truth reserved for eval-only sidecars. | Yes |
 
 Active cross-cutting constraints:
 

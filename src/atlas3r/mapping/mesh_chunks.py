@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -51,6 +51,7 @@ class ObservedMeshChunk:
     observed_coverage_estimate: float
     metric_scale_source: str
     mesher_backend: str
+    truth_flags: dict[str, object] = field(default_factory=lambda: dict(MESH_TRUTH_FLAGS))
 
     def __post_init__(self) -> None:
         if not self.chunk_id:
@@ -84,6 +85,7 @@ class ObservedMeshChunk:
             raise ValueError("metric_scale_source: must be non-empty")
         if not self.mesher_backend:
             raise ValueError("mesher_backend: must be non-empty")
+        self.truth_flags = dict(self.truth_flags)
 
     @property
     def vertex_count(self) -> int:
@@ -109,7 +111,7 @@ class ObservedMeshChunk:
         first_frame = min(self.source_frame_ids) if self.source_frame_ids else None
         last_frame = max(self.source_frame_ids) if self.source_frame_ids else None
         return {
-            **MESH_TRUTH_FLAGS,
+            **self.truth_flags,
             "T_world_chunk": _json_array(self.T_world_chunk),
             "active_voxel_count": int(self.active_voxel_count),
             "bbox_world_max_m": self.bbox_world_max_m,

@@ -236,7 +236,7 @@ def write_live_replay_report(path: Path, summary: dict[str, object]) -> None:
         f"`{summary['max_map_queue_depth_observed']}`"
     )
     lines = [
-        "# Phase 6E Live Replay Report",
+        "# Phase 6F Measured Live Replay Mesh Report",
         "",
         f"- Replayed: `{summary['recording']}`",
         target_line,

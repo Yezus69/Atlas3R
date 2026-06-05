@@ -91,6 +91,44 @@ def register_runtime_parser(subparsers: Any) -> None:
         help="Sleep to approximate target FPS; omitted uses deterministic simulated pacing.",
     )
     replay_parser.set_defaults(handler=_run_live_replay_recording)
+    rgb_teacher_parser = runtime_subparsers.add_parser(
+        "map-rgb-teacher",
+        help="Map RGB input through teacher-pseudo geometry into sparse TSDF mesh chunks.",
+    )
+    rgb_teacher_parser.add_argument("--input", type=Path, required=True)
+    rgb_teacher_parser.add_argument("--output", type=Path, required=True)
+    rgb_teacher_parser.add_argument(
+        "--teacher",
+        choices=("vggt", "fixture-vggt"),
+        default="vggt",
+    )
+    rgb_teacher_parser.add_argument("--device", default="auto")
+    rgb_teacher_parser.add_argument("--max-frames", type=int, default=64)
+    rgb_teacher_parser.add_argument("--frame-stride", type=int, default=2)
+    rgb_teacher_parser.add_argument("--teacher-window-size", type=int, default=24)
+    rgb_teacher_parser.add_argument("--teacher-window-overlap", type=int, default=8)
+    rgb_teacher_parser.add_argument("--image-size", type=int, default=518)
+    rgb_teacher_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    rgb_teacher_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    rgb_teacher_parser.add_argument("--pixel-stride", type=int, default=12)
+    rgb_teacher_parser.add_argument("--export-mesh-chunks", action="store_true")
+    rgb_teacher_parser.add_argument("--mesh-format", choices=("npz", "ply", "both"), default="npz")
+    rgb_teacher_parser.add_argument("--mesh-min-weight", type=float, default=0.0)
+    rgb_teacher_parser.add_argument("--export-point-cloud", action="store_true")
+    rgb_teacher_parser.add_argument("--rgb-only", action="store_true")
+    rgb_teacher_parser.add_argument("--sim3-align-for-eval-only", action="store_true")
+    rgb_teacher_parser.add_argument(
+        "--vggt-repo",
+        type=Path,
+        default=None,
+        help="Local VGGT checkout path; overrides ATLAS3R_VGGT_REPO.",
+    )
+    rgb_teacher_parser.add_argument(
+        "--checkpoint",
+        default=None,
+        help="VGGT checkpoint path or URI; overrides ATLAS3R_VGGT_CHECKPOINT.",
+    )
+    rgb_teacher_parser.set_defaults(handler=_run_map_rgb_teacher)
     capture_adapters_parser = runtime_subparsers.add_parser(
         "capture-adapters",
         help="Inspect dependency-safe runtime capture adapters.",
@@ -200,6 +238,45 @@ def _run_live_replay_recording(args: argparse.Namespace) -> int:
             )
         )
     except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_map_rgb_teacher(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.rgb_teacher_config import RGBTeacherMapConfig
+    from atlas3r.runtime.rgb_teacher_mapping import (
+        run_rgb_teacher_mapping,
+    )
+    from atlas3r.teachers.external.contracts import ExternalTeacherError
+
+    try:
+        result = run_rgb_teacher_mapping(
+            RGBTeacherMapConfig(
+                input=args.input,
+                output=args.output,
+                teacher=args.teacher,
+                device=args.device,
+                max_frames=args.max_frames,
+                frame_stride=args.frame_stride,
+                teacher_window_size=args.teacher_window_size,
+                teacher_window_overlap=args.teacher_window_overlap,
+                image_size=args.image_size,
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                pixel_stride=args.pixel_stride,
+                export_mesh_chunks=args.export_mesh_chunks,
+                mesh_format=args.mesh_format,
+                mesh_min_weight=args.mesh_min_weight,
+                export_point_cloud=args.export_point_cloud,
+                rgb_only=args.rgb_only,
+                sim3_align_for_eval_only=args.sim3_align_for_eval_only,
+                vggt_repo=args.vggt_repo,
+                checkpoint=args.checkpoint,
+            )
+        )
+    except (ExternalTeacherError, RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
