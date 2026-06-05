@@ -76,6 +76,18 @@ Metrics:
 - power estimate where available;
 - long-run memory slope over 10k frames.
 
+Scheduler diagnostics:
+
+- target FPS versus measured processing latency;
+- capture/map queue depths and configured bounds;
+- dropped frame/keyframe counts with explicit reasons;
+- keyframe selection counts and reasons;
+- map update latency and sparse active block/voxel counters;
+- memory counters showing no unbounded growth.
+
+These diagnostics are not accuracy reports. They also are not realtime claims
+unless the run is intentionally defined and recorded as a performance benchmark.
+
 ## Acceptance gates by milestone
 
 ### Gate 0: synthetic geometry
@@ -153,4 +165,3 @@ Maintain a small curated set:
 - unknown cropped video with wrong focal metadata.
 
 Expected behavior is not always high accuracy. Expected behavior is honest uncertainty and no catastrophic map poisoning.
-

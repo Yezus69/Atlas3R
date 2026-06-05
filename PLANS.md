@@ -108,7 +108,7 @@ Acceptance:
 - mask flicker does not create duplicate object IDs across short occlusions;
 - dynamic objects do not poison the static map.
 
-## Phase 6 — Real-time runtime
+## Phase 6 - Real-time runtime
 
 **Goal:** 30 FPS pose output with live mesh updates.
 
@@ -131,7 +131,27 @@ Acceptance on Apple M-series:
 - `lite` profile runs with Core ML/MPS path;
 - explicit FPS and memory report; lower FPS is acceptable unless the specific chip/profile proves 30 FPS.
 
-## Phase 7 — Evaluation and release gates
+### Completed Phase 6A-6E product slices
+
+- **6A:** stable measured `atlas3r_recording` boundary plus measured
+  recording-to-CPU-TSDF diagnostic fusion.
+- **6B:** sensor-folder recording importer and incremental CPU rebuild timing.
+- **6C:** persistent dense CPU TSDF incremental backend.
+- **6D:** sparse block CPU TSDF backend with online growth and memory stress
+  diagnostics.
+- **6E:** live capture/replay scheduler boundary: deterministic measured
+  recording replay, bounded capture/map queues, explicit drop/keyframe reasons,
+  `cpu-sparse` map updates, conservative live replay reports, and dependency-safe
+  OpenCV/replay capture adapter status.
+
+### Next likely Phase 6F
+
+Use the Phase 6E profile to choose either live triangle mesh chunk updates from
+the sparse mapper or an accelerated sparse mapper path. The likely first slice
+is observed-only triangle mesh chunk updates with stable chunk IDs, metadata,
+and no hidden-geometry or realtime claim.
+
+## Phase 7 - Evaluation and release gates
 
 **Goal:** Prevent misleading claims.
 

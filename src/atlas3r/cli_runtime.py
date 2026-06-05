@@ -59,6 +59,45 @@ def register_runtime_parser(subparsers: Any) -> None:
         default=None,
     )
     fuse_parser.set_defaults(handler=_run_fuse_recording)
+    replay_parser = runtime_subparsers.add_parser(
+        "live-replay-recording",
+        help="Replay a measured Atlas3R recording through bounded live-style queues.",
+    )
+    replay_parser.add_argument("--recording", type=Path, required=True)
+    replay_parser.add_argument("--output", type=Path, required=True)
+    replay_parser.add_argument("--target-fps", type=float, default=30.0)
+    replay_parser.add_argument("--max-frames", type=int, default=None)
+    replay_parser.add_argument(
+        "--mapper-backend",
+        choices=("cpu-sparse",),
+        default="cpu-sparse",
+    )
+    replay_parser.add_argument("--map-keyframe-stride", type=int, default=1)
+    replay_parser.add_argument("--max-capture-queue", type=int, default=4)
+    replay_parser.add_argument("--max-map-queue", type=int, default=2)
+    replay_parser.add_argument("--drop-policy", choices=("oldest", "newest"), default="oldest")
+    replay_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    replay_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    replay_parser.add_argument("--export-point-cloud", action="store_true")
+    replay_parser.add_argument(
+        "--wall-clock-pacing",
+        action="store_true",
+        help="Sleep to approximate target FPS; omitted uses deterministic simulated pacing.",
+    )
+    replay_parser.set_defaults(handler=_run_live_replay_recording)
+    capture_adapters_parser = runtime_subparsers.add_parser(
+        "capture-adapters",
+        help="Inspect dependency-safe runtime capture adapters.",
+    )
+    capture_adapters_subparsers = capture_adapters_parser.add_subparsers(
+        dest="capture_adapters_command",
+        required=True,
+    )
+    capture_adapters_list = capture_adapters_subparsers.add_parser(
+        "list",
+        help="List runtime capture adapters and dependency status.",
+    )
+    capture_adapters_list.set_defaults(handler=_run_capture_adapters_list)
     stress_parser = runtime_subparsers.add_parser(
         "sparse-tsdf-stress",
         help="Estimate apartment-scale dense memory and sparse block TSDF state.",
@@ -124,6 +163,44 @@ def _run_fuse_recording(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_live_replay_recording(args: argparse.Namespace) -> int:
+    from atlas3r.runtime.live_replay import LiveReplayConfig, run_live_replay_recording
+
+    try:
+        result = run_live_replay_recording(
+            LiveReplayConfig(
+                recording=args.recording,
+                output=args.output,
+                target_fps=args.target_fps,
+                max_frames=args.max_frames,
+                mapper_backend=args.mapper_backend,
+                map_keyframe_stride=args.map_keyframe_stride,
+                max_capture_queue=args.max_capture_queue,
+                max_map_queue=args.max_map_queue,
+                drop_policy=args.drop_policy,
+                voxel_size_m=args.voxel_size_m,
+                truncation_voxels=args.truncation_voxels,
+                export_point_cloud=args.export_point_cloud,
+                wall_clock_pacing=args.wall_clock_pacing,
+            )
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def _run_capture_adapters_list(_args: argparse.Namespace) -> int:
+    from atlas3r.runtime.capture_adapters import list_capture_adapters
+
+    print("name\tavailable\tdetails")
+    for status in list_capture_adapters():
+        detail = status.reason or status.install_hint or ""
+        print(f"{status.name}\t{status.available}\t{detail}")
     return 0
 
 

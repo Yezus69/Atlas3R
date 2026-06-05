@@ -1,39 +1,35 @@
-Phase 6E - Live Capture Replay Scheduler And Camera Adapter Boundary
+Phase 6F - Live Mesh Chunk Updates From Sparse Replay
 
-Goal: build the first live-oriented runtime scheduler around the measured
-recording/sparse-map path, plus a dependency-safe actual camera adapter
-boundary. This phase should make queueing, frame dropping, replay pacing, and
-adapter installation errors explicit. It must not claim realtime mapping unless
-a measured report proves it.
+Goal: build the next live-oriented product slice after Phase 6E by emitting
+observed-only triangle mesh chunk update artifacts from the sparse TSDF replay
+path, while preserving all measured-input truth boundaries.
 
-Start from branch `codex/phase6d-sparse-block-tsdf-live-replay`. Reload
-`README.md`, `PLANS.md`, `docs/08_API_CONTRACTS.md`,
-`docs/status/progress.md`, `docs/status/decisions.md`,
-`docs/status/active_task.md`, and
-`docs/status/phase6d_sparse_block_tsdf_live_replay_report.md`.
+Start from branch `codex/phase6e-live-replay-scheduler`. Reload `README.md`,
+`PLANS.md`, `docs/08_API_CONTRACTS.md`, `docs/status/progress.md`,
+`docs/status/decisions.md`, `docs/status/active_task.md`,
+`docs/status/phase6e_live_replay_scheduler_report.md`, and
+`docs/status/phase6e_repo_audit.md`.
 
 Required work:
 
-- Preserve measured-input truth boundaries: no fake RGB-only depth, fake pose,
-  hidden surface completion, object fusion, realtime/mm/accuracy claims, or
-  generated data commits.
-- Keep `runtime fuse-recording --mode incremental --backend
-  cpu-persistent|cpu-rebuild|cpu-sparse` stable for regression.
-- Add a replay scheduler diagnostic that can pace an `atlas3r_recording` at a
-  requested frame rate, select mapping keyframes, bound queue depth, and record
-  explicit dropped-frame/keyframe reasons.
-- Keep map updates on the existing measured-depth path; use `cpu-sparse` as the
-  live-oriented mapper unless a test requires a dense baseline comparison.
-- Add a dependency-safe camera adapter interface under `src/atlas3r/runtime/`
-  that can report unavailable optional capture dependencies with install hints
-  and no import-time crash.
-- Add tests for bounded queues, replay pacing metadata, drop counters, adapter
-  unavailable status, truth flags, and unchanged existing backends.
-- Run required format, lint, typecheck, unit, diff, and available `make`
-  verification commands.
+- Preserve `runtime fuse-recording --mode incremental --backend
+  cpu-persistent|cpu-rebuild|cpu-sparse` and `runtime live-replay-recording`
+  behavior.
+- Add observed-only mesh chunk update artifacts for live replay, with stable
+  chunk IDs, versions, source frame IDs, voxel size, coordinate frame,
+  uncertainty percentiles, queue/update metadata, and no hidden-geometry or
+  RGB-only mapping claim.
+- Prefer a small dependency-safe meshing path or a documented optional
+  dependency fallback; do not vendor third-party code or weights.
+- Add tests for chunk schema, update ordering, no unbounded queue growth, truth
+  flags, and existing runtime regression commands.
+- Run format, lint, typecheck, unit tests, diff check, available make commands,
+  and a tiny or real measured replay evidence run under ignored `runs/`.
 
 Expected output:
 
-- A measured replay scheduler report with per-stage latency, queue/drop
-  counters, selected keyframes, mapper state counters, and explicit statements
-  about why the result is or is not live mapping ready.
+- `live_replay_mesh_updates.jsonl` or equivalent observed-only chunk update log.
+- Mesh chunk sidecars or chunk payloads loadable through existing API contracts.
+- A concise Phase 6F report explaining measured inputs used, chunk/update
+  counters, latency, bottlenecks, and why no realtime/mm/RGB-only accuracy claim
+  is made.

@@ -353,11 +353,11 @@ class TeacherSignalTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--output", result.stdout)
 
-    def test_status_handoff_points_to_phase6e(self) -> None:
+    def test_status_handoff_points_to_phase6f(self) -> None:
         text = (ROOT / "docs" / "status" / "next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 6E - Live Capture Replay Scheduler", text)
-        self.assertIn("actual camera adapter", text)
-        self.assertIn("phase6d_sparse_block_tsdf_live_replay_report.md", text)
+        self.assertIn("Phase 6F - Live Mesh Chunk Updates", text)
+        self.assertIn("runtime live-replay-recording", text)
+        self.assertIn("phase6e_live_replay_scheduler_report.md", text)
 
 
 def _write_clip_cache(root: Path, *, clip_count: int = 1, overlap: bool = False) -> Path:

@@ -26,11 +26,11 @@ class RepoContextBudgetTest(unittest.TestCase):
                     f"{relative_path} has {line_count} lines; budget is {max_lines}",
                 )
 
-    def test_next_task_points_to_phase_6e(self) -> None:
+    def test_next_task_points_to_phase_6f(self) -> None:
         next_task = (REPO_ROOT / "docs/status/next_task.md").read_text(encoding="utf-8")
-        self.assertIn("Phase 6E - Live Capture Replay Scheduler", next_task)
-        self.assertIn("actual camera adapter", next_task)
-        self.assertIn("phase6d_sparse_block_tsdf_live_replay_report.md", next_task)
+        self.assertIn("Phase 6F - Live Mesh Chunk Updates", next_task)
+        self.assertIn("runtime live-replay-recording", next_task)
+        self.assertIn("phase6e_live_replay_scheduler_report.md", next_task)
 
 
 if __name__ == "__main__":

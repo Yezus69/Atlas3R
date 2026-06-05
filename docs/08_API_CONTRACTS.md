@@ -189,98 +189,92 @@ without running inference or touching mapper/runtime/TSDF paths. Teacher
 prediction caches are `metadata.json`, `frame_summaries.jsonl`, and optional
 `arrays/frame_<frame_id:06d>.npz` payloads enabled by `--store-arrays`.
 
-Teacher-signal caches use
-`atlas3r_teacher_signal_manifest.json` plus `signals/clip_<id>.npz`. Manifest
-fields include `format_name=atlas3r_teacher_signal_cache`, `format_version=1`,
-source clip-cache manifest path, dataset/sequence, split, clip length, width,
-height, teacher name/version/source type, `signal_count`, relative payload
-paths, per-signal source clip IDs, frame IDs, timestamps, and truth boundary
-flags: `diagnostic_only=true`, `accuracy_report=false`,
-`performance_report=false`, `teacher_source`, `measured_geometry`, and
-`pseudo_label`.
-
-Teacher-signal payload required arrays are `depth_m`, `depth_sigma_m`,
-`confidence`, `valid_mask`, `K`, `T_world_camera`, `frame_ids`, and
-`timestamps_s` with shapes `T,H,W`, `T,3,3`, `T,4,4`, `T`, and `T`; optional
-arrays include pointmaps, normals, object IDs/confidence, and dynamic
-probability. Validation checks finite arrays, non-negative depth/sigma,
-positive sigma on valid pixels, probabilities in `[0,1]`, valid
-intrinsics/transforms, safe relative paths, and matching source clip metadata.
-Measured TUM caches mark measured true/pseudo false; pseudo/external caches do
-the inverse. Raw ingest NPZ names encode `source_clip_id`; inspect writes
-`summary.json`/`per_clip_metrics.jsonl`; map-signals dedupes by `frame_id`.
-External runners expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`,
-and `ExternalTeacherRunner`, import no external model packages at module import
-time, and write validated signal caches or explicit errors. Depth Pro and VGGT
-outputs remain pseudo-labels unless measured by source data; VGGT code/weights
-stay external, diagnostic source-pose alignment is not measured geometry, and
-VGGT reports are `summary.json`, `per_clip_metrics.jsonl`, and `report.md`.
-Public commands: `atlas3r adapters list`; `atlas3r adapters run ...`; `atlas3r inspect teacher-cache ...`; `atlas3r teachers forge-measured-tum`; `atlas3r teachers ingest-local`; `atlas3r teachers run-depth-pro`; `atlas3r teachers run-vggt`; `atlas3r teachers ingest-vggt-local`; `atlas3r teachers run-student-temporal`; `atlas3r teachers inspect-signals`; and `atlas3r teachers map-signals`.
+Teacher-signal caches use `atlas3r_teacher_signal_manifest.json` plus
+`signals/clip_<id>.npz`; manifests record source clip cache, dataset/sequence,
+split, clip size, teacher identity/source type, relative payloads, frame IDs,
+timestamps, and truth flags (`diagnostic_only=true`, no accuracy/performance
+report, measured-vs-pseudo source). Payload required arrays are `depth_m`,
+`depth_sigma_m`, `confidence`, `valid_mask`, `K`, `T_world_camera`,
+`frame_ids`, and `timestamps_s`; optional arrays include pointmaps, normals,
+object IDs/confidence, and dynamic probability. Validation checks finite
+arrays, non-negative depth/sigma, probabilities, valid intrinsics/transforms,
+safe relative paths, and matching source clip metadata. External teacher
+runners expose `ExternalTeacherStatus`, `ExternalTeacherRunConfig`, and
+`ExternalTeacherRunner`, import no external model packages at module import
+time, and keep Depth Pro/VGGT outputs pseudo-labels unless source-measured.
+Commands include `adapters list|run`, `inspect teacher-cache`, `teachers
+forge-measured-tum|ingest-local|run-depth-pro|run-vggt|ingest-vggt-local|
+run-student-temporal|inspect-signals|map-signals`.
 ## TSDF, MeshChunk, And WorldMap Diagnostic Outputs
-`atlas3r smoke tsdf-cube-room --output <folder>` writes deterministic NumPy CPU
-TSDF reference artifacts:
+`smoke tsdf-cube-room` writes `tsdf_grid.npz` (`tsdf`, `weight`, bounds, voxel
+size), `surface_points.npz` (`points_world_m`, confidence, uncertainty,
+voxel indices), `metadata.json`, and `metrics.json`. `smoke teacher-cache-tsdf`
+requires full arrays, converts replay frames through `DepthObservation`, and
+writes the same family. Optional `--write-mesh-sidecar` and
+`--write-world-map-sidecar` add observed-only sidecars:
+`mesh_chunk_sidecar.json` wraps a validated `MeshChunk` with
+`T_world_chunk=identity`, marker triangles, observed surface source, and
+`object_id_per_face=-1`; `world_map_sidecar.json` wraps that chunk in a
+validated `WorldMap` with empty objects/keyframes and deterministic
+`created_at_ns=0`. Inspection commands: `inspect world-map` and `inspect
+tsdf-output --mode surface|mesh|world-map|complete`, which cross-check
+coordinate frame, source frame IDs, voxel size, scale source, coverage,
+confidence, and mean/p95 uncertainty.
 
-```text
-<folder>/
-  synthetic_cube_room.atlas3r/
-  tsdf_grid.npz        tsdf, weight, grid_min_corner_world_m, voxel_size_m
-  surface_points.npz   points_world_m, confidence, uncertainty_m, voxel_indices_xyz
-  metadata.json        source frames, coordinate frame, voxel size, coverage, uncertainty
-  metrics.json         conservative synthetic fixture metrics or not-evaluated data
-```
+## Runtime Contracts
 
-`atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder>`
-requires a full-array cache, converts replay frames through `DepthObservation`,
-and writes the same TSDF artifact family.
-
-Optional sidecar flags:
-
-```bash
-atlas3r smoke tsdf-cube-room --output <folder> --write-mesh-sidecar|--write-world-map-sidecar
-atlas3r smoke teacher-cache-tsdf --input <cache_dir> --output <folder> --write-mesh-sidecar|--write-world-map-sidecar
-```
-
-`mesh_chunk_sidecar.json` has `format_name=atlas3r_tsdf_surface_mesh_chunk_sidecar`,
-`format_version=1`, a validated `MeshChunk`, sidecar/source metadata, and
-sample confidence/uncertainty arrays. It uses world-frame vertices with
-`T_world_chunk=identity`, low-fidelity marker triangles, `surface_source_per_face=0`,
-and `object_id_per_face=-1` until object-aware fusion exists.
-
-`world_map_sidecar.json` has `format_name=atlas3r_tsdf_world_map_sidecar`,
-`format_version=1`, one validated observed `MeshChunk` inside a validated
-`WorldMap`, empty `objects` and `keyframes`, deterministic `created_at_ns=0`,
-and source metadata.
-
-Inspection commands: `atlas3r inspect world-map --input <folder>/world_map_sidecar.json`;
-`atlas3r inspect tsdf-output --input <folder> [--mode surface|mesh|world-map|complete]`.
-
-TSDF output inspection validates required artifacts, sidecars when required,
-metrics when present, and cross-checks coordinate frame, source frame IDs,
-voxel size, scale source, observed coverage, confidence, and mean/p95 uncertainty.
-
-## Runtime Fixture Contracts
-
-`atlas3r smoke runtime-fixture --output <folder>` is a deterministic
-single-threaded synthetic scheduler skeleton. It writes `runtime_events.jsonl`,
-`runtime_summary.json`, `synthetic_cube_room.atlas3r/`, `teacher_cache/`, and
-`teacher_cache_tsdf/`. Runtime events use
-`format_name=atlas3r_runtime_fixture_event_log`, `format_version=1`,
-monotonic `event_index`, known `stage_name`, optional `frame_id`, deterministic
-`timestamp_ns`/`latency_ns`, `dropped_frame`, bounded `memory_counters`,
-relative `paths`, and deterministic `metadata`. Known stages are
-`runtime_start`, `session_write`, `source_frame`, `adapter_cache_write`,
-`adapter_cache_frame`, `tsdf_replay`, `tsdf_replay_frame`,
-`tsdf_output_write`, and `runtime_complete`.
-
-`runtime_summary.json` uses
-`format_name=atlas3r_runtime_fixture_smoke_summary`; `inspect
-runtime-fixture` validates the event log, summary, generated session,
-full-array teacher cache, and nested complete TSDF output inspection.
-`runtime stream-student-map` runs a temporal checkpoint over unique frames,
-emits `DepthObservation`s, fuses CPU TSDF, and writes per-mode quality, pose,
-latency, TSDF, trajectory, PLY, and preview outputs. Pose modes are `oracle`,
-diagnostic `student-relative`, `student-odometry`, or `both`; truth-claim flags
+`atlas3r smoke runtime-fixture --output <folder>` writes deterministic
+`runtime_events.jsonl`, `runtime_summary.json`, a synthetic session, teacher
+cache, and complete TSDF replay. Events use
+`format_name=atlas3r_runtime_fixture_event_log`, monotonic `event_index`,
+known `stage_name`, optional `frame_id`, deterministic timestamps/latencies,
+`dropped_frame`, bounded `memory_counters`, relative `paths`, and metadata.
+`inspect runtime-fixture` validates the folder. `runtime stream-student-map`
+emits diagnostic `DepthObservation`s from temporal checkpoints; pose modes are
+`oracle`, `student-relative`, `student-odometry`, or `both`, and truth claims
 stay false.
+
+### Capture Adapter Boundary
+
+Runtime capture adapters live under `atlas3r.runtime`, must not import optional
+camera dependencies at module import time, and expose `CaptureAdapterStatus`
+fields `name`, `display_name`, `available`, optional `reason`/`install_hint`,
+`capabilities`, and optional dependency versions. `CaptureFrame` fields are
+`frame_id`, `timestamp_ns`, optional `FramePacket`, source metadata,
+measured-depth/pose booleans, and optional measured depth path.
+`OpenCVCameraAdapter.status()` reports missing `cv2` with an install hint;
+`open()` raises explicit dependency/config errors. `ReplayRecordingAdapter`
+streams validated `atlas3r_recording` metadata. Public command:
+`atlas3r runtime capture-adapters list`.
+
+### Live Replay Recording
+
+`atlas3r runtime live-replay-recording --recording <recording_dir> --output
+<run_dir> --target-fps N --mapper-backend cpu-sparse` replays a measured
+recording through bounded capture/map queues. Default pacing is deterministic
+simulation; `--wall-clock-pacing` is opt-in. Pose output is separate from map
+updates. Mapping only uses `DepthObservation`s built from measured recording
+depth and measured `T_world_camera`; missing depth/pose skips mapping.
+
+`live_replay_events.jsonl` uses `format_name=atlas3r_live_replay_event`,
+`format_version=1`, monotonic `event_index`, `stage_name`, optional `frame_id`,
+queue depths, latency, `drop_reason`, `keyframe_selected`, and
+`keyframe_reason`. Drop reasons are `capture_queue_full`, `map_queue_full`,
+`missing_depth`, `missing_pose`, `duplicate_frame`, `not_keyframe`,
+`scheduler_shutdown`, or `other`. Keyframe reasons are `first_frame`, `stride`,
+`translation_threshold`, `rotation_threshold`, `uncertainty_threshold`,
+`forced`, or `not_selected`.
+
+`live_replay_summary.json` uses `format_name=atlas3r_live_replay_summary` and
+records source metadata, target FPS, simulated pacing, seen/emitted frames,
+pose/keyframe/map counts, dropped frame/keyframe counts, max queue depths,
+latency p50/p95/max, mapper backend, voxel size, sparse state counters, memory
+counters, artifacts, and `truth_boundary` flags:
+`diagnostic_only=true`, `accuracy_report=false`, `performance_report=false`,
+`realtime_claim=false`, `rgb_only_mapping_ready=false`,
+`hidden_geometry_measured=false`, measured depth/pose booleans, and
+`student_rgb_only_used=false`. Outputs include `live_replay_report.md`,
+`sparse_tsdf/`, optional `surface_points.ply`, and no triangle mesh chunks yet.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.

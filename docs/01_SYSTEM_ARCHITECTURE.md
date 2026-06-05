@@ -51,6 +51,9 @@ FramePacket
 ## Module 2: Streaming Metric Geometry Transformer (SMGT)
 
 SMGT is the neural core. It is trained as a compact student model using teacher supervision from geometry foundation models.
+Teacher models and external runners are offline supervision/adaptation paths;
+the runtime target is the compact SMGT student plus geometric checks, not the
+large teacher models running in the live loop.
 
 ### Runtime target variants
 
@@ -259,18 +262,21 @@ For each `ObjectInstance`, export:
 
 ## Module 7: Runtime scheduler
 
-Use asynchronous streams:
+Use bounded asynchronous streams with different rates:
 
 ```text
-Thread/stream A: frame capture/decode/preprocess
-Thread/stream B: every-frame pose inference
-Thread/stream C: keyframe depth/pointmap/object inference
-Thread/stream D: pose graph and loop closure
-Thread/stream E: TSDF integration and mesh extraction
-Thread/stream F: API/export/visualization
+Thread/stream A: capture/decode/preprocess at input FPS
+Thread/stream B: every-frame pose stream at camera FPS
+Thread/stream C: selected-keyframe depth/pointmap/map update stream
+Thread/stream D: lower-rate object stream on keyframes or changed regions
+Thread/stream E: asynchronous pose graph and loop closure
+Thread/stream F: asynchronous TSDF integration, mesh extraction, and export
 ```
 
-The API should emit pose at camera FPS. Mesh updates can be chunked and slightly delayed, but the map must remain live and bounded-memory.
+The API should emit pose at camera FPS even when map/object/mesh streams lag.
+Mesh updates can be chunked and delayed, but queues must be bounded and drops
+must be explicit. Persistent map state is an object-aware sparse TSDF/surfel map
+with source-frame/uncertainty metadata, not hidden transformer memory alone.
 
 ## Module 8: Deployment backends
 
@@ -288,4 +294,3 @@ The API should emit pose at camera FPS. Mesh updates can be chunked and slightly
 - Core ML export for production;
 - separate `smgt_s`/`smgt_tiny` architecture with Core ML-friendly ops;
 - object segmentation and loop closure at reduced rate.
-

@@ -1,5 +1,15 @@
 """Live camera, video IO, and runtime scheduling."""
 
+from atlas3r.runtime.capture_adapters import (
+    CaptureAdapterConfigError,
+    CaptureAdapterDependencyError,
+    CaptureAdapterError,
+    CaptureAdapterStatus,
+    CaptureFrame,
+    OpenCVCameraAdapter,
+    ReplayRecordingAdapter,
+    list_capture_adapters,
+)
 from atlas3r.runtime.events import (
     RUNTIME_EVENT_LOG_FORMAT_NAME,
     RUNTIME_EVENT_LOG_FORMAT_VERSION,
@@ -26,7 +36,13 @@ from atlas3r.runtime.scheduler import (
 
 __all__ = [
     "BoundedMemoryCounters",
+    "CaptureAdapterConfigError",
+    "CaptureAdapterDependencyError",
+    "CaptureAdapterError",
+    "CaptureAdapterStatus",
+    "CaptureFrame",
     "DEFAULT_RUNTIME_FRAME_ARRAY_BOUND",
+    "OpenCVCameraAdapter",
     "RUNTIME_EVENTS_FILENAME",
     "RUNTIME_EVENT_LOG_FORMAT_NAME",
     "RUNTIME_EVENT_LOG_FORMAT_VERSION",
@@ -39,7 +55,9 @@ __all__ = [
     "RuntimeEvent",
     "RuntimeFixtureSmokeResult",
     "RuntimeStage",
+    "ReplayRecordingAdapter",
     "format_runtime_fixture_inspection",
+    "list_capture_adapters",
     "runtime_fixture_inspection_record",
     "write_runtime_fixture_smoke",
 ]

@@ -61,6 +61,33 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--backend", fuse_result.stdout)
         self.assertIn("cpu-sparse", fuse_result.stdout)
 
+        live_replay_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "live-replay-recording", "--help"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(live_replay_result.returncode, 0, live_replay_result.stderr)
+        self.assertIn("--target-fps", live_replay_result.stdout)
+        self.assertIn("--max-capture-queue", live_replay_result.stdout)
+        self.assertIn("--max-map-queue", live_replay_result.stdout)
+        self.assertIn("--drop-policy", live_replay_result.stdout)
+        self.assertIn("cpu-sparse", live_replay_result.stdout)
+
+        capture_adapters_result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "runtime", "capture-adapters", "list"],
+            check=False,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(capture_adapters_result.returncode, 0, capture_adapters_result.stderr)
+        self.assertIn("opencv-camera", capture_adapters_result.stdout)
+        self.assertIn("replay-recording", capture_adapters_result.stdout)
+
         stress_result = subprocess.run(
             [sys.executable, "-m", "atlas3r", "runtime", "sparse-tsdf-stress", "--help"],
             check=False,
