@@ -25,7 +25,7 @@ scale, visibility, motion, calibration, and dynamic-scene ambiguities. Hidden
 or completed geometry must be marked predicted/uncertain, not measured. Every
 geometry output carries confidence or uncertainty.
 
-## Current Phase 6E State
+## Current Phase 6F State
 
 The current implemented slice is still measured/replay diagnostic runtime
 plumbing, not final RGB-only mapping:
@@ -39,14 +39,19 @@ plumbing, not final RGB-only mapping:
   recording with deterministic simulated pacing, bounded capture/map queues,
   explicit frame/keyframe drop reasons, sparse TSDF map updates, JSONL events,
   a summary, and a Markdown report.
+- With `--export-mesh-chunks`, live replay now emits observed-only triangle
+  mesh chunk updates from dirty sparse TSDF blocks under `mesh_chunks/`, with
+  stable `block_<x>_<y>_<z>` chunk IDs, versioned NPZ payloads, optional PLY
+  payloads, a manifest, update events, conservative truth flags, and latency
+  profile counters.
 - `python -m atlas3r runtime capture-adapters list` reports dependency-safe
   camera adapter status. The OpenCV adapter does not import `cv2` at module
   import time and reports an install hint when unavailable.
 
-Phase 6E outputs are diagnostics. They use measured pose/depth only when
+Phase 6F outputs are diagnostics. They use measured pose/depth only when
 present, skip mapping when those inputs are missing, and do not invent RGB-only
-depth, pose, hidden geometry, object meshes, loop closure, or live triangle
-mesh chunks.
+depth, pose, hidden geometry, object-aware fusion, loop closure, realtime
+readiness, benchmark accuracy, or millimeter accuracy.
 
 ## Useful Commands
 
@@ -55,6 +60,7 @@ python -m atlas3r --help
 python -m atlas3r smoke synthetic-cube-room --output build/smoke/synthetic_cube_room.atlas3r
 python -m atlas3r runtime capture-adapters list
 python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse
+python -m atlas3r runtime live-replay-recording --recording <recording> --output <run> --target-fps 30 --mapper-backend cpu-sparse --export-mesh-chunks --mesh-format ply
 python -m atlas3r runtime fuse-recording --recording <recording> --output <run> --mode incremental --backend cpu-sparse
 ```
 

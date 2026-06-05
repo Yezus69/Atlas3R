@@ -1,29 +1,26 @@
-# Active Task - Phase 6E Live Replay Scheduler And Camera Adapter Boundary
+# Active Task - Phase 6F Live Mesh Chunk Updates
 
-Goal: add a measured-recording live replay scheduler with bounded queues,
-explicit keyframe/drop decisions, sparse TSDF map updates, conservative truth
-flags, and a dependency-safe camera adapter boundary.
+Goal: turn measured Phase 6E sparse replay into observed-only live triangle mesh
+chunk updates with stable chunk IDs, versioned NPZ/PLY artifacts, profiling
+evidence, tests, and a committed result.
 
-Branch: `codex/phase6e-live-replay-scheduler`
+Branch: `codex/phase6f-live-mesh-chunks`
 
 Checklist:
 
-- [x] Confirm the working tree is clean and create the Phase 6E branch.
-- [x] Read the Phase 6E goal and relevant architecture, contracts, evaluation,
-  and compact status docs.
-- [x] Audit tracked repo files for current architecture, generated artifacts,
-  compact reports, and stale/duplicate candidates.
-- [x] Add dependency-safe runtime capture adapter contracts and OpenCV status
-  handling without import-time `cv2`.
-- [x] Add a live-style replay scheduler over existing `atlas3r_recording`
-  loading and measured `DepthObservation` mapper input.
-- [x] Add `runtime live-replay-recording` and `runtime capture-adapters list`
-  CLI coverage while preserving `runtime fuse-recording` backends.
-- [x] Write live replay events, summary, report, sparse TSDF artifacts, and
-  conservative truth-boundary metadata.
-- [x] Add focused scheduler, adapter, runtime smoke, CLI, and regression tests.
-- [x] Update concise README, PLANS, API contracts, architecture, evaluation,
-  progress, decisions, next-task, and Phase 6E report docs.
-- [x] Run required format, lint, typecheck, unit, diff, available make, and
-  real/tiny replay evidence commands.
-- [x] Commit the completed Phase 6E work.
+- [x] Confirm clean worktree and create the Phase 6F branch from Phase 6E.
+- [x] Read the required architecture, contract, evaluation, status, runtime,
+  sparse mapper, CLI, and regression test files.
+- [x] Extend sparse TSDF updates with dirty block coordinates and per-stage
+  timings without changing existing runtime behavior.
+- [x] Add dependency-safe observed mesh chunk schemas, fallback sparse meshing,
+  NPZ/PLY artifact writers, manifest, and update log.
+- [x] Integrate bounded incremental mesh chunk updates into
+  `runtime live-replay-recording` behind new CLI flags.
+- [x] Add focused schema, dirty-block, mesher, artifact loading, live replay,
+  and CLI regression tests.
+- [x] Run required format, lint, typecheck, unit, diff, and focused commands.
+- [x] Run real/largest measured replay mesh evidence and Phase 6F profiles.
+- [x] Update concise README, PLANS, architecture, API contracts, evaluation,
+  progress, decisions, next task, and Phase 6F report docs.
+- [x] Commit with `feat(mapping): stream observed mesh chunks from sparse replay`.

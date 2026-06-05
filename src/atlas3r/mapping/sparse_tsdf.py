@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -71,8 +72,22 @@ class SparseTSDFUpdateStats:
     candidate_voxel_count: int
     new_voxel_count: int
     updated_voxel_count: int
+    dirty_block_count: int
+    changed_block_coords_xyz: tuple[tuple[int, int, int], ...]
+    stage_timings_ns: dict[str, int]
     skipped_duplicate_frame: bool
     update_implementation: str
+
+
+@dataclass(frozen=True)
+class SparseTSDFBlockSnapshot:
+    """Active sparse voxels for one block, optionally with a one-voxel halo."""
+
+    block_coord_xyz: tuple[int, int, int]
+    voxel_coords_xyz: npt.NDArray[np.int64]
+    tsdf: npt.NDArray[np.float32]
+    weight: npt.NDArray[np.float32]
+    target_mask: npt.NDArray[np.bool_]
 
 
 @dataclass
@@ -101,6 +116,10 @@ class SparseBlockTSDFMapper:
         )
 
     @property
+    def config(self) -> SparseTSDFConfig:
+        return self._config
+
+    @property
     def source_frame_ids(self) -> tuple[int, ...]:
         return tuple(self._source_frame_ids)
 
@@ -125,52 +144,71 @@ class SparseBlockTSDFMapper:
     def integrate(self, observation: DepthObservation) -> SparseTSDFUpdateStats:
         """Integrate one measured observation into sparse block state."""
 
+        total_start_ns = time.perf_counter_ns()
+        stage_timings_ns = _zero_stage_timings()
         if observation.frame_id in self._seen_frame_ids:
+            stage_timings_ns["total_integrate"] = time.perf_counter_ns() - total_start_ns
             return self._stats(
                 observation,
                 valid_depth_sample_count=0,
                 candidate_voxel_count=0,
                 new_voxel_count=0,
                 updated_voxel_count=0,
+                changed_block_coords_xyz=(),
+                stage_timings_ns=stage_timings_ns,
                 skipped_duplicate_frame=True,
             )
 
+        stage_start_ns = time.perf_counter_ns()
         samples = sparse_surface_samples(observation, pixel_stride=self._config.pixel_stride)
+        stage_timings_ns["sparse_surface_samples"] = time.perf_counter_ns() - stage_start_ns
         if samples.valid_depth_sample_count == 0:
             self._record_source_frame(observation.frame_id)
+            stage_timings_ns["total_integrate"] = time.perf_counter_ns() - total_start_ns
             return self._stats(
                 observation,
                 valid_depth_sample_count=0,
                 candidate_voxel_count=0,
                 new_voxel_count=0,
                 updated_voxel_count=0,
+                changed_block_coords_xyz=(),
+                stage_timings_ns=stage_timings_ns,
                 skipped_duplicate_frame=False,
             )
 
+        stage_start_ns = time.perf_counter_ns()
         candidate_coords = sparse_candidate_voxel_coords(
             samples.points_world_m,
             voxel_size_m=self._config.voxel_size_m,
             offsets_xyz=self._offsets_xyz,
         )
+        stage_timings_ns["sparse_candidate_voxel_coords"] = time.perf_counter_ns() - stage_start_ns
+        stage_start_ns = time.perf_counter_ns()
         updates = project_sparse_candidates(
             observation=observation,
             voxel_coords_xyz=candidate_coords,
             voxel_size_m=self._config.voxel_size_m,
             truncation_distance_m=self._config.truncation_distance_m,
         )
-        new_count, updated_count = self._apply_updates(
+        stage_timings_ns["project_sparse_candidates"] = time.perf_counter_ns() - stage_start_ns
+        stage_start_ns = time.perf_counter_ns()
+        new_count, updated_count, changed_block_coords = self._apply_updates(
             updates.voxel_coords_xyz,
             updates.tsdf,
             updates.weight,
         )
+        stage_timings_ns["apply_sparse_updates"] = time.perf_counter_ns() - stage_start_ns
         self._record_source_frame(observation.frame_id)
         self._integrated_observation_count += 1
+        stage_timings_ns["total_integrate"] = time.perf_counter_ns() - total_start_ns
         return self._stats(
             observation,
             valid_depth_sample_count=samples.valid_depth_sample_count,
             candidate_voxel_count=int(candidate_coords.shape[0]),
             new_voxel_count=new_count,
             updated_voxel_count=updated_count,
+            changed_block_coords_xyz=changed_block_coords,
+            stage_timings_ns=stage_timings_ns,
             skipped_duplicate_frame=False,
         )
 
@@ -250,6 +288,87 @@ class SparseBlockTSDFMapper:
             return np.empty((0, 3), dtype=np.int64)
         return np.asarray(sorted(self._blocks), dtype=np.int64)
 
+    def block_voxel_snapshot(
+        self,
+        block_coord_xyz: tuple[int, int, int],
+        *,
+        include_one_voxel_halo: bool = False,
+    ) -> SparseTSDFBlockSnapshot:
+        """Return active voxels for one sparse block and optional one-voxel halo."""
+
+        return self.block_voxel_snapshots(
+            (block_coord_xyz,),
+            include_one_voxel_halo=include_one_voxel_halo,
+        )[_normalize_block_coord(block_coord_xyz)]
+
+    def block_voxel_snapshots(
+        self,
+        block_coords_xyz: tuple[tuple[int, int, int], ...],
+        *,
+        include_one_voxel_halo: bool = False,
+    ) -> dict[tuple[int, int, int], SparseTSDFBlockSnapshot]:
+        """Return active voxel snapshots for multiple blocks from one state scan."""
+
+        normalized = tuple(_normalize_block_coord(coord) for coord in block_coords_xyz)
+        voxel_coords, tsdf, weight = self.active_voxel_arrays()
+        return {
+            coord: self._block_voxel_snapshot_from_arrays(
+                coord,
+                voxel_coords=voxel_coords,
+                tsdf=tsdf,
+                weight=weight,
+                include_one_voxel_halo=include_one_voxel_halo,
+            )
+            for coord in normalized
+        }
+
+    def _block_voxel_snapshot_from_arrays(
+        self,
+        block_coord: tuple[int, int, int],
+        *,
+        voxel_coords: npt.NDArray[np.int64],
+        tsdf: npt.NDArray[np.float32],
+        weight: npt.NDArray[np.float32],
+        include_one_voxel_halo: bool,
+    ) -> SparseTSDFBlockSnapshot:
+        if voxel_coords.size == 0:
+            return SparseTSDFBlockSnapshot(
+                block_coord_xyz=block_coord,
+                voxel_coords_xyz=np.empty((0, 3), dtype=np.int64),
+                tsdf=np.empty((0,), dtype=FLOAT32),
+                weight=np.empty((0,), dtype=FLOAT32),
+                target_mask=np.empty((0,), dtype=np.bool_),
+            )
+        block_size = self._config.block_size_voxels
+        target_min = np.asarray(block_coord, dtype=np.int64) * block_size
+        target_max = target_min + block_size
+        halo = 1 if include_one_voxel_halo else 0
+        keep = np.all(
+            (voxel_coords >= target_min[None, :] - halo)
+            & (voxel_coords < target_max[None, :] + halo),
+            axis=1,
+        )
+        if not np.any(keep):
+            return SparseTSDFBlockSnapshot(
+                block_coord_xyz=block_coord,
+                voxel_coords_xyz=np.empty((0, 3), dtype=np.int64),
+                tsdf=np.empty((0,), dtype=FLOAT32),
+                weight=np.empty((0,), dtype=FLOAT32),
+                target_mask=np.empty((0,), dtype=np.bool_),
+            )
+        kept_coords = voxel_coords[keep]
+        target_mask = np.all(
+            (kept_coords >= target_min[None, :]) & (kept_coords < target_max[None, :]),
+            axis=1,
+        )
+        return SparseTSDFBlockSnapshot(
+            block_coord_xyz=block_coord,
+            voxel_coords_xyz=kept_coords.astype(np.int64, copy=False),
+            tsdf=tsdf[keep].astype(FLOAT32, copy=False),
+            weight=weight[keep].astype(FLOAT32, copy=False),
+            target_mask=target_mask.astype(np.bool_, copy=False),
+        )
+
     def surface_metadata(
         self,
         *,
@@ -293,15 +412,16 @@ class SparseBlockTSDFMapper:
         voxel_coords_xyz: npt.NDArray[np.int64],
         tsdf: npt.NDArray[np.float32],
         weight: npt.NDArray[np.float32],
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, tuple[tuple[int, int, int], ...]]:
         if voxel_coords_xyz.size == 0:
-            return 0, 0
+            return 0, 0, ()
         block_size = self._config.block_size_voxels
         block_coords = np.floor_divide(voxel_coords_xyz, block_size)
         local_coords = voxel_coords_xyz - block_coords * block_size
         unique_blocks, inverse = np.unique(block_coords, axis=0, return_inverse=True)
         new_voxels = 0
         updated_voxels = 0
+        changed_blocks: list[tuple[int, int, int]] = []
         for block_index, block_coord in enumerate(unique_blocks):
             block_key = (
                 int(block_coord[0]),
@@ -314,6 +434,8 @@ class SparseBlockTSDFMapper:
             local_index = tuple(local[:, axis] for axis in range(3))
             old_weight = block.weight[local_index]
             update_weight = weight[mask]
+            if not np.any(update_weight > 0.0):
+                continue
             new_weight = old_weight + update_weight
             block.tsdf[local_index] = (
                 block.tsdf[local_index] * old_weight + tsdf[mask] * update_weight
@@ -322,8 +444,9 @@ class SparseBlockTSDFMapper:
             newly_active = (old_weight <= 0.0) & (new_weight > 0.0)
             new_voxels += int(np.count_nonzero(newly_active))
             updated_voxels += int(np.count_nonzero(~newly_active & (update_weight > 0.0)))
+            changed_blocks.append(block_key)
         self._active_voxel_count += new_voxels
-        return new_voxels, updated_voxels
+        return new_voxels, updated_voxels, tuple(changed_blocks)
 
     def _block_for_update(self, block_key: tuple[int, int, int]) -> _SparseBlock:
         block = self._blocks.get(block_key)
@@ -354,6 +477,8 @@ class SparseBlockTSDFMapper:
         candidate_voxel_count: int,
         new_voxel_count: int,
         updated_voxel_count: int,
+        changed_block_coords_xyz: tuple[tuple[int, int, int], ...],
+        stage_timings_ns: dict[str, int],
         skipped_duplicate_frame: bool,
     ) -> SparseTSDFUpdateStats:
         return SparseTSDFUpdateStats(
@@ -368,9 +493,28 @@ class SparseBlockTSDFMapper:
             candidate_voxel_count=candidate_voxel_count,
             new_voxel_count=new_voxel_count,
             updated_voxel_count=updated_voxel_count,
+            dirty_block_count=len(changed_block_coords_xyz),
+            changed_block_coords_xyz=changed_block_coords_xyz,
+            stage_timings_ns=dict(stage_timings_ns),
             skipped_duplicate_frame=skipped_duplicate_frame,
             update_implementation=SPARSE_TSDF_UPDATE_IMPLEMENTATION,
         )
+
+
+def _normalize_block_coord(block_coord_xyz: tuple[int, int, int]) -> tuple[int, int, int]:
+    if len(block_coord_xyz) != 3:
+        raise ValueError("block_coord_xyz: must contain exactly three coordinates")
+    return (int(block_coord_xyz[0]), int(block_coord_xyz[1]), int(block_coord_xyz[2]))
+
+
+def _zero_stage_timings() -> dict[str, int]:
+    return {
+        "apply_sparse_updates": 0,
+        "project_sparse_candidates": 0,
+        "sparse_candidate_voxel_coords": 0,
+        "sparse_surface_samples": 0,
+        "total_integrate": 0,
+    }
 
 
 def _uncertainty_summary(values: npt.NDArray[np.float64]) -> dict[str, float | None]:
@@ -386,6 +530,7 @@ def _uncertainty_summary(values: npt.NDArray[np.float64]) -> dict[str, float | N
 
 __all__ = [
     "SPARSE_TSDF_UPDATE_IMPLEMENTATION",
+    "SparseTSDFBlockSnapshot",
     "SparseBlockTSDFMapper",
     "SparseTSDFConfig",
     "SparseTSDFUpdateStats",

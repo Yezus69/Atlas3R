@@ -47,6 +47,7 @@ tests, and the contract docs.
 | D-0040 | Persistent TSDF backend | Phase 6C makes `fuse-recording --mode incremental` default to `--backend cpu-persistent`, with fixed offline bounds, one-observation persistent TSDF updates, and batch CPU TSDF comparison; `cpu-rebuild` remains for Phase 6B regression. | Yes |
 | D-0041 | Sparse block TSDF backend | Phase 6D adds `--backend cpu-sparse`, which lazily allocates sparse TSDF blocks from measured `DepthObservation`s without fixed dense world bounds, skips duplicate frame IDs deterministically, writes sparse state artifacts, and compares final surface points against dense persistent diagnostics. | Yes |
 | D-0042 | Live replay scheduler boundary | Phase 6E adds `runtime live-replay-recording` as a measured-recording scheduler diagnostic with bounded capture/map queues, explicit drop and keyframe reasons, sparse TSDF updates, conservative truth flags, and dependency-safe runtime capture adapter status including lazy OpenCV handling. | Yes |
+| D-0043 | Observed mesh chunk streaming | Phase 6F mesh chunks are observed-only sparse TSDF block payloads with stable `block_<x>_<y>_<z>` IDs, versioned NPZ arrays, optional PLY debug export, manifest/update logs, dirty-block scheduling, and no hidden-geometry/RGB-only/realtime/accuracy claim. | Yes |
 
 Active cross-cutting constraints:
 

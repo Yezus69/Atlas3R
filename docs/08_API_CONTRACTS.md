@@ -265,16 +265,15 @@ queue depths, latency, `drop_reason`, `keyframe_selected`, and
 `translation_threshold`, `rotation_threshold`, `uncertainty_threshold`,
 `forced`, or `not_selected`.
 
-`live_replay_summary.json` uses `format_name=atlas3r_live_replay_summary` and
-records source metadata, target FPS, simulated pacing, seen/emitted frames,
-pose/keyframe/map counts, dropped frame/keyframe counts, max queue depths,
-latency p50/p95/max, mapper backend, voxel size, sparse state counters, memory
-counters, artifacts, and `truth_boundary` flags:
-`diagnostic_only=true`, `accuracy_report=false`, `performance_report=false`,
-`realtime_claim=false`, `rgb_only_mapping_ready=false`,
-`hidden_geometry_measured=false`, measured depth/pose booleans, and
-`student_rgb_only_used=false`. Outputs include `live_replay_report.md`,
-`sparse_tsdf/`, optional `surface_points.ply`, and no triangle mesh chunks yet.
+`live_replay_summary.json` uses `format_name=atlas3r_live_replay_summary` and records source metadata, target FPS, simulated pacing, frame/pose/keyframe/map/drop/queue counts, latency p50/p95/max, mapper backend, voxel size, sparse/dirty/mesh counters, memory counters, artifacts, and `truth_boundary` flags: `diagnostic_only=true`, `accuracy_report=false`, `performance_report=false`, `realtime_claim=false`, `rgb_only_mapping_ready=false`, `hidden_geometry_measured=false`, `observed_only=true`, `predicted_completion=false`, measured depth/pose booleans, and `student_rgb_only_used=false`. Outputs include `live_replay_report.md`, `sparse_tsdf/`, optional `surface_points.ply`, and optional observed mesh chunks.
+
+### Observed Mesh Chunk Artifacts
+
+`runtime live-replay-recording --export-mesh-chunks` writes `mesh_chunks/mesh_chunk_manifest.json`, `mesh_chunks/mesh_chunk_updates.jsonl`, `mesh_chunks/chunks/*.npz`, and `*.ply` when `--mesh-format ply|both` is requested. NPZ is the canonical array payload; PLY is a loadability/debug export. Stable chunk IDs are `block_<x>_<y>_<z>`.
+
+`MeshChunk` metadata uses `format_name=atlas3r_observed_mesh_chunk`, `format_version=1`, `chunk_id`, `chunk_coord_xyz [int,int,int]`, `version`, `update_type upsert|delete`, `coordinate_frame`, `T_world_chunk 4x4`, `voxel_size_m`, `truncation_distance_m`, `block_size_voxels`, `bbox_world_min_m/max_m`, `source_frame_ids`, `first_source_frame_id`, `last_source_frame_id`, `active_voxel_count`, `surface_voxel_count`, `vertex_count`, `triangle_count`, `uncertainty_summary_m mean/p50/p95/max`, `confidence_summary mean/p50/p95/max`, `observed_coverage_estimate`, `metric_scale_source`, `mesher_backend`, and truth flags `observed_only=true`, `predicted_completion=false`, `hidden_geometry_measured=false`, `rgb_only_mapping_ready=false`, `student_rgb_only_used=false`, `accuracy_report=false`, `realtime_claim=false`. Payload arrays: `vertices_world_m float32[N,3]`, `normals_world float32[N,3]`, `triangles uint32[M,3]`.
+
+`MeshChunkUpdateEvent` records monotonic `event_index`, `frame_id`, `timestamp_ns`, `chunk_id`, `chunk_coord_xyz`, `version`, `update_type`, relative `payload_npz`, optional relative `payload_ply`, `vertex_count`, `triangle_count`, `dirty_reason`, `mesh_latency_ns`, capture/map queue depths, and the same truth flags. `MeshChunkManifest` uses `format_name=atlas3r_observed_mesh_chunk_manifest`, `format_version=1`, `chunk_count`, `active_chunk_count`, `deleted_chunk_count`, `total_vertex_count`, `total_triangle_count`, `source_frame_ids_mapped`, `coordinate_frame`, `voxel_size_m`, `mapper_backend`, `mesher_backend`, `truth_boundary`, and a `chunks` index of active latest payloads.
 ## Student Model Boundary
 `atlas3r.models.student` is a dependency-safe NumPy-only boundary for future
 Streaming Metric Geometry Transformer work. It is not a mapper input contract.

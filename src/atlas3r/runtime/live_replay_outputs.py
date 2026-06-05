@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -95,10 +95,21 @@ def live_replay_summary(
     latency_report: dict[str, object],
     point_cloud_path: Path | None,
     mesh_status: dict[str, object],
+    mesh_manifest: dict[str, object] | None,
+    dirty_block_counts: tuple[int, ...],
 ) -> dict[str, object]:
+    mesh_artifacts: dict[str, object] = {}
+    if mesh_manifest is not None:
+        mesh_artifacts = {
+            "mesh_chunk_manifest": "mesh_chunks/mesh_chunk_manifest.json",
+            "mesh_chunk_updates": "mesh_chunks/mesh_chunk_updates.jsonl",
+            "mesh_chunks": "mesh_chunks",
+        }
+    mesh_payload_bytes = _status_int(mesh_status, "mesh_payload_bytes")
     return {
         **DIAGNOSTIC_TRUTH_FLAGS,
         "active_block_count": mapper.active_block_count,
+        "active_mesh_chunk_count": _status_int(mesh_status, "active_mesh_chunk_count"),
         "active_voxel_count": mapper.active_voxel_count,
         "artifacts": {
             "events": "live_replay_events.jsonl",
@@ -108,10 +119,14 @@ def live_replay_summary(
             "report": "live_replay_report.md",
             "sparse_tsdf": "sparse_tsdf",
             "summary": "live_replay_summary.json",
+            **mesh_artifacts,
         },
+        "deleted_mesh_chunk_count": _status_int(mesh_status, "deleted_mesh_chunk_count"),
         "drop_policy": config.drop_policy,
         "dropped_frame_count": state.dropped_frame_count,
         "dropped_keyframe_count": state.dropped_keyframe_count,
+        "dirty_block_count": int(sum(dirty_block_counts)),
+        "dirty_blocks_per_update": _int_summary(dirty_block_counts),
         "format_name": LIVE_REPLAY_SUMMARY_FORMAT_NAME,
         "format_version": LIVE_REPLAY_FORMAT_VERSION,
         "frame_count_emitted": state.frame_count_emitted,
@@ -131,10 +146,16 @@ def live_replay_summary(
             "active_voxel_count": mapper.active_voxel_count,
             "allocated_voxel_count": mapper.allocated_voxel_count,
             "approximate_sparse_state_bytes": mapper.approximate_state_bytes,
+            "mesh_payload_bytes": mesh_payload_bytes,
             "sparse_output_array_bytes": sparse_state_array_bytes(mapper, surface),
         },
         "mesh": mesh_status,
+        "mesh_backend": mesh_status.get("mesh_backend"),
+        "mesh_chunk_count": _status_int(mesh_status, "mesh_chunk_count"),
+        "mesh_chunk_update_count": _status_int(mesh_status, "mesh_chunk_update_count"),
+        "mesh_format": mesh_status.get("mesh_format"),
         "output": str(config.output),
+        "pixel_stride": config.pixel_stride,
         "pose_update_count": state.pose_update_count,
         "recording": str(recording.root),
         "recording_source": {
@@ -145,6 +166,8 @@ def live_replay_summary(
         "source_frame_ids_mapped": [observation.frame_id for observation in source_observations],
         "surface_point_count": int(surface.points_world_m.shape[0]),
         "target_fps": config.target_fps,
+        "total_triangle_count": _status_int(mesh_status, "total_triangle_count"),
+        "total_vertex_count": _status_int(mesh_status, "total_vertex_count"),
         "truth_boundary": truth_boundary(
             measured_depth_used=state.measured_depth_used,
             measured_pose_used=state.measured_pose_used,
@@ -191,6 +214,11 @@ def write_live_replay_report(path: Path, summary: dict[str, object]) -> None:
     truth = cast(dict[str, object], summary["truth_boundary"])
     latency = cast(dict[str, object], summary["latency"])
     map_latency = latency.get("map_update", {})
+    mesh_latency = latency.get("mesh_update", {})
+    combined_latency = latency.get("map_mesh_update", {})
+    mesh = cast(dict[str, object], summary["mesh"])
+    memory = cast(dict[str, object], summary["memory_counters"])
+    ply_requested = summary["mesh_format"] in {"ply", "both"}
     target_line = (
         f"- Target FPS: `{summary['target_fps']}`; "
         f"simulated pacing: `{summary['simulated_pacing']}`"
@@ -221,17 +249,29 @@ def write_live_replay_report(path: Path, summary: dict[str, object]) -> None:
         drop_line,
         queue_line,
         f"- Mapper: `{summary['mapper_backend']}` at voxel size `{summary['voxel_size_m']}` m",
+        f"- Pixel stride: `{summary['pixel_stride']}`",
         f"- Surface points: `{summary['surface_point_count']}`",
+        f"- Mesh chunks: `{summary['active_mesh_chunk_count']}` active, "
+        f"`{summary['mesh_chunk_update_count']}` updates",
+        f"- Mesh vertices/triangles: `{summary['total_vertex_count']}` / "
+        f"`{summary['total_triangle_count']}`",
+        f"- Mesh backend/format: `{summary['mesh_backend']}` / `{summary['mesh_format']}`",
+        f"- Mesh payload bytes: `{memory['mesh_payload_bytes']}`",
         f"- Map update latency: `{map_latency}`",
+        f"- Mesh update latency: `{mesh_latency}`",
+        f"- Combined map+mesh latency: `{combined_latency}`",
+        f"- NPZ mesh chunks loadable by contract: `{bool(mesh.get('mesh_exported'))}`",
+        f"- PLY requested/written when format asks for it: `{ply_requested}`",
         "",
-        "This is not live-mapping-ready evidence. It replays measured depth and measured pose "
-        "through a bounded scheduler and a CPU sparse TSDF mapper; no RGB-only student mapping, "
-        "object-aware fusion, loop closure, triangle mesh streaming, realtime claim, benchmark "
-        "accuracy claim, or millimeter claim is made.",
+        "This is observed-only measured-depth/pose replay evidence and remains not "
+        "live-mapping-ready evidence. It replays measured depth and measured pose through "
+        "bounded queues, a CPU sparse TSDF mapper, and optional observed mesh chunk updates; "
+        "no RGB-only student mapping, object-aware fusion, loop closure, hidden geometry "
+        "completion, realtime claim, benchmark accuracy claim, or millimeter claim is made.",
         "",
-        "Remaining bottlenecks: CPU sparse map-update latency, no live triangle mesh chunks, no "
-        "real camera hardware exercise in CI, no object/map update removals, and no accelerated "
-        "mapper.",
+        "Remaining bottlenecks: CPU sparse map-update latency, blocky fallback meshing quality, "
+        "no real camera hardware exercise in CI, no object/map update removals, and no "
+        "accelerated mapper.",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -244,7 +284,9 @@ def truth_boundary(*, measured_depth_used: bool, measured_pose_used: bool) -> di
         "hidden_geometry_measured": False,
         "measured_depth_used": measured_depth_used,
         "measured_pose_used": measured_pose_used,
+        "observed_only": True,
         "performance_report": False,
+        "predicted_completion": False,
         "realtime_claim": False,
         "rgb_only_mapping_ready": False,
         "student_rgb_only_used": False,
@@ -257,9 +299,25 @@ def known_limitations() -> list[str]:
         "Replay uses measured recording depth when present; missing depth skips mapping.",
         "CPU sparse TSDF is a diagnostic mapper, not an accelerated realtime mapper.",
         "Hidden or unobserved geometry is not emitted as measured geometry.",
-        "No object-aware fusion, loop closure, triangle mesh streaming, benchmark accuracy, "
+        "No object-aware fusion, loop closure, benchmark accuracy, "
         "or millimeter-level claim is made.",
     ]
+
+
+def _int_summary(values: tuple[int, ...]) -> dict[str, float | int | None]:
+    if not values:
+        return {"max": None, "mean": None, "p50": None, "p95": None}
+    array = np.asarray(values, dtype=np.float64)
+    return {
+        "max": int(np.max(array)),
+        "mean": float(np.mean(array)),
+        "p50": float(np.percentile(array, 50.0)),
+        "p95": float(np.percentile(array, 95.0)),
+    }
+
+
+def _status_int(status: dict[str, object], field_name: str) -> int:
+    return int(cast(Any, status.get(field_name, 0)))
 
 
 __all__ = [

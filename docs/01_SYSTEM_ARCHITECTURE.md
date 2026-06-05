@@ -241,6 +241,12 @@ The system must record voxel size in mesh metadata. It cannot claim errors below
 - optional texture atlas from selected keyframes;
 - mesh chunking by spatial block and object ID.
 
+Current measured replay implementation: `cpu-sparse` tracks dirty sparse TSDF
+blocks and can emit observed-only triangle chunk updates with stable spatial
+chunk IDs, versioned NPZ payloads, optional PLY payloads, conservative truth
+flags, and per-update latency counters. The fallback mesher is blocky and
+observed-only; it does not complete hidden geometry.
+
 ### Export formats
 
 - GLB/glTF 2.0 for game engines;
@@ -277,6 +283,10 @@ The API should emit pose at camera FPS even when map/object/mesh streams lag.
 Mesh updates can be chunked and delayed, but queues must be bounded and drops
 must be explicit. Persistent map state is an object-aware sparse TSDF/surfel map
 with source-frame/uncertainty metadata, not hidden transformer memory alone.
+The Phase 6F live replay path keeps pose, map, and mesh events separate:
+measured pose/depth keyframes update sparse TSDF blocks, dirty blocks trigger
+bounded mesh chunk processing, and chunk update events reference loadable
+payloads instead of embedding large arrays in JSON.
 
 ## Module 8: Deployment backends
 

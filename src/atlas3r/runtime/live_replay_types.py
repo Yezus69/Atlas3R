@@ -45,7 +45,13 @@ class LiveReplayConfig:
     drop_policy: str = "oldest"
     voxel_size_m: float = 0.05
     truncation_voxels: float = 3.0
+    pixel_stride: int = 8
     export_point_cloud: bool = False
+    export_mesh_chunks: bool = False
+    mesh_format: str = "npz"
+    mesh_update_interval_frames: int = 1
+    mesh_max_dirty_chunks_per_frame: int | None = None
+    mesh_min_weight: float = 0.0
     wall_clock_pacing: bool = False
     capture_service_interval_frames: int = 1
     map_service_interval_frames: int = 1
@@ -71,6 +77,19 @@ class LiveReplayConfig:
             raise ValueError("voxel_size_m: must be positive")
         if self.truncation_voxels <= 0.0:
             raise ValueError("truncation_voxels: must be positive")
+        if self.pixel_stride <= 0:
+            raise ValueError("pixel_stride: must be positive")
+        if self.mesh_format not in {"npz", "ply", "both"}:
+            raise ValueError("mesh_format: must be npz, ply, or both")
+        if self.mesh_update_interval_frames <= 0:
+            raise ValueError("mesh_update_interval_frames: must be positive")
+        if (
+            self.mesh_max_dirty_chunks_per_frame is not None
+            and self.mesh_max_dirty_chunks_per_frame <= 0
+        ):
+            raise ValueError("mesh_max_dirty_chunks_per_frame: must be positive when provided")
+        if self.mesh_min_weight < 0.0:
+            raise ValueError("mesh_min_weight: must be non-negative")
         if self.capture_service_interval_frames <= 0:
             raise ValueError("capture_service_interval_frames: must be positive")
         if self.map_service_interval_frames <= 0:

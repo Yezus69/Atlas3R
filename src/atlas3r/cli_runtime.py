@@ -78,7 +78,13 @@ def register_runtime_parser(subparsers: Any) -> None:
     replay_parser.add_argument("--drop-policy", choices=("oldest", "newest"), default="oldest")
     replay_parser.add_argument("--voxel-size-m", type=float, default=0.05)
     replay_parser.add_argument("--truncation-voxels", type=float, default=3.0)
+    replay_parser.add_argument("--pixel-stride", type=int, default=8)
     replay_parser.add_argument("--export-point-cloud", action="store_true")
+    replay_parser.add_argument("--export-mesh-chunks", action="store_true")
+    replay_parser.add_argument("--mesh-format", choices=("npz", "ply", "both"), default="npz")
+    replay_parser.add_argument("--mesh-update-interval-frames", type=int, default=1)
+    replay_parser.add_argument("--mesh-max-dirty-chunks-per-frame", type=int, default=None)
+    replay_parser.add_argument("--mesh-min-weight", type=float, default=0.0)
     replay_parser.add_argument(
         "--wall-clock-pacing",
         action="store_true",
@@ -183,7 +189,13 @@ def _run_live_replay_recording(args: argparse.Namespace) -> int:
                 drop_policy=args.drop_policy,
                 voxel_size_m=args.voxel_size_m,
                 truncation_voxels=args.truncation_voxels,
+                pixel_stride=args.pixel_stride,
                 export_point_cloud=args.export_point_cloud,
+                export_mesh_chunks=args.export_mesh_chunks,
+                mesh_format=args.mesh_format,
+                mesh_update_interval_frames=args.mesh_update_interval_frames,
+                mesh_max_dirty_chunks_per_frame=args.mesh_max_dirty_chunks_per_frame,
+                mesh_min_weight=args.mesh_min_weight,
                 wall_clock_pacing=args.wall_clock_pacing,
             )
         )

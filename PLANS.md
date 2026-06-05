@@ -131,7 +131,7 @@ Acceptance on Apple M-series:
 - `lite` profile runs with Core ML/MPS path;
 - explicit FPS and memory report; lower FPS is acceptable unless the specific chip/profile proves 30 FPS.
 
-### Completed Phase 6A-6E product slices
+### Completed Phase 6A-6F product slices
 
 - **6A:** stable measured `atlas3r_recording` boundary plus measured
   recording-to-CPU-TSDF diagnostic fusion.
@@ -143,13 +143,18 @@ Acceptance on Apple M-series:
   recording replay, bounded capture/map queues, explicit drop/keyframe reasons,
   `cpu-sparse` map updates, conservative live replay reports, and dependency-safe
   OpenCV/replay capture adapter status.
+- **6F:** observed-only live mesh chunk updates from measured sparse replay:
+  dirty sparse block tracking, versioned `block_<x>_<y>_<z>` chunk IDs, NPZ/PLY
+  triangle payloads, manifest/update logs, loadability tests, and measured
+  replay/profile evidence without RGB-only, hidden-geometry, realtime, or
+  accuracy claims.
 
-### Next likely Phase 6F
+### Next likely Phase 6G
 
-Use the Phase 6E profile to choose either live triangle mesh chunk updates from
-the sparse mapper or an accelerated sparse mapper path. The likely first slice
-is observed-only triangle mesh chunk updates with stable chunk IDs, metadata,
-and no hidden-geometry or realtime claim.
+Accelerate the sparse mapper and mesh update path. Phase 6F proved loadable
+observed mesh chunks, but preview map+mesh p95 remained above a frame budget, so
+Phase 6G should focus on reducing sparse candidate generation and mesh update
+latency before expanding RGB teacher-assisted mapping.
 
 ## Phase 7 - Evaluation and release gates
 

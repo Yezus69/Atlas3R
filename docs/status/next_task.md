@@ -1,35 +1,44 @@
-Phase 6F - Live Mesh Chunk Updates From Sparse Replay
+Phase 6G - Accelerate Sparse Mapping And Mesh Chunk Updates
 
-Goal: build the next live-oriented product slice after Phase 6E by emitting
-observed-only triangle mesh chunk update artifacts from the sparse TSDF replay
-path, while preserving all measured-input truth boundaries.
+Goal: reduce measured replay map+mesh update latency enough that observed-only
+mesh chunks become usable for a live preview loop, without weakening the Phase
+6F truth boundary.
 
-Start from branch `codex/phase6e-live-replay-scheduler`. Reload `README.md`,
+Start from branch `codex/phase6f-live-mesh-chunks`. Reload `README.md`,
 `PLANS.md`, `docs/08_API_CONTRACTS.md`, `docs/status/progress.md`,
-`docs/status/decisions.md`, `docs/status/active_task.md`,
-`docs/status/phase6e_live_replay_scheduler_report.md`, and
-`docs/status/phase6e_repo_audit.md`.
+`docs/status/decisions.md`, `docs/status/active_task.md`, and
+`docs/status/phase6f_live_mesh_chunks_report.md`.
+
+Context:
+
+- Phase 6F exports nonzero loadable observed mesh chunks from measured replay.
+- The optimized preview profile still has map+mesh p95 above 33 ms, with sparse
+  candidate generation and mesh chunk update/export latency as the main
+  bottlenecks.
+- No realtime, RGB-only, hidden-geometry, object-aware fusion, or accuracy claim
+  exists.
 
 Required work:
 
-- Preserve `runtime fuse-recording --mode incremental --backend
-  cpu-persistent|cpu-rebuild|cpu-sparse` and `runtime live-replay-recording`
-  behavior.
-- Add observed-only mesh chunk update artifacts for live replay, with stable
-  chunk IDs, versions, source frame IDs, voxel size, coordinate frame,
-  uncertainty percentiles, queue/update metadata, and no hidden-geometry or
-  RGB-only mapping claim.
-- Prefer a small dependency-safe meshing path or a documented optional
-  dependency fallback; do not vendor third-party code or weights.
-- Add tests for chunk schema, update ordering, no unbounded queue growth, truth
-  flags, and existing runtime regression commands.
-- Run format, lint, typecheck, unit tests, diff check, available make commands,
-  and a tiny or real measured replay evidence run under ignored `runs/`.
+- Profile sparse candidate generation, projection, apply updates, snapshot
+  creation, fallback meshing, NPZ/PLY writing, and JSON event writing separately.
+- Implement at least one measured acceleration that preserves deterministic
+  dirty block IDs, observed-only payloads, queue bounds, and existing CLI/API
+  contracts.
+- Prefer dependency-safe NumPy/vectorization/cache improvements first. Optional
+  Torch/CUDA paths may be added only behind clear availability checks and must
+  not be required for unit tests.
+- Keep `runtime fuse-recording` backends and `runtime live-replay-recording`
+  without mesh flags working.
+- Add focused tests for any changed scheduling, caching, or backend behavior.
+- Run format, lint, typecheck, unit tests, diff check, and measured replay
+  profiles for baseline-compatible, preview/live-friendlier, and coarse-live
+  settings.
 
-Expected output:
+Acceptance:
 
-- `live_replay_mesh_updates.jsonl` or equivalent observed-only chunk update log.
-- Mesh chunk sidecars or chunk payloads loadable through existing API contracts.
-- A concise Phase 6F report explaining measured inputs used, chunk/update
-  counters, latency, bottlenecks, and why no realtime/mm/RGB-only accuracy claim
-  is made.
+- Preserve nonzero loadable NPZ/PLY mesh chunks from the measured replay.
+- Either get preview/live-friendlier map+mesh p95 below 33 ms on this machine,
+  or document a measured latency reduction of at least 25% versus the Phase 6F
+  optimized preview profile and name the remaining bottleneck with numbers.
+- Update concise docs/status and commit the result.

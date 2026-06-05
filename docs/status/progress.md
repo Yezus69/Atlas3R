@@ -4,46 +4,52 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Current phase: Phase 6E live replay scheduler and camera adapter boundary
-  completed on branch `codex/phase6e-live-replay-scheduler`.
-- Latest implementation: `runtime live-replay-recording` replays measured
-  `atlas3r_recording` folders with deterministic simulated pacing, bounded
-  capture/map queues, explicit drop and keyframe reasons, separate pose updates,
-  measured-depth/pose-only sparse TSDF map updates, JSONL events, summary, and
-  Markdown report.
-- Added dependency-safe runtime capture adapter boundary with `OpenCVCameraAdapter`
-  lazy `cv2` handling and `ReplayRecordingAdapter` metadata streaming.
+- Current phase: Phase 6F live observed mesh chunks completed on branch
+  `codex/phase6f-live-mesh-chunks`.
+- `runtime live-replay-recording` preserves the Phase 6E measured replay
+  scheduler and now optionally exports observed-only sparse TSDF mesh chunk
+  updates with stable `block_<x>_<y>_<z>` IDs, versioned NPZ payloads, optional
+  PLY payloads, a manifest, update log, live event integration, and conservative
+  truth flags.
+- Sparse TSDF integration now reports changed block coordinates and per-stage
+  timings: `sparse_surface_samples`, `sparse_candidate_voxel_coords`,
+  `project_sparse_candidates`, `apply_sparse_updates`, and `total_integrate`.
 - Existing `runtime fuse-recording --mode incremental --backend
-  cpu-persistent|cpu-rebuild|cpu-sparse` remains covered by regression tests.
+  cpu-persistent|cpu-rebuild|cpu-sparse` and live replay without mesh flags
+  remain covered by regression tests.
 
 ## Latest Verified Test State
 
-- `python -m ruff format src tests`: passed; 183 files unchanged.
-- `python -m ruff format --check src tests`: passed; 183 files formatted.
+- `python -m ruff format src tests`: passed; 189 files unchanged.
+- `python -m ruff format --check src tests`: passed; 189 files formatted.
 - `python -m ruff check src tests`: passed.
-- `python -m mypy src`: passed with no issues in 138 source files.
-- Focused tests passed: `tests.unit.test_live_replay_scheduler`,
-  `tests.unit.test_capture_adapters`, `tests.unit.test_recording_runtime`, and
-  `tests.unit.test_cli`.
-- `python -m unittest discover -s tests -p "test_*.py"`: passed 233 tests. The
-  pre-existing optional Torch/einops import warning appeared.
-- `git diff --check`: passed; Git warned changed LF files will convert to CRLF.
-- `make` commands were not run because `make` is not installed in this Windows
-  shell.
+- `python -m mypy src`: passed with no issues in 141 source files.
+- Focused tests passed: `tests.unit.test_mesh_chunks`,
+  `tests.unit.test_sparse_tsdf_meshing`,
+  `tests.unit.test_live_replay_mesh_chunks`,
+  `tests.unit.test_sparse_tsdf_mapper`,
+  `tests.unit.test_live_replay_scheduler`, and `tests.unit.test_cli`.
+- `python -m unittest discover -s tests -p "test_*.py"`: passed 244 tests. The
+  pre-existing optional Torch/einops import warning appeared on an earlier
+  discovery run; the final rerun emitted no stdout.
+- `git diff --check`: passed.
+- `make test` was not run because `make` is unavailable in this Windows shell
+  (`spawnSync make ENOENT`).
 
 ## Real-Data Evidence
 
-- Command:
-  `python -m atlas3r runtime live-replay-recording --recording runs/phase6a_recording_freiburg1_xyz_val/recording --output runs/phase6e_live_replay_freiburg1_xyz_val --target-fps 30 --max-frames 120 --mapper-backend cpu-sparse --map-keyframe-stride 1 --max-capture-queue 4 --max-map-queue 2 --drop-policy oldest --voxel-size-m 0.05 --truncation-voxels 3.0 --export-point-cloud`.
-- Result: 120 measured TUM `freiburg1_xyz` validation frames seen/emitted, 120
-  pose updates, 120 selected keyframes, 120 map updates, no frame/keyframe
-  drops, max capture/map queue depth `1/1`, and simulated pacing `true`.
-- Sparse state: 142 active blocks, 10,165 active voxels, approximate state bytes
-  `585,040`, 2,950 observed surface points, and `surface_points.ply` exported
-  under ignored `runs/`.
-- Map update latency ms p50/p95/max: `63.936 / 68.0898 / 73.9971`.
-- Observation load latency ms p50/p95/max: `15.44545 / 17.04904 / 51.3417`.
-- Full evidence: `docs/status/phase6e_live_replay_scheduler_report.md`.
+- Command: `python -m atlas3r runtime live-replay-recording --recording runs/phase6a_recording_freiburg1_xyz_val/recording --output runs/phase6f_live_mesh_freiburg1_xyz_val --target-fps 30 --max-frames 120 --mapper-backend cpu-sparse --map-keyframe-stride 1 --max-capture-queue 4 --max-map-queue 2 --drop-policy oldest --voxel-size-m 0.05 --truncation-voxels 3.0 --pixel-stride 8 --export-point-cloud --export-mesh-chunks --mesh-format ply`.
+- Result: 120 measured TUM `freiburg1_xyz` validation frames, 120 measured pose
+  updates, 120 measured depth map updates, 117 active mesh chunks, 6044 chunk
+  update events, 27,944 vertices, 13,972 triangles, loadable NPZ and PLY chunk
+  payloads, and observed-only truth flags.
+- Optimized baseline map/mesh p95 ms: `73.695 / 154.331`; combined map+mesh
+  p95 `222.709`; total pipeline `45,363.277` ms.
+- Preview profile (`stride=2`, `pixel_stride=12`) map/mesh p95 ms:
+  `35.041 / 136.029`; combined p95 `169.556`, so the 33 ms target was missed.
+- Batched dirty-block snapshot reuse reduced baseline map+mesh p95 from the
+  first Phase 6F baseline `556.001` ms to `222.709` ms.
+- Full evidence: `docs/status/phase6f_live_mesh_chunks_report.md`.
 
 ## Compact Phase Ledger
 
@@ -53,16 +59,17 @@ This is a rolling current-state summary, not an append-only transcript.
 - Phase 5A-5H: TUM clip caches, teacher-signal caches, external teacher
   runners, temporal measured/pseudo training, student-map runtime diagnostics,
   multi-sequence training, and dependency-safe VGGT runner scaffolding.
-- Phase 6A-6D: measured `atlas3r_recording`, sensor-folder importer, dense
-  persistent/rebuild incremental TSDF, sparse block TSDF, and sparse memory
-  diagnostics.
-- Phase 6E: bounded live replay scheduler plus runtime capture adapter boundary.
+- Phase 6A-6E: measured `atlas3r_recording`, sensor-folder importer, dense
+  persistent/rebuild incremental TSDF, sparse block TSDF, sparse memory
+  diagnostics, and bounded live replay scheduler.
+- Phase 6F: observed-only sparse mesh chunk update artifacts from measured
+  replay, with loadability tests and measured profile evidence.
 
 ## Current Known Gaps
 
-- CPU sparse map updates are still too slow for a realtime mapper; p95 was about
-  68.1 ms on the measured replay.
-- Phase 6E exports observed surface points and sparse state, not live triangle
-  mesh chunks or game-engine streaming assets.
-- No RGB-only mapping readiness, object-aware fusion, loop closure, accelerated
-  mapper, real camera hardware CI exercise, or benchmark accuracy report exists.
+- CPU sparse candidate generation and fallback mesh chunk update/export remain
+  too slow for realtime or 30 FPS preview claims.
+- Fallback chunk meshing is blocky and diagnostic; no marching-cubes chunk
+  quality path, simplification, materials, GLB, object-aware fusion, loop
+  closure, accelerated mapper, real camera hardware CI, RGB-only mapping
+  readiness, or benchmark accuracy report exists.

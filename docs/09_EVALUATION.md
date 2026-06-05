@@ -48,6 +48,13 @@ Metrics:
 - normal consistency;
 - mesh watertightness for observed regions;
 - chunk update stability;
+- observed mesh chunk count and active/deleted chunk counts;
+- total vertex/triangle count;
+- chunk ID/version stability across updates;
+- mesh chunk update latency p50/p95/max;
+- NPZ/PLY loadability and payload byte counts;
+- bbox validity and triangle index validity;
+- observed-only truth flags with no hidden-geometry/RGB-only/realtime claim;
 - object boundary preservation.
 
 Important: 1 mm metrics only make sense when GT and camera resolution/calibration support it. For most room-scale RGB videos, 5 mm / 1 cm / 5 cm thresholds are more meaningful.

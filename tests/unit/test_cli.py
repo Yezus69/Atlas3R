@@ -74,6 +74,11 @@ class Atlas3RCliTest(unittest.TestCase):
         self.assertIn("--max-capture-queue", live_replay_result.stdout)
         self.assertIn("--max-map-queue", live_replay_result.stdout)
         self.assertIn("--drop-policy", live_replay_result.stdout)
+        self.assertIn("--pixel-stride", live_replay_result.stdout)
+        self.assertIn("--export-mesh-chunks", live_replay_result.stdout)
+        self.assertIn("--mesh-format", live_replay_result.stdout)
+        self.assertIn("--mesh-update-interval-frames", live_replay_result.stdout)
+        self.assertIn("--mesh-min-weight", live_replay_result.stdout)
         self.assertIn("cpu-sparse", live_replay_result.stdout)
 
         capture_adapters_result = subprocess.run(
