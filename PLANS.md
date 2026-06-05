@@ -26,6 +26,20 @@ Acceptance:
 - proposal cache schema carries truth boundaries and uncertainty;
 - no teacher model is imported at package import time.
 
+## Offline V0.5 - Parallel World Builder Tracer
+
+Build the first end-to-end offline spine across ingestion, keyframes, teacher
+status/proposal cache, camera-scale ledger, consensus state, geometry preview,
+object ledger, render diagnostics, quality report, and training-cache manifest.
+
+Acceptance:
+
+- one `offline build-world` command writes the full artifact tree;
+- missing decoders and teachers become explicit failure points;
+- debug flat-depth geometry can produce inspectable NPZ/PLY previews without
+  claiming measured geometry or training quality;
+- future work must continue by vertical slices through the tracer.
+
 ## Offline V1 - First Teacher Witnesses
 
 Run the first teacher witnesses where available: Depth Pro, VGGT, and

@@ -16,6 +16,7 @@ from atlas3r.contracts.geometry import PoseEstimate
 from atlas3r.contracts.truth import TruthBoundary
 from atlas3r.input.video import inspect_video_input
 from atlas3r.offline import build_quality_report_skeleton
+from atlas3r.offline.build_world import BuildWorldOptions, build_world
 from atlas3r.teachers.registry import list_teacher_statuses
 
 
@@ -37,6 +38,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_video_parser.add_argument("--output", required=True, help="Output run folder.")
     inspect_video_parser.set_defaults(func=_run_offline_inspect_video)
+    build_world_parser = offline_subparsers.add_parser(
+        "build-world", help="Run the connected offline world-builder tracer."
+    )
+    build_world_parser.add_argument(
+        "--input", required=True, help="Input MP4, PPM file, or PPM image folder."
+    )
+    build_world_parser.add_argument("--output", required=True, help="Output run folder.")
+    build_world_parser.add_argument("--max-frames", type=int, default=120)
+    build_world_parser.add_argument("--keyframe-stride", type=int, default=5)
+    build_world_parser.add_argument("--keyframe-max-count", type=int, default=32)
+    build_world_parser.add_argument(
+        "--debug-geometry-mode",
+        choices=("none", "flat-depth", "synthetic-known"),
+        default="none",
+    )
+    build_world_parser.add_argument("--write-ply", action="store_true")
+    build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
     teachers_subparsers = teachers_parser.add_subparsers(dest="teachers_command", required=True)
@@ -79,6 +97,24 @@ def _run_offline_inspect_video(args: argparse.Namespace) -> int:
     )
     print(f"wrote {output / 'video_inspection.json'}")
     return 1 if inspection.kind == "missing" else 0
+
+
+def _run_offline_build_world(args: argparse.Namespace) -> int:
+    result = build_world(
+        BuildWorldOptions(
+            input_path=str(args.input),
+            output_path=str(args.output),
+            max_frames=int(args.max_frames),
+            keyframe_stride=int(args.keyframe_stride),
+            keyframe_max_count=int(args.keyframe_max_count),
+            debug_geometry_mode=args.debug_geometry_mode,
+            write_ply=bool(args.write_ply),
+        )
+    )
+    print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")
+    print(f"geometry points: {result.geometry_point_count}")
+    print(f"failure points: {result.failure_count}")
+    return result.exit_code
 
 
 def _run_teachers_list(args: argparse.Namespace) -> int:

@@ -12,3 +12,5 @@ This is a compact ADR index for the reset foundation.
 | D-0006 | Artifacts | Map artifacts must carry source frame IDs, observed coverage, voxel size when relevant, coordinate frame, scale source, and uncertainty. | Yes |
 | D-0007 | CLI | Active CLI is limited to `offline inspect-video`, `teachers list`, and `smoke contracts`. | Yes |
 | D-0008 | Stale code | Old SMGT, training, measured replay, runtime student mapping, and phase reports are deleted rather than carried as legacy code. | Yes |
+| D-0009 | Offline milestones | Future work must advance through `offline build-world` vertical slices, not isolated single-stage modules. | Yes |
+| D-0010 | Debug geometry | `debug_flat_depth` may create preview geometry only under explicit debug modes and must not claim measured geometry or training quality. | Yes |

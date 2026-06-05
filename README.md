@@ -6,10 +6,10 @@ Atlas3R is being reset around one foundation:
 MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> training cache
 ```
 
-The current repository is a reset foundation, not a working mapper. It keeps
-only dependency-safe contracts, input primitives, teacher-adapter boundaries,
-and small map artifact helpers that future Offline World Builder work can build
-on.
+The current repository has the first connected offline tracer. It is not a
+working mapper yet: real teacher models, optimization, anchored scale, and mesh
+reconstruction remain future work. The tracer exists so every future module is
+wired through one end-to-end command instead of isolated scaffolding.
 
 ## Boundaries
 
@@ -48,6 +48,7 @@ the next immediate foundation.
 python -m atlas3r --help
 python -m atlas3r offline --help
 python -m atlas3r offline inspect-video --input <mp4-or-ppm-folder> --output <run>
+python -m atlas3r offline build-world --input <mp4-or-ppm-folder> --output <run>
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -64,6 +65,32 @@ old phase smoke commands.
 - `src/atlas3r/input/`: dependency-safe PPM/video inspection and recording
   manifest primitives.
 - `src/atlas3r/teachers/`: dependency-safe teacher witness registry.
-- `src/atlas3r/offline/`: skeleton quality report for Offline World Builder V0.
+- `src/atlas3r/offline/`: connected Offline World Builder tracer modules.
 - `src/atlas3r/mapping/`: minimal NPZ/PLY artifact writers for inspection.
-- `tests/unit/`: focused tests for the kept foundation only.
+- `tests/`: focused unit and vertical tracer tests.
+
+## Build-World Artifacts
+
+`offline build-world` writes a complete artifact tree even when teachers or
+decoders are unavailable:
+
+```text
+run_manifest.json
+frames/frame_index.jsonl
+keyframes/keyframes.json
+teachers/teacher_status.json
+proposals/proposal_manifest.json
+world/world_state.json
+world/camera_ledger.json
+world/scale_ledger.json
+geometry/geometry_preview.npz
+objects/object_ledger.json
+diagnostics/render_repair_diagnostics.json
+diagnostics/failure_points.json
+quality_report.json
+quality_report.md
+training_cache/training_cache_manifest.json
+```
+
+Debug flat-depth geometry is labeled `debug_synthetic`, not measured geometry,
+and is not training-quality.

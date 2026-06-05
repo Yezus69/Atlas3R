@@ -13,6 +13,7 @@ TruthLabelType = Literal[
     "cad_aligned_approx",
     "teacher_pseudo",
     "unanchored_mp4_pseudo",
+    "debug_synthetic",
     "unknown",
 ]
 
@@ -23,6 +24,7 @@ _TRUTH_LABELS: set[str] = {
     "cad_aligned_approx",
     "teacher_pseudo",
     "unanchored_mp4_pseudo",
+    "debug_synthetic",
     "unknown",
 }
 
@@ -49,7 +51,7 @@ class TruthBoundary:
         if self.hidden_geometry_measured and not self.measured_geometry:
             raise ValueError("hidden geometry cannot be measured when measured_geometry=false")
         if (
-            self.label_type in {"teacher_pseudo", "unanchored_mp4_pseudo"}
+            self.label_type in {"teacher_pseudo", "unanchored_mp4_pseudo", "debug_synthetic"}
             and self.measured_geometry
         ):
             raise ValueError("pseudo labels cannot claim measured geometry")

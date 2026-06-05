@@ -127,6 +127,10 @@ def load_ppm_sequence_frames(
     return tuple(frames)
 
 
+def read_ppm_image(path: str | Path) -> NDArray[np.uint8]:
+    return _read_ppm(Path(path))
+
+
 def require_video_decoder() -> None:
     raise VideoDependencyError("video decoding is not bundled; install imageio or opencv later")
 

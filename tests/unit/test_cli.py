@@ -67,6 +67,17 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("map-rgb-student", help_result.stdout)
         self.assertNotIn("live-replay-recording", help_result.stdout)
 
+    def test_offline_build_world_help_works(self) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "atlas3r", "offline", "build-world", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--debug-geometry-mode", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

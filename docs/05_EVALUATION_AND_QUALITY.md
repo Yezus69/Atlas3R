@@ -12,6 +12,20 @@ Quality reports must measure or explicitly mark unknown:
 - map completeness;
 - known failure modes.
 
+## Offline V0.5 Report Requirements
+
+The tracer quality report must summarize:
+
+- teacher availability and missing install hints;
+- whether disagreement can be measured yet;
+- scale source and whether physical accuracy claims are blocked;
+- geometry preview point count and truth boundary;
+- object tracking status and whether objects were invented;
+- render/repair diagnostic status;
+- observed-only vs predicted-completion flags;
+- training-cache usability;
+- failure points with missing inputs, missing dependencies, and future modules.
+
 ## Claim Rules
 
 - A smoke test is not an accuracy report.

@@ -1,34 +1,36 @@
-# Active Task - Offline World Builder Repo Reset
+# Active Task - Offline V0.5 Parallel Tracer
 
-Branch: `codex/offline-world-builder-repo-reset`
+Branch: `codex/offline-world-builder-v0-parallel-tracer`
 
 ## Goal
 
-Aggressively reset Atlas3R around the Offline World Builder direction:
-MP4/RGB input to optimized offline 3D world, inspectable map artifacts, and a
-future training cache. Do not keep stale SMGT training/runtime surfaces.
+Build the first dependency-safe vertical Offline World Builder tracer:
+`python -m atlas3r offline build-world` must run ingestion, keyframes,
+teacher witness status/proposal cache, camera-scale ledger, consensus world
+state, geometry preview, object ledger, render/repair diagnostics, quality
+report, and training-cache skeleton in one command.
 
 ## Checklist
 
-- [x] Confirm clean worktree on `codex/core-smgt-small-v2-measured-pseudo`.
-- [x] Create `codex/offline-world-builder-repo-reset`.
-- [x] Read current README, PLANS, API contracts, and compact status files.
-- [x] Record before-cleanup inventory.
-- [x] Delete stale training, runtime, student, phase-report, config, and test code.
-- [x] Rewrite docs around Offline World Builder only.
-- [x] Keep only dependency-safe contracts, input primitives, teacher boundaries,
-  and minimal map artifact inspection utilities.
-- [x] Replace tests with focused import, contract, input, teacher, artifact, and
-  CLI coverage.
-- [x] Remove generated local junk and update `.gitignore`.
-- [x] Prune safe merged local stale branches and write prune suggestions.
-- [x] Run verification commands and document results.
-- [x] Commit with `chore(repo): reset around offline world builder`.
+- [x] Confirm clean worktree on reset branch and create working branch.
+- [x] Read required objective, architecture, truth, consensus, API, quality,
+  and status docs.
+- [x] Expand concise docs for V0.5 module contracts and vertical-slice rule.
+- [x] Implement connected offline pipeline modules with explicit artifacts and
+  failure points.
+- [x] Add focused tests for frame cache, keyframes, proposal cache, consensus,
+  geometry preview, object ledger, render/repair, CLI, and full tracer.
+- [x] Run dependency-free tiny PPM evidence command with debug flat-depth.
+- [x] Search local ignored inputs and run real-input evidence command if
+  available.
+- [x] Run format, lint, typecheck, unit, CLI, smoke, diff, and make checks as
+  available.
+- [x] Update progress, current state, next task, and V0.5 report.
+- [x] Confirm generated runs/data are not staged and commit.
 
 ## Stop Conditions
 
 - Unknown user changes appear in the worktree.
-- The uploaded Offline World Builder architecture text exists only outside git
-  and would be deleted.
-- The package cannot import after cleanup without rewriting the repo from
-  scratch.
+- `import atlas3r` becomes dependent on heavy optional packages.
+- PPM/image-folder input cannot be supported dependency-free.
+- The package cannot import without rewriting the reset foundation.
