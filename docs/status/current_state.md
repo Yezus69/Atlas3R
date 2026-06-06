@@ -1,7 +1,7 @@
 # Current State
 
 Atlas3R is a reset foundation plus a connected Offline World Builder tracer
-with the first real geometry witness vertical slice.
+with two real geometry witness vertical slices.
 
 ## Exists
 
@@ -16,9 +16,13 @@ with the first real geometry witness vertical slice.
   `offline build-world`.
 - VGGT witness runtime/replay path behind `src/atlas3r/models/adapters/`, with
   normalized camera, depth, and window proposal streams.
+- Depth Pro witness runtime/replay path behind `src/atlas3r/models/adapters/`,
+  with normalized per-frame camera/intrinsics and depth proposal streams.
+- VGGT-vs-Depth-Pro disagreement JSON/NPZ maps and a diagnostic consensus
+  preview through `offline build-world`.
 - Minimal overlap Sim3 VGGT window stitching with pseudo-submap rejection.
-- Debug flat-depth and VGGT geometry previews labeled as not physically
-  accurate and not training-quality.
+- Debug flat-depth, VGGT, and diagnostic consensus geometry previews labeled as
+  not physically accurate and not training-quality.
 - Minimal NPZ/PLY artifact writers.
 - Focused unit and vertical tracer tests.
 

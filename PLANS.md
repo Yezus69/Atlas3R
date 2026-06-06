@@ -57,6 +57,26 @@ Acceptance:
 - VGGT geometry is labeled `teacher_pseudo`, unanchored, not measured, not
   physically accurate, and not training-quality.
 
+## Offline V0.7 - Depth Pro Disagreement Witness
+
+Add Depth Pro as an independent per-frame depth/intrinsics witness and compare
+it with VGGT through the full `offline build-world` path.
+
+Acceptance:
+
+- Depth Pro can run from an external package/repo or replay normalized proposal
+  caches without import-time heavy dependencies;
+- proposal cache writes Depth Pro camera, depth, and per-frame streams;
+- camera/scale ledgers and world state record both witness sources while still
+  blocking physical accuracy claims;
+- `diagnostics/teacher_disagreement.json`,
+  `diagnostics/disagreement_maps.npz`, and
+  `diagnostics/consensus_preview.npz` summarize VGGT-vs-Depth-Pro agreement;
+- geometry preview may use VGGT pose plus diagnostic consensus depth, but Depth
+  Pro alone does not create global world geometry;
+- all outputs remain teacher-pseudo, unanchored, not optimized, and not
+  training-quality.
+
 ## Offline V1 - Additional Teacher Witnesses
 
 Run additional teacher witnesses where available: Depth Pro, COLMAP/GLOMAP,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
 from atlas3r.offline.keyframes import KeyframeRecord
 from atlas3r.offline.run_manifest import FailurePoint, write_json
@@ -22,6 +23,7 @@ def write_render_repair_diagnostics(
     geometry: GeometryPreviewResult,
     keyframes: tuple[KeyframeRecord, ...],
     failure_points: list[FailurePoint],
+    disagreement: DisagreementResult | None = None,
 ) -> RenderRepairResult:
     if geometry.point_count == 0:
         status = "unavailable"
@@ -50,6 +52,8 @@ def write_render_repair_diagnostics(
         "why": why,
         "geometry_point_count": geometry.point_count,
         "geometry_source_teacher": geometry.source_teacher,
+        "teacher_disagreement_status": None if disagreement is None else disagreement.status,
+        "teacher_disagreement_path": None if disagreement is None else disagreement.json_path,
         "keyframe_count": len(keyframes),
         "projection_sample_count": projection_count,
         "coverage_placeholder": coverage,

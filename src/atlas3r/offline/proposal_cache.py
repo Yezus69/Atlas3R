@@ -10,10 +10,21 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from atlas3r.offline.depth_pro_witness import (
+    DepthProWitnessResult,
+)
+from atlas3r.offline.depth_pro_witness import (
+    truth_boundary_dict as depth_pro_truth_boundary_dict,
+)
 from atlas3r.offline.frame_cache import FrameRecord
 from atlas3r.offline.keyframes import KeyframeRecord
 from atlas3r.offline.run_manifest import write_json, write_jsonl
-from atlas3r.offline.vggt_witness import VggtWitnessResult, truth_boundary_dict
+from atlas3r.offline.vggt_witness import (
+    VggtWitnessResult,
+)
+from atlas3r.offline.vggt_witness import (
+    truth_boundary_dict as vggt_truth_boundary_dict,
+)
 from atlas3r.teachers.base import AdapterStatus
 
 DebugGeometryMode = Literal["none", "flat-depth", "synthetic-known"]
@@ -31,9 +42,15 @@ class ProposalCacheResult:
     depth_arrays: dict[str, NDArray[np.float32]] = field(default_factory=dict)
     geometry_source: str = "none"
     vggt_camera_records: tuple[dict[str, object], ...] = ()
+    vggt_depth_records: tuple[dict[str, object], ...] = ()
     vggt_window_records: tuple[dict[str, object], ...] = ()
     vggt_depth_npz_path: str | None = None
     vggt_metadata: dict[str, object] = field(default_factory=dict)
+    depth_pro_camera_records: tuple[dict[str, object], ...] = ()
+    depth_pro_depth_records: tuple[dict[str, object], ...] = ()
+    depth_pro_frame_records: tuple[dict[str, object], ...] = ()
+    depth_pro_depth_npz_path: str | None = None
+    depth_pro_metadata: dict[str, object] = field(default_factory=dict)
 
 
 def write_proposal_cache(
@@ -44,11 +61,18 @@ def write_proposal_cache(
     keyframes: tuple[KeyframeRecord, ...],
     debug_geometry_mode: DebugGeometryMode,
     vggt_result: VggtWitnessResult | None = None,
+    depth_pro_result: DepthProWitnessResult | None = None,
 ) -> ProposalCacheResult:
     root = Path(run_dir)
     streams: list[dict[str, object]] = []
     for status in teacher_statuses:
         if status.name == "vggt" and vggt_result is not None and vggt_result.has_geometry:
+            continue
+        if (
+            status.name == "depth_pro"
+            and depth_pro_result is not None
+            and depth_pro_result.has_depth
+        ):
             continue
         stream_path = root / "proposals" / f"{status.name}_proposals.jsonl"
         row = {
@@ -79,9 +103,15 @@ def write_proposal_cache(
     depth_arrays: dict[str, NDArray[np.float32]] = {}
     geometry_source = "none"
     vggt_camera_records: tuple[dict[str, object], ...] = ()
+    vggt_depth_records: tuple[dict[str, object], ...] = ()
     vggt_window_records: tuple[dict[str, object], ...] = ()
     vggt_depth_npz_path: str | None = None
     vggt_metadata: dict[str, object] = {}
+    depth_pro_camera_records: tuple[dict[str, object], ...] = ()
+    depth_pro_depth_records: tuple[dict[str, object], ...] = ()
+    depth_pro_frame_records: tuple[dict[str, object], ...] = ()
+    depth_pro_depth_npz_path: str | None = None
+    depth_pro_metadata: dict[str, object] = {}
     if debug_records:
         geometry_records.extend(debug_records)
         geometry_source = "debug_flat_depth"
@@ -102,6 +132,7 @@ def write_proposal_cache(
         geometry_records.extend(vggt_result.depth_records)
         depth_arrays.update(vggt_result.depth_arrays)
         geometry_source = "vggt"
+        vggt_depth_records = tuple(vggt_result.depth_records)
         vggt_metadata = vggt_result.metadata
         streams.extend(
             [
@@ -136,6 +167,50 @@ def write_proposal_cache(
                 },
             ]
         )
+    if depth_pro_result is not None and depth_pro_result.has_depth:
+        (
+            depth_pro_camera_records,
+            depth_pro_frame_records,
+            depth_pro_depth_npz_path,
+        ) = _write_depth_pro_streams(root, depth_pro_result)
+        depth_pro_depth_records = tuple(depth_pro_result.depth_records)
+        depth_arrays.update(depth_pro_result.depth_arrays)
+        depth_pro_metadata = depth_pro_result.metadata
+        streams.extend(
+            [
+                {
+                    "teacher_name": "depth_pro",
+                    "stream_type": "cameras",
+                    "status": depth_pro_result.runtime_status,
+                    "path": "proposals/depth_pro_cameras.jsonl",
+                    "proposal_count": len(depth_pro_camera_records),
+                    "capabilities": {
+                        "depth": True,
+                        "intrinsics": True,
+                        "pose": False,
+                        "point_tracks": False,
+                    },
+                },
+                {
+                    "teacher_name": "depth_pro",
+                    "stream_type": "depths",
+                    "status": depth_pro_result.runtime_status,
+                    "path": "proposals/depth_pro_depths.npz",
+                    "proposal_count": len(depth_pro_depth_records),
+                    "capabilities": {"depth": True, "uncertainty": True},
+                },
+                {
+                    "teacher_name": "depth_pro",
+                    "stream_type": "frames",
+                    "status": depth_pro_result.runtime_status,
+                    "path": "proposals/depth_pro_frames.jsonl",
+                    "proposal_count": len(depth_pro_frame_records),
+                    "capabilities": {"per_frame_depth": True},
+                },
+            ]
+        )
+        if geometry_source == "none" and not debug_records:
+            geometry_source = "depth_pro_diagnostic_no_global_pose"
     payload = {
         "status": "partial" if streams else "unavailable",
         "format_name": "atlas3r_teacher_proposal_cache",
@@ -145,10 +220,16 @@ def write_proposal_cache(
         "teacher_counts": {
             "vggt_camera_proposals": len(vggt_camera_records),
             "vggt_depth_proposals": 0 if vggt_result is None else len(vggt_result.depth_records),
+            "depth_pro_camera_proposals": len(depth_pro_camera_records),
+            "depth_pro_depth_proposals": 0
+            if depth_pro_result is None
+            else len(depth_pro_result.depth_records),
             "debug_depth_proposals": len(debug_records),
         },
-        "truth_boundary": truth_boundary_dict()
+        "truth_boundary": vggt_truth_boundary_dict()
         if geometry_source == "vggt"
+        else depth_pro_truth_boundary_dict()
+        if geometry_source == "depth_pro_diagnostic_no_global_pose"
         else {
             "label_type": "debug_synthetic" if debug_records else "unknown",
             "measured_geometry": False,
@@ -184,9 +265,15 @@ def write_proposal_cache(
         depth_arrays=depth_arrays,
         geometry_source=geometry_source,
         vggt_camera_records=vggt_camera_records,
+        vggt_depth_records=vggt_depth_records,
         vggt_window_records=vggt_window_records,
         vggt_depth_npz_path=vggt_depth_npz_path,
         vggt_metadata=vggt_metadata,
+        depth_pro_camera_records=depth_pro_camera_records,
+        depth_pro_depth_records=depth_pro_depth_records,
+        depth_pro_frame_records=depth_pro_frame_records,
+        depth_pro_depth_npz_path=depth_pro_depth_npz_path,
+        depth_pro_metadata=depth_pro_metadata,
     )
 
 
@@ -202,7 +289,7 @@ def _write_vggt_streams(
         "teacher_name": "vggt",
         "depth_records": list(vggt_result.depth_records),
         "vggt_metadata": vggt_result.metadata,
-        "truth_boundary": truth_boundary_dict(),
+        "truth_boundary": vggt_truth_boundary_dict(),
     }
     depth_path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -213,6 +300,32 @@ def _write_vggt_streams(
         metadata_json=json.dumps(metadata, sort_keys=True),
     )
     return camera_records, window_records, "proposals/vggt_depths.npz"
+
+
+def _write_depth_pro_streams(
+    run_dir: Path, depth_pro_result: DepthProWitnessResult
+) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...], str]:
+    camera_records = tuple(depth_pro_result.camera_records)
+    frame_records = tuple(depth_pro_result.frame_records)
+    write_jsonl(run_dir / "proposals" / "depth_pro_cameras.jsonl", list(camera_records))
+    write_jsonl(run_dir / "proposals" / "depth_pro_frames.jsonl", list(frame_records))
+    depth_path = run_dir / "proposals" / "depth_pro_depths.npz"
+    metadata = {
+        "teacher_name": "depth_pro",
+        "depth_records": list(depth_pro_result.depth_records),
+        "depth_pro_metadata": depth_pro_result.metadata,
+        "truth_boundary": depth_pro_truth_boundary_dict(),
+    }
+    depth_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        depth_path,
+        **{
+            key: value.astype(np.float32)
+            for key, value in sorted(depth_pro_result.depth_arrays.items())
+        },
+        metadata_json=json.dumps(metadata, sort_keys=True),
+    )
+    return camera_records, frame_records, "proposals/depth_pro_depths.npz"
 
 
 def _write_debug_flat_depth_stream(

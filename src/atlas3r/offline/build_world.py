@@ -7,6 +7,8 @@ from pathlib import Path
 
 from atlas3r.offline.camera_scale_ledger import write_camera_scale_ledgers
 from atlas3r.offline.consensus_world import write_consensus_world_state
+from atlas3r.offline.depth_pro_witness import DepthProRuntimeOptions, run_depth_pro_witness
+from atlas3r.offline.disagreement import write_teacher_disagreement
 from atlas3r.offline.frame_cache import build_frame_cache
 from atlas3r.offline.geometry_preview import write_geometry_preview
 from atlas3r.offline.keyframes import select_keyframes
@@ -44,6 +46,13 @@ class BuildWorldOptions:
     vggt_max_keyframes: int | None = None
     vggt_proposal_cache: str | None = None
     vggt_stitch_mode: VggtStitchMode = "overlap-sim3"
+    enable_depth_pro: bool = False
+    depth_pro_repo: str | None = None
+    depth_pro_checkpoint: str | None = None
+    depth_pro_device: str = "cuda:0"
+    depth_pro_image_size: int | None = None
+    depth_pro_max_keyframes: int | None = None
+    depth_pro_proposal_cache: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,7 +100,24 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         ),
         failure_points=failure_points,
     )
-    teacher_statuses = write_teacher_statuses(run_dir, failure_points, vggt_result=vggt_result)
+    depth_pro_result = run_depth_pro_witness(
+        run_dir,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        options=DepthProRuntimeOptions(
+            enabled=options.enable_depth_pro,
+            proposal_cache=options.depth_pro_proposal_cache,
+            repo_path=options.depth_pro_repo,
+            checkpoint=options.depth_pro_checkpoint,
+            device=options.depth_pro_device,
+            image_size=options.depth_pro_image_size,
+            max_keyframes=options.depth_pro_max_keyframes,
+        ),
+        failure_points=failure_points,
+    )
+    teacher_statuses = write_teacher_statuses(
+        run_dir, failure_points, vggt_result=vggt_result, depth_pro_result=depth_pro_result
+    )
     proposals = write_proposal_cache(
         run_dir,
         teacher_statuses=teacher_statuses,
@@ -99,7 +125,9 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         keyframes=keyframes.keyframes,
         debug_geometry_mode=options.debug_geometry_mode,
         vggt_result=vggt_result,
+        depth_pro_result=depth_pro_result,
     )
+    disagreement = write_teacher_disagreement(run_dir, proposal_cache=proposals)
     ledgers = write_camera_scale_ledgers(
         run_dir,
         camera=frame_cache.camera,
@@ -113,6 +141,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         keyframes=keyframes.keyframes,
         proposal_cache=proposals,
         ledgers=ledgers,
+        disagreement=disagreement,
     )
     geometry = write_geometry_preview(
         run_dir,
@@ -120,6 +149,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         proposal_cache=proposals,
         write_ply=options.write_ply,
         failure_points=failure_points,
+        disagreement=disagreement,
     )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
@@ -127,6 +157,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         geometry=geometry,
         keyframes=keyframes.keyframes,
         failure_points=failure_points,
+        disagreement=disagreement,
     )
     training = write_training_cache_manifest(
         run_dir,
@@ -134,6 +165,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         keyframes_path=keyframes.keyframes_path,
         world_state_path=consensus.world_state_path,
         geometry=geometry,
+        disagreement=disagreement,
     )
     write_json(
         run_dir / "diagnostics" / "failure_points.json",
@@ -142,6 +174,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
     quality = write_quality_report(
         run_dir,
         teacher_statuses=teacher_statuses,
+        proposal_cache=proposals,
+        disagreement=disagreement,
         ledgers=ledgers,
         geometry=geometry,
         objects=objects,
@@ -174,12 +208,20 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "vggt_max_keyframes": options.vggt_max_keyframes,
             "vggt_proposal_cache": options.vggt_proposal_cache,
             "vggt_stitch_mode": options.vggt_stitch_mode,
+            "enable_depth_pro": options.enable_depth_pro,
+            "depth_pro_repo": options.depth_pro_repo,
+            "depth_pro_checkpoint": options.depth_pro_checkpoint,
+            "depth_pro_device": options.depth_pro_device,
+            "depth_pro_image_size": options.depth_pro_image_size,
+            "depth_pro_max_keyframes": options.depth_pro_max_keyframes,
+            "depth_pro_proposal_cache": options.depth_pro_proposal_cache,
         },
         "module_status": {
             "frame_cache": frame_cache.status,
             "keyframes": keyframes.status,
             "teacher_witnesses": "partial",
             "proposal_cache": proposals.status,
+            "teacher_disagreement": disagreement.status,
             "camera_scale_ledger": "partial",
             "consensus_world": consensus.status,
             "geometry_preview": geometry.status,
@@ -217,6 +259,9 @@ def _artifact_paths(geometry_ply_path: str | None) -> tuple[str, ...]:
         "world/scale_ledger.json",
         "geometry/geometry_preview.npz",
         "objects/object_ledger.json",
+        "diagnostics/teacher_disagreement.json",
+        "diagnostics/disagreement_maps.npz",
+        "diagnostics/consensus_preview.npz",
         "diagnostics/render_repair_diagnostics.json",
         "diagnostics/failure_points.json",
         "quality_report.json",

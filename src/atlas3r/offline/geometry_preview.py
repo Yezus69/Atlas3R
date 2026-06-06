@@ -13,6 +13,7 @@ from numpy.typing import NDArray
 from atlas3r.contracts import COORDINATE_FRAME_NAME, MapArtifact, TruthBoundary
 from atlas3r.contracts.coordinates import transform_points, unproject_depth, validate_T_A_B
 from atlas3r.mapping import read_npz_artifact_metadata, write_mesh_ply
+from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.frame_cache import FrameCacheResult
 from atlas3r.offline.proposal_cache import ProposalCacheResult
 from atlas3r.offline.run_manifest import FailurePoint
@@ -49,10 +50,12 @@ def write_geometry_preview(
     proposal_cache: ProposalCacheResult,
     write_ply: bool,
     failure_points: list[FailurePoint],
+    disagreement: DisagreementResult | None = None,
 ) -> GeometryPreviewResult:
     root = Path(run_dir)
     npz_path = root / "geometry" / "geometry_preview.npz"
-    if not proposal_cache.geometry_depth_records:
+    consensus_records = () if disagreement is None else disagreement.consensus_depth_records
+    if not proposal_cache.geometry_depth_records and not consensus_records:
         metadata = {
             "status": "unavailable",
             "why": "no usable depth, intrinsics, and T_world_camera proposal exists",
@@ -101,6 +104,7 @@ def write_geometry_preview(
         proposal_cache=proposal_cache,
         write_ply=write_ply,
         failure_points=failure_points,
+        disagreement=disagreement,
     )
 
 
@@ -112,11 +116,30 @@ def _write_teacher_geometry_preview(
     proposal_cache: ProposalCacheResult,
     write_ply: bool,
     failure_points: list[FailurePoint],
+    disagreement: DisagreementResult | None,
 ) -> GeometryPreviewResult:
     frames_by_id = {frame.frame_id: frame for frame in frame_cache.frames}
     vggt_cameras_by_depth = {
         str(record.get("depth_key")): record for record in proposal_cache.vggt_camera_records
     }
+    vggt_cameras_by_frame = {
+        int(str(record["frame_id"])): record for record in proposal_cache.vggt_camera_records
+    }
+    use_consensus_depth = bool(
+        disagreement is not None
+        and disagreement.consensus_depth_records
+        and proposal_cache.vggt_camera_records
+    )
+    depth_records = (
+        disagreement.consensus_depth_records
+        if use_consensus_depth and disagreement is not None
+        else proposal_cache.geometry_depth_records
+    )
+    consensus_arrays = (
+        disagreement.consensus_depth_arrays
+        if use_consensus_depth and disagreement is not None
+        else {}
+    )
     point_chunks: list[NDArray[np.float32]] = []
     color_chunks: list[NDArray[np.uint8]] = []
     uncertainty_chunks: list[NDArray[np.float32]] = []
@@ -126,10 +149,14 @@ def _write_teacher_geometry_preview(
     per_frame_point_counts: dict[str, int] = {}
     measured_geometry = False
     metric_scale_source = "unknown"
-    source_teacher = proposal_cache.geometry_source
+    source_teacher = (
+        "vggt_pose_consensus_depth_diagnostic"
+        if use_consensus_depth
+        else proposal_cache.geometry_source
+    )
     valid_points = 0
     total_sampled = 0
-    for proposal in proposal_cache.geometry_depth_records:
+    for proposal in depth_records:
         teacher = str(proposal.get("teacher_name", "unknown"))
         frame_id = int(str(proposal["frame_id"]))
         if frame_id not in frames_by_id:
@@ -137,7 +164,11 @@ def _write_teacher_geometry_preview(
         try:
             frame = frames_by_id[frame_id]
             depth, sigma, confidence, valid_mask, K, T_world_camera, submap_id = _proposal_arrays(
-                proposal, proposal_cache, vggt_cameras_by_depth
+                proposal,
+                proposal_cache,
+                vggt_cameras_by_depth,
+                vggt_cameras_by_frame,
+                consensus_arrays,
             )
         except (KeyError, ValueError) as exc:
             failure_points.append(
@@ -205,11 +236,15 @@ def _write_teacher_geometry_preview(
             )
         )
     valid_ratio = float(valid_points / total_sampled) if total_sampled else 0.0
-    label_type = "teacher_pseudo" if source_teacher == "vggt" else "debug_synthetic"
+    label_type = (
+        "teacher_pseudo" if _is_teacher_pseudo_source(source_teacher) else "debug_synthetic"
+    )
     metadata: dict[str, object] = {
         "status": "partial" if points_all.shape[0] else "unavailable",
         "why": (
-            "VGGT teacher-proposed geometry preview"
+            "VGGT pose with diagnostic VGGT/Depth Pro consensus depth preview"
+            if source_teacher == "vggt_pose_consensus_depth_diagnostic"
+            else "VGGT teacher-proposed geometry preview"
             if source_teacher == "vggt"
             else "debug-only flat-depth geometry preview"
         ),
@@ -270,6 +305,8 @@ def _proposal_arrays(
     proposal: dict[str, object],
     proposal_cache: ProposalCacheResult,
     vggt_cameras_by_depth: dict[str, dict[str, object]],
+    vggt_cameras_by_frame: dict[int, dict[str, object]],
+    consensus_arrays: dict[str, NDArray[np.float32]],
 ) -> tuple[
     NDArray[np.float32],
     NDArray[np.float32],
@@ -289,6 +326,26 @@ def _proposal_arrays(
         K = np.asarray(proposal["K"], dtype=np.float32)
         T_world_camera = validate_T_A_B(proposal["T_world_camera"], "T_world_camera")
         return depth, sigma, confidence, valid, K, T_world_camera, 0
+    if proposal.get("teacher_name") == "consensus_preview":
+        frame_id = int(str(proposal["frame_id"]))
+        camera = vggt_cameras_by_frame[frame_id]
+        depth = consensus_arrays[str(proposal["depth_key"])].astype(np.float32)
+        sigma = consensus_arrays[str(proposal["depth_sigma_key"])].astype(np.float32)
+        confidence = consensus_arrays[str(proposal["confidence_key"])].astype(np.float32)
+        valid = consensus_arrays[str(proposal["valid_mask_key"])] > 0.0
+        K = np.asarray(camera["K"], dtype=np.float32)
+        T_world_camera = validate_T_A_B(camera["T_world_camera"], "T_world_camera")
+        if K.shape != (3, 3) or not np.all(np.isfinite(K)):
+            raise ValueError("K must be finite 3x3")
+        return (
+            depth,
+            sigma,
+            confidence,
+            valid,
+            K,
+            T_world_camera,
+            int(str(camera["pseudo_submap_id"])),
+        )
     depth_key = str(proposal["depth_key"])
     camera = vggt_cameras_by_depth[depth_key]
     depth = proposal_cache.depth_arrays[depth_key].astype(np.float32)
@@ -302,6 +359,10 @@ def _proposal_arrays(
     if depth.shape != sigma.shape or depth.shape != confidence.shape or depth.shape != valid.shape:
         raise ValueError("depth, sigma, confidence, and valid mask shapes must match")
     return depth, sigma, confidence, valid, K, T_world_camera, int(str(camera["pseudo_submap_id"]))
+
+
+def _is_teacher_pseudo_source(source_teacher: str) -> bool:
+    return source_teacher in {"vggt", "vggt_pose_consensus_depth_diagnostic"}
 
 
 def _camera_dict(proposal: dict[str, object]) -> dict[str, object]:
@@ -344,6 +405,8 @@ def _write_ply_if_requested(
         notes=(
             "VGGT teacher-proposed point preview; not measured geometry."
             if source_teacher == "vggt"
+            else "Diagnostic consensus depth preview lifted with VGGT poses; not optimized."
+            if source_teacher == "vggt_pose_consensus_depth_diagnostic"
             else "Debug flat-depth preview; not teacher-measured geometry."
         ),
     )

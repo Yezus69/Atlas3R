@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
 from atlas3r.offline.run_manifest import write_json
 
@@ -23,6 +24,7 @@ def write_training_cache_manifest(
     keyframes_path: str,
     world_state_path: str,
     geometry: GeometryPreviewResult,
+    disagreement: DisagreementResult | None = None,
 ) -> TrainingCacheResult:
     usable_for_training = False
     payload = {
@@ -39,6 +41,9 @@ def write_training_cache_manifest(
             "world_state": world_state_path,
             "geometry_preview": geometry.geometry_npz_path,
             "geometry_ply": geometry.geometry_ply_path,
+            "teacher_disagreement": None if disagreement is None else disagreement.json_path,
+            "disagreement_maps": None if disagreement is None else disagreement.maps_npz_path,
+            "consensus_preview": None if disagreement is None else disagreement.consensus_npz_path,
         },
         "truth_boundary": {
             "label_type": (

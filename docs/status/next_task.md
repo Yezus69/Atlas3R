@@ -1,1 +1,1 @@
-Offline V0.7: add Depth Pro as the second independent geometry witness and compute teacher disagreement maps between VGGT and Depth Pro through the same pipeline.
+Offline V0.8: implement the first actual consensus optimizer pass that adjusts per-frame depth scale/bias and camera intrinsics using VGGT + Depth Pro disagreement and render/projection diagnostics, still without claiming physical accuracy.

@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from atlas3r.offline.camera_scale_ledger import CameraScaleLedgerResult
+from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
 from atlas3r.offline.object_ledger import ObjectLedgerResult
+from atlas3r.offline.proposal_cache import ProposalCacheResult
 from atlas3r.offline.render_repair import RenderRepairResult
 from atlas3r.offline.run_manifest import FailurePoint, write_json
 from atlas3r.offline.training_cache import TrainingCacheResult
@@ -24,6 +26,8 @@ def write_quality_report(
     run_dir: str | Path,
     *,
     teacher_statuses: tuple[AdapterStatus, ...],
+    proposal_cache: ProposalCacheResult,
+    disagreement: DisagreementResult | None,
     ledgers: CameraScaleLedgerResult,
     geometry: GeometryPreviewResult,
     objects: ObjectLedgerResult,
@@ -43,7 +47,32 @@ def write_quality_report(
     payload = {
         "status": "partial",
         "teacher_availability": teachers,
-        "teacher_disagreement": "unavailable until at least two proposal streams exist",
+        "teacher_proposal_counts": {
+            "vggt_cameras": len(proposal_cache.vggt_camera_records),
+            "vggt_depths": len(proposal_cache.vggt_depth_records),
+            "depth_pro_cameras": len(proposal_cache.depth_pro_camera_records),
+            "depth_pro_depths": len(proposal_cache.depth_pro_depth_records),
+        },
+        "depth_pro": {
+            "status": "available" if proposal_cache.depth_pro_depth_records else "unavailable",
+            "depth_proposals": len(proposal_cache.depth_pro_depth_records),
+            "camera_proposals": len(proposal_cache.depth_pro_camera_records),
+            "global_pose_available": False,
+        },
+        "teacher_disagreement": {
+            "status": "unavailable" if disagreement is None else disagreement.status,
+            "path": None if disagreement is None else disagreement.json_path,
+            "maps_path": None if disagreement is None else disagreement.maps_npz_path,
+            "summary": {} if disagreement is None else disagreement.summary,
+            "diagnostic_only": True,
+            "optimized_consensus": False,
+        },
+        "consensus_preview": {
+            "status": "unavailable" if disagreement is None else disagreement.consensus_status,
+            "path": None if disagreement is None else disagreement.consensus_npz_path,
+            "diagnostic_only": True,
+            "optimized_consensus": False,
+        },
         "scale_source": ledgers.scale_source,
         "physical_accuracy": False,
         "physical_accuracy_reason": (
@@ -55,7 +84,8 @@ def write_quality_report(
             "point_count": geometry.point_count,
             "source_teacher": geometry.source_teacher,
             "teacher_proposed_geometry_available": bool(
-                geometry.source_teacher == "vggt" and geometry.point_count > 0
+                geometry.source_teacher in {"vggt", "vggt_pose_consensus_depth_diagnostic"}
+                and geometry.point_count > 0
             ),
             "observed_only": geometry.observed_only,
             "predicted_completion": geometry.predicted_completion,
@@ -106,6 +136,8 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Geometry source: {geometry['source_teacher']}",
         f"- Teacher-proposed geometry: {geometry['teacher_proposed_geometry_available']}",
         f"- Geometry measured: {geometry['measured_geometry']}",
+        f"- Teacher disagreement: {_disagreement_status(payload)}",
+        f"- Consensus preview: {_consensus_status(payload)}",
         f"- Object tracking: {payload['object_tracking_status']}",
         f"- Render diagnostics: {payload['render_diagnostic_status']}",
         f"- Training usable: {training_cache['usable_for_training']}",
@@ -113,7 +145,22 @@ def _markdown_report(payload: dict[str, object]) -> str:
         "named evaluation report",
         f"- Failure points: {len(failure_points)}",
         "",
-        "This report is a tracer report, not an accuracy report. VGGT output, when present, is "
-        "teacher-proposed geometry rather than measured geometry or training-quality labels.",
+        "This report is a tracer report, not an accuracy report. VGGT and Depth Pro output, "
+        "when present, are teacher-proposed geometry rather than measured geometry or "
+        "training-quality labels.",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _disagreement_status(payload: dict[str, object]) -> str:
+    disagreement = payload["teacher_disagreement"]
+    if not isinstance(disagreement, dict):
+        return "unavailable"
+    return str(disagreement.get("status", "unavailable"))
+
+
+def _consensus_status(payload: dict[str, object]) -> str:
+    consensus = payload["consensus_preview"]
+    if not isinstance(consensus, dict):
+        return "unavailable"
+    return str(consensus.get("status", "unavailable"))

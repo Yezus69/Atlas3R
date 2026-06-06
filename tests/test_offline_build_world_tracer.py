@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tests.helpers import write_fake_vggt_cache, write_ppm_sequence
+from tests.helpers import write_fake_depth_pro_cache, write_fake_vggt_cache, write_ppm_sequence
 
 
 class OfflineBuildWorldTracerTest(unittest.TestCase):
@@ -192,6 +192,129 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertFalse(quality["physical_accuracy"])
             self.assertFalse(training["usable_for_training"])
             self.assertTrue((output / "geometry" / "geometry_preview.ply").is_file())
+
+    def test_replayed_vggt_and_depth_pro_write_disagreement_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = root / "input"
+            output = root / "run"
+            vggt_cache = write_fake_vggt_cache(
+                root / "vggt_cache", frame_ids=(0, 1), width=4, height=3, depth_m=2.0
+            )
+            depth_pro_cache = write_fake_depth_pro_cache(
+                root / "depth_pro_cache",
+                frame_ids=(0, 1),
+                width=4,
+                height=3,
+                depth_m=2.0,
+            )
+            write_ppm_sequence(input_dir, count=2, width=4, height=3)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "offline",
+                    "build-world",
+                    "--input",
+                    str(input_dir),
+                    "--output",
+                    str(output),
+                    "--max-frames",
+                    "2",
+                    "--keyframe-stride",
+                    "1",
+                    "--keyframe-max-count",
+                    "2",
+                    "--debug-geometry-mode",
+                    "none",
+                    "--vggt-proposal-cache",
+                    str(vggt_cache),
+                    "--depth-pro-proposal-cache",
+                    str(depth_pro_cache),
+                    "--write-ply",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            proposal_manifest = json.loads(
+                (output / "proposals" / "proposal_manifest.json").read_text(encoding="utf-8")
+            )
+            world = json.loads((output / "world" / "world_state.json").read_text(encoding="utf-8"))
+            quality = json.loads((output / "quality_report.json").read_text(encoding="utf-8"))
+            disagreement = json.loads(
+                (output / "diagnostics" / "teacher_disagreement.json").read_text(encoding="utf-8")
+            )
+            with np.load(
+                output / "diagnostics" / "disagreement_maps.npz", allow_pickle=False
+            ) as data:
+                overlap_count = int(data["valid_overlap_mask"].sum())
+            with np.load(output / "geometry" / "geometry_preview.npz", allow_pickle=False) as data:
+                metadata = json.loads(str(data["metadata_json"].item()))
+                point_count = int(data["points_world_m"].shape[0])
+
+            self.assertEqual(proposal_manifest["teacher_counts"]["vggt_depth_proposals"], 2)
+            self.assertEqual(proposal_manifest["teacher_counts"]["depth_pro_depth_proposals"], 2)
+            self.assertEqual(disagreement["status"], "available")
+            self.assertGreater(overlap_count, 0)
+            self.assertIn("depth_pro", world["available_witnesses"])
+            self.assertEqual(quality["teacher_disagreement"]["status"], "available")
+            self.assertEqual(metadata["source_teacher"], "vggt_pose_consensus_depth_diagnostic")
+            self.assertGreater(point_count, 0)
+            self.assertTrue((output / "geometry" / "geometry_preview.ply").is_file())
+            self.assertFalse(quality["physical_accuracy"])
+
+    def test_replayed_depth_pro_only_explains_missing_global_pose(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = root / "input"
+            output = root / "run"
+            depth_pro_cache = write_fake_depth_pro_cache(root / "depth_pro_cache", frame_ids=(0, 1))
+            write_ppm_sequence(input_dir, count=2)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "offline",
+                    "build-world",
+                    "--input",
+                    str(input_dir),
+                    "--output",
+                    str(output),
+                    "--max-frames",
+                    "2",
+                    "--keyframe-stride",
+                    "1",
+                    "--keyframe-max-count",
+                    "2",
+                    "--debug-geometry-mode",
+                    "none",
+                    "--depth-pro-proposal-cache",
+                    str(depth_pro_cache),
+                    "--write-ply",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            world = json.loads((output / "world" / "world_state.json").read_text(encoding="utf-8"))
+            quality = json.loads((output / "quality_report.json").read_text(encoding="utf-8"))
+            with np.load(output / "geometry" / "geometry_preview.npz", allow_pickle=False) as data:
+                point_count = int(data["points_world_m"].shape[0])
+
+            self.assertEqual(world["pose_status"], "missing_global_pose")
+            self.assertEqual(world["map_status"], "none")
+            self.assertEqual(point_count, 0)
+            self.assertEqual(quality["depth_pro"]["depth_proposals"], 2)
+            self.assertFalse((output / "geometry" / "geometry_preview.ply").is_file())
 
 
 def _write_png(path: Path, rgb: np.ndarray) -> None:

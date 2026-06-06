@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+from atlas3r.models.adapters.depth_pro_adapter import probe_depth_pro_runtime
 from atlas3r.models.adapters.vggt_adapter import probe_vggt_runtime
 from atlas3r.teachers.base import AdapterCapabilities, AdapterStatus, UnavailableTeacherAdapter
 
 
 def list_teacher_statuses() -> tuple[AdapterStatus, ...]:
     statuses = dict(_STATUSES)
+    statuses["depth_pro"] = _depth_pro_status()
     statuses["vggt"] = _vggt_status()
     return tuple(statuses.values())
 
 
 def get_teacher_status(name: str) -> AdapterStatus:
     key = _normalize(name)
+    if key == "depth_pro":
+        return _depth_pro_status()
     if key == "vggt":
         return _vggt_status()
     if key not in _STATUSES:
@@ -45,17 +49,23 @@ def _vggt_status() -> AdapterStatus:
     )
 
 
-_STATUSES: dict[str, AdapterStatus] = {
-    "depth_pro": AdapterStatus(
+def _depth_pro_status() -> AdapterStatus:
+    available, reason = probe_depth_pro_runtime(None)
+    return AdapterStatus(
         name="depth_pro",
         display_name="Depth Pro",
-        available=False,
+        available=available,
         capabilities=AdapterCapabilities(depth=True, intrinsics=True, metric_depth=True),
         install_hint=(
-            "Install Depth Pro externally and add an adapter under src/atlas3r/models/adapters/."
+            "Install Depth Pro (Apple's ml-depth-pro) externally, pass --depth-pro-repo "
+            "if using a local checkout, or use --depth-pro-proposal-cache to replay "
+            "normalized proposals."
         ),
-        reason="no external model dependency is bundled in this reset foundation",
-    ),
+        reason=reason,
+    )
+
+
+_STATUSES: dict[str, AdapterStatus] = {
     "mapanything": AdapterStatus(
         name="mapanything",
         display_name="MapAnything",

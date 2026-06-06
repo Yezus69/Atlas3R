@@ -34,6 +34,20 @@ For VGGT runs, the report must state that the output is unanchored
 missing render repair, and missing evaluation report as blockers for physical
 accuracy or training-quality claims.
 
+## Offline V0.7 Report Requirements
+
+Reports with Depth Pro must summarize:
+
+- Depth Pro runtime/replay availability, checkpoint/source, and proposal counts;
+- whether Depth Pro lacks global pose and therefore cannot create a global
+  preview by itself;
+- VGGT-vs-Depth-Pro valid overlap count and disagreement statistics;
+- diagnostic consensus preview status and source mask semantics;
+- geometry preview path used: VGGT pose plus diagnostic consensus depth, VGGT
+  depth, debug geometry, or empty geometry with a failure reason;
+- unchanged truth boundary: teacher-pseudo, not measured, not physically
+  accurate, and not training-quality.
+
 ## Claim Rules
 
 - A smoke test is not an accuracy report.

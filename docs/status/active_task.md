@@ -1,22 +1,21 @@
-# Active Task - Offline V0.6 VGGT Witness
+# Active Task
 
-Branch: `codex/offline-world-builder-v06-vggt-witness`
+Offline V0.7: add Depth Pro as a second teacher-pseudo geometry witness and
+compute VGGT-vs-Depth-Pro disagreement through `offline build-world`.
 
 ## Checklist
 
-- [x] Confirm clean worktree and create V0.6 branch from V0.5 tracer.
-- [x] Read required architecture, truth-boundary, status, source, and test files.
-- [x] Add dependency-safe PNG/JPG and MP4 frame decoding through frame cache.
-- [x] Add dependency-safe VGGT witness runtime, cache replay, and unavailable status.
-- [x] Normalize VGGT camera/depth proposals into proposal-cache artifacts.
-- [x] Add minimal overlap Sim3 stitching and rejection metadata.
-- [x] Lift teacher depth/K/`T_world_camera` into geometry preview with truth flags.
-- [x] Propagate VGGT proposal state through ledgers, world state, diagnostics, quality, and training cache.
-- [x] Add focused unit and vertical build-world tests.
-- [x] Run required verification and ignored evidence runs.
-- [x] Update concise docs/status report and commit.
-
-## Truth Boundary
-
-VGGT output is `teacher_pseudo`, unanchored, observed-only proposal geometry.
-It is not measured geometry, not physically accurate, and not training-quality.
+- [x] Confirm clean worktree and create V0.7 branch.
+- [x] Read required architecture, status, pipeline, witness, proposal, geometry,
+  quality, and CLI files.
+- [x] Reflow touched Markdown docs without restoring old phase history.
+- [x] Add dependency-safe Depth Pro adapter and witness runtime/replay path.
+- [x] Normalize Depth Pro proposals into the proposal cache and teacher status.
+- [x] Add disagreement and diagnostic consensus preview artifacts.
+- [x] Wire disagreement into ledgers, world state, geometry preview, diagnostics,
+  quality report, and training manifest.
+- [x] Add focused adapter, cache, disagreement, preview, CLI, and pipeline tests.
+- [x] Run formatting, lint, typecheck, unit, CLI, smoke, and evidence commands.
+- [x] Update concise V0.7 report, progress, decisions, current state, and next
+  task docs.
+- [x] Commit `feat(offline): add depth pro witness disagreement`.

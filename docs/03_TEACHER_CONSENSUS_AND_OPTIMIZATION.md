@@ -56,3 +56,19 @@ as `proposed`, and map status as `preview`, but optimization remains `not_run`.
 V0.6 only estimates adjacent Sim3 transforms from overlapping window camera
 centers. Rejected overlaps create separate pseudo-submaps instead of silent
 fusion.
+
+## V0.7 Depth Pro Disagreement
+
+Depth Pro is the second wired geometry witness. The runtime adapter is
+dependency safe: `atlas3r` import and CLI help do not import Torch or Depth Pro.
+A build can either run an external `depth_pro` package/repo or replay a previous
+normalized proposal cache.
+
+Depth Pro contributes per-frame depth, derived confidence/uncertainty, and
+intrinsics/focal-length proposals. It does not contribute global camera pose.
+`offline build-world` records VGGT-vs-Depth-Pro absolute, relative, and
+log-depth disagreement where frame proposals overlap.
+
+The V0.7 consensus preview is diagnostic only. It marks agreeing pixels as
+higher confidence and strong disagreements as lower confidence, but it is not an
+optimizer result and must not be used as training-quality labels.

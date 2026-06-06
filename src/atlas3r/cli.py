@@ -68,6 +68,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "overlap-sim3"),
         default="overlap-sim3",
     )
+    build_world_parser.add_argument("--enable-depth-pro", action="store_true")
+    build_world_parser.add_argument("--depth-pro-repo", default=None)
+    build_world_parser.add_argument("--depth-pro-checkpoint", default=None)
+    build_world_parser.add_argument("--depth-pro-device", default="cuda:0")
+    build_world_parser.add_argument("--depth-pro-image-size", type=int, default=None)
+    build_world_parser.add_argument("--depth-pro-max-keyframes", type=int, default=None)
+    build_world_parser.add_argument("--depth-pro-proposal-cache", default=None)
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -133,6 +140,13 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             vggt_max_keyframes=args.vggt_max_keyframes,
             vggt_proposal_cache=args.vggt_proposal_cache,
             vggt_stitch_mode=args.vggt_stitch_mode,
+            enable_depth_pro=bool(args.enable_depth_pro),
+            depth_pro_repo=args.depth_pro_repo,
+            depth_pro_checkpoint=args.depth_pro_checkpoint,
+            depth_pro_device=str(args.depth_pro_device),
+            depth_pro_image_size=args.depth_pro_image_size,
+            depth_pro_max_keyframes=args.depth_pro_max_keyframes,
+            depth_pro_proposal_cache=args.depth_pro_proposal_cache,
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")

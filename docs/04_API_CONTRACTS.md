@@ -1,6 +1,6 @@
 # 04 - API Contracts
 
-This is the concise contract index for Offline World Builder V0.6. Units are
+This is the concise contract index for Offline World Builder V0.7. Units are
 meters unless a field says otherwise. Transform names use `T_A_B`, mapping
 points from frame `B` into frame `A`.
 
@@ -101,3 +101,55 @@ accuracy_report: false
 realtime_claim: false
 usable_for_training: false
 ```
+
+## V0.7 Depth Pro Proposal Streams
+
+`offline build-world --enable-depth-pro` runs an external Depth Pro runtime when
+available. `--depth-pro-proposal-cache <path>` replays normalized streams without
+importing Depth Pro.
+
+Required stream files when proposals are available:
+
+- `proposals/depth_pro_cameras.jsonl`
+- `proposals/depth_pro_depths.npz`
+- `proposals/depth_pro_frames.jsonl`
+- `proposals/proposal_manifest.json`
+
+Each Depth Pro camera proposal includes `frame_id`, `keyframe_index`, optional
+`K`, `focal_px`, `fx`, `fy`, `intrinsics_source: depth_pro`,
+`metric_scale_source: depth_pro_metric_proposal_unanchored`,
+`coordinate_convention`, and a truth boundary.
+
+Each Depth Pro depth proposal references NPZ array keys for depth, sigma,
+confidence, and valid mask. If the runtime does not emit confidence, V0.7 uses a
+conservative finite-depth/smoothness-derived confidence and records
+`confidence_derived: true`.
+
+Depth Pro truth flags match VGGT teacher-pseudo flags, with
+`measured_geometry: false`, `observed_only: true`, and
+`usable_for_training: false`.
+
+## V0.7 Disagreement Diagnostics
+
+When VGGT and Depth Pro depths overlap by frame ID, V0.7 writes:
+
+- `diagnostics/teacher_disagreement.json`
+- `diagnostics/disagreement_maps.npz`
+- `diagnostics/consensus_preview.npz`
+
+`disagreement_maps.npz` contains `frame_ids`, `abs_depth_diff_m`,
+`rel_depth_diff`, `valid_overlap_mask`, and `high_disagreement_mask`.
+
+`consensus_preview.npz` contains `frame_ids`, `consensus_depth_m`,
+`consensus_confidence`, and `source_mask`, where source mask values are:
+
+```text
+0 none
+1 vggt_only
+2 depth_pro_only
+3 agree
+4 disagree
+```
+
+The consensus preview is diagnostic only, not optimized, not physically
+accurate, and not training-quality.

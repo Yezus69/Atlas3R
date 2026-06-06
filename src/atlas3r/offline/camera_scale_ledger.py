@@ -29,14 +29,30 @@ def write_camera_scale_ledgers(
 ) -> CameraScaleLedgerResult:
     root = Path(run_dir)
     has_vggt = bool(proposal_cache is not None and proposal_cache.vggt_camera_records)
-    intrinsics_status = "proposed" if has_vggt else "guessed" if camera is not None else "unknown"
-    scale_source = _scale_source(frame_count, debug_geometry_mode, has_vggt=has_vggt)
+    has_depth_pro = bool(proposal_cache is not None and proposal_cache.depth_pro_camera_records)
+    intrinsics_status = (
+        "proposed" if has_vggt or has_depth_pro else "guessed" if camera is not None else "unknown"
+    )
+    scale_source = _scale_source(
+        frame_count, debug_geometry_mode, has_vggt=has_vggt, has_depth_pro=has_depth_pro
+    )
     physical_accuracy_allowed = False
+    proposal_sources = []
+    if has_vggt:
+        proposal_sources.append("vggt")
+    if has_depth_pro:
+        proposal_sources.append("depth_pro")
+    scale_proposal_sources = []
+    if has_vggt:
+        scale_proposal_sources.append("vggt_unanchored_metric_proposal")
+    if has_depth_pro:
+        scale_proposal_sources.append("depth_pro_metric_proposal_unanchored")
     camera_payload = {
-        "status": "partial" if camera is not None or has_vggt else "unavailable",
+        "status": "partial" if camera is not None or has_vggt or has_depth_pro else "unavailable",
         "intrinsics_status": intrinsics_status,
         "camera": None if camera is None else camera.to_dict(),
-        "proposal_source": "vggt" if has_vggt else None,
+        "proposal_source": proposal_sources[0] if len(proposal_sources) == 1 else None,
+        "proposal_sources": proposal_sources,
         "vggt_intrinsics_proposals": [
             {
                 "frame_id": record["frame_id"],
@@ -47,9 +63,24 @@ def write_camera_scale_ledgers(
             }
             for record in (proposal_cache.vggt_camera_records if proposal_cache is not None else ())
         ],
+        "depth_pro_intrinsics_proposals": [
+            {
+                "frame_id": record["frame_id"],
+                "keyframe_index": record["keyframe_index"],
+                "K": record.get("K"),
+                "focal_px": record.get("focal_px"),
+                "fx": record.get("fx"),
+                "fy": record.get("fy"),
+                "intrinsics_source": "depth_pro",
+                "truth_boundary": record["truth_boundary"],
+            }
+            for record in (
+                proposal_cache.depth_pro_camera_records if proposal_cache is not None else ()
+            )
+        ],
         "why": (
-            "intrinsics proposed by VGGT teacher witness; not calibrated or measured"
-            if has_vggt
+            "intrinsics proposed by teacher witnesses; not calibrated or measured"
+            if has_vggt or has_depth_pro
             else "intrinsics guessed from image size; no calibration metadata"
             if camera is not None
             else "no frames decoded, so no intrinsics are known"
@@ -67,13 +98,17 @@ def write_camera_scale_ledgers(
         ),
         "measured_geometry": False,
         "accuracy_report": False,
-        "proposal_source": "vggt" if has_vggt else None,
+        "proposal_source": proposal_sources[0] if len(proposal_sources) == 1 else None,
+        "proposal_sources": proposal_sources,
+        "scale_proposal_sources": scale_proposal_sources,
         "allowed_sources": [
             "unknown",
             "unanchored_rgb_prior",
             "debug_flat_depth",
             "synthetic_known",
             "vggt_unanchored_metric_proposal",
+            "depth_pro_metric_proposal_unanchored",
+            "multiple_unanchored_teacher_proposals",
             "future_anchor",
             "measured",
         ],
@@ -90,10 +125,18 @@ def write_camera_scale_ledgers(
 
 
 def _scale_source(
-    frame_count: int, debug_geometry_mode: DebugGeometryMode, *, has_vggt: bool
+    frame_count: int,
+    debug_geometry_mode: DebugGeometryMode,
+    *,
+    has_vggt: bool,
+    has_depth_pro: bool,
 ) -> str:
+    if has_vggt and has_depth_pro:
+        return "multiple_unanchored_teacher_proposals"
     if has_vggt:
         return "vggt_unanchored_metric_proposal"
+    if has_depth_pro:
+        return "depth_pro_metric_proposal_unanchored"
     if debug_geometry_mode == "flat-depth":
         return "debug_flat_depth"
     if debug_geometry_mode == "synthetic-known":

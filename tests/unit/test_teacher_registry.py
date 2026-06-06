@@ -14,7 +14,7 @@ class TeacherRegistryTest(unittest.TestCase):
         self.assertGreaterEqual(len(statuses), 5)
         for status in statuses:
             self.assertTrue(status.install_hint)
-            if status.name != "vggt":
+            if status.name not in {"vggt", "depth_pro"}:
                 self.assertFalse(status.available)
         self.assertNotIn("torch", sys.modules)
 

@@ -47,13 +47,13 @@ MP4/RGB input
     confidence, render mismatch, observed/predicted separation, and failure
     points.
 
-## V0.6 Implementation Boundary
+## V0.7 Implementation Boundary
 
-Offline V0.6 adds normal RGB decoding and the first real geometry witness:
-VGGT. `offline build-world` can decode PPM, PNG/JPG, and MP4/MOV when optional
-decoders are available, normalize frames into the frame cache, run or replay
-VGGT, and lift teacher depth/K/`T_world_camera` into an inspectable point
-preview.
+Offline V0.7 keeps normal RGB decoding and VGGT geometry from V0.6, then adds
+Depth Pro as a second independent witness. `offline build-world` can decode PPM,
+PNG/JPG, and MP4/MOV when optional decoders are available, normalize frames into
+the frame cache, run or replay VGGT and Depth Pro, compare their depth proposals,
+and write diagnostic disagreement artifacts.
 
 VGGT writes normalized streams:
 
@@ -61,7 +61,13 @@ VGGT writes normalized streams:
 proposals/vggt_cameras.jsonl
 proposals/vggt_depths.npz
 proposals/vggt_windows.jsonl
+proposals/depth_pro_cameras.jsonl
+proposals/depth_pro_depths.npz
+proposals/depth_pro_frames.jsonl
 proposals/proposal_manifest.json
+diagnostics/teacher_disagreement.json
+diagnostics/disagreement_maps.npz
+diagnostics/consensus_preview.npz
 ```
 
 Multiple VGGT windows are stitched only by a minimal overlap Sim3 estimate. If
@@ -70,3 +76,9 @@ overlap is insufficient or inconsistent, the later window becomes a separate
 
 VGGT output is `teacher_pseudo`, unanchored, observed-only proposal geometry.
 It is not measured geometry, not physically accurate, and not training-quality.
+
+Depth Pro output is also `teacher_pseudo`, unanchored, and observed-only. It
+proposes per-frame depth and intrinsics/focal length but no global trajectory, so
+Depth Pro alone cannot create a global world preview. When both witnesses exist,
+V0.7 may lift a diagnostic consensus depth preview with VGGT poses. This is not
+an optimized consensus or final mesh reconstruction.

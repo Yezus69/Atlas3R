@@ -80,6 +80,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("--enable-vggt", result.stdout)
         self.assertIn("--vggt-proposal-cache", result.stdout)
         self.assertIn("--vggt-stitch-mode", result.stdout)
+        self.assertIn("--enable-depth-pro", result.stdout)
+        self.assertIn("--depth-pro-proposal-cache", result.stdout)
 
 
 if __name__ == "__main__":

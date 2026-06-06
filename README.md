@@ -6,11 +6,11 @@ Atlas3R is being reset around one foundation:
 MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> training cache
 ```
 
-The current repository has the first connected offline tracer plus the first
-real teacher-witness vertical slice. It is not a working mapper yet:
-optimization, anchored scale, consensus, and mesh reconstruction remain future
-work. The tracer exists so every future module is wired through one
-end-to-end command instead of isolated scaffolding.
+The current repository has the first connected offline tracer plus two
+real teacher-witness vertical slices: VGGT and Depth Pro. It is not a working
+mapper yet: optimization, anchored scale, final consensus, and mesh
+reconstruction remain future work. The tracer exists so every future module is
+wired through one end-to-end command instead of isolated scaffolding.
 
 ## Boundaries
 
@@ -19,7 +19,8 @@ end-to-end command instead of isolated scaffolding.
 - No RGB-only production readiness claim exists.
 - No final neural checkpoint exists.
 - Teacher models are witnesses and proposal generators, not truth.
-- VGGT output is teacher-proposed geometry, not measured geometry.
+- VGGT and Depth Pro output are teacher-proposed geometry, not measured
+  geometry.
 - Physical accuracy requires anchors, calibration, measured depth, LiDAR/ARKit,
   or known-scale objects.
 - Unanchored MP4 input produces pseudo labels only.
@@ -53,6 +54,8 @@ python -m atlas3r offline inspect-video --input <mp4-or-image-folder> --output <
 python -m atlas3r offline build-world --input <mp4-or-image-folder> --output <run>
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --write-ply
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <cache>
+python -m atlas3r offline build-world --input <images> --output <run> --enable-depth-pro
+python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <vggt-cache> --depth-pro-proposal-cache <depth-pro-cache>
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -91,6 +94,9 @@ world/scale_ledger.json
 geometry/geometry_preview.npz
 objects/object_ledger.json
 diagnostics/render_repair_diagnostics.json
+diagnostics/teacher_disagreement.json
+diagnostics/disagreement_maps.npz
+diagnostics/consensus_preview.npz
 diagnostics/failure_points.json
 quality_report.json
 quality_report.md
@@ -100,6 +106,8 @@ training_cache/training_cache_manifest.json
 Debug flat-depth geometry is labeled `debug_synthetic`, not measured geometry,
 and is not training-quality.
 
-VGGT proposal geometry, when enabled or replayed, is labeled `teacher_pseudo`,
-`measured_geometry: false`, `observed_only: true`, and remains
-`usable_for_training: false` until anchoring, optimization, and evaluation exist.
+VGGT and Depth Pro proposal geometry, when enabled or replayed, is labeled
+`teacher_pseudo`, `measured_geometry: false`, `observed_only: true`, and remains
+`usable_for_training: false` until anchoring, optimization, and evaluation
+exist. V0.7 writes VGGT-vs-Depth-Pro disagreement maps and a diagnostic
+consensus preview; neither is an optimized world state or accuracy report.

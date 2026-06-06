@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from atlas3r.offline.depth_pro_witness import DepthProWitnessResult
 from atlas3r.offline.run_manifest import FailurePoint, write_json
 from atlas3r.offline.vggt_witness import VggtWitnessResult
 from atlas3r.teachers.base import AdapterStatus
@@ -15,6 +16,7 @@ def write_teacher_statuses(
     failure_points: list[FailurePoint],
     *,
     vggt_result: VggtWitnessResult | None = None,
+    depth_pro_result: DepthProWitnessResult | None = None,
 ) -> tuple[AdapterStatus, ...]:
     statuses = list_teacher_statuses()
     rows: list[dict[str, object]] = []
@@ -37,11 +39,30 @@ def write_teacher_statuses(
             }
             row["model_metadata"] = vggt_result.metadata
             row["replay_source"] = vggt_result.replay_source
+        if status.name == "depth_pro" and depth_pro_result is not None:
+            row["available"] = depth_pro_result.available
+            row["status"] = depth_pro_result.runtime_status
+            row["reason"] = depth_pro_result.reason
+            row["install_hint"] = depth_pro_result.install_hint
+            row["proposal_stream_path"] = (
+                "proposals/depth_pro_depths.npz" if depth_pro_result.has_depth else None
+            )
+            row["proposal_counts"] = {
+                "cameras": len(depth_pro_result.camera_records),
+                "depths": len(depth_pro_result.depth_records),
+                "frames": len(depth_pro_result.frame_records),
+            }
+            row["model_metadata"] = depth_pro_result.metadata
+            row["replay_source"] = depth_pro_result.replay_source
         rows.append(row)
         already_reported = (
             status.name == "vggt"
             and vggt_result is not None
             and vggt_result.failure_code is not None
+        ) or (
+            status.name == "depth_pro"
+            and depth_pro_result is not None
+            and depth_pro_result.failure_code is not None
         )
         row_available = bool(row["available"])
         if not row_available and not already_reported:

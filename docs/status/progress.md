@@ -4,18 +4,21 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Active branch: `codex/offline-world-builder-v06-vggt-witness`.
-- Offline V0.6 wires PPM/PNG/JPG/MP4 decoding and VGGT teacher proposals
-  through `python -m atlas3r offline build-world`.
-- Frame cache writes stable normalized PPM copies and records decoder name,
-  source URI, timestamps, quality scores, guessed K, and truth boundary.
-- VGGT can run from an external runtime or replay normalized proposal caches.
-- Proposal cache writes `vggt_cameras.jsonl`, `vggt_depths.npz`,
-  `vggt_windows.jsonl`, and manifest counts.
-- Camera/scale ledger, world state, geometry preview, diagnostics, quality
-  report, and training manifest consume VGGT proposals vertically.
-- VGGT output remains `teacher_pseudo`, unanchored, not measured, not
-  physically accurate, and not training-quality.
+- Active branch: `codex/offline-world-builder-v07-depthpro-disagreement`.
+- Offline V0.7 wires Depth Pro through `offline build-world` as a second
+  teacher-pseudo geometry witness beside VGGT.
+- Depth Pro can run from an external `depth_pro` package/repo or replay
+  normalized proposal caches without import-time heavy dependencies.
+- Proposal cache writes VGGT and Depth Pro camera/depth streams plus manifest
+  counts.
+- Camera/scale ledgers, world state, quality report, render diagnostics, and
+  training manifest record both witness sources and still block physical
+  accuracy/training-quality claims.
+- Disagreement artifacts are written under `diagnostics/teacher_disagreement.json`,
+  `diagnostics/disagreement_maps.npz`, and `diagnostics/consensus_preview.npz`.
+- Geometry preview uses VGGT pose plus diagnostic consensus depth when both
+  witnesses exist, falls back to VGGT depth for VGGT-only runs, and stays empty
+  for Depth-Pro-only global previews.
 
 ## Verification
 
@@ -23,27 +26,32 @@ This is a rolling current-state summary, not an append-only transcript.
 - Passed: `python -m ruff format --check src tests`.
 - Passed: `python -m ruff check src tests`.
 - Passed: `python -m mypy src`.
-- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 39 tests.
+- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 50 tests.
 - Passed: `python -m atlas3r --help`, `python -m atlas3r offline --help`,
   `python -m atlas3r offline build-world --help`,
   `python -m atlas3r teachers list`, and
   `python -m atlas3r smoke contracts`.
-- Passed: `git diff --check`; Git emitted Windows CRLF replacement warnings.
-- Unavailable: `make lint`, `make typecheck`, `make test`, and `make smoke`
-  because `make` is not installed on this Windows host.
 
 ## Evidence
 
-- A: `runs/offline_v06_debug_flat_depth` wrote 288 debug points and PLY.
-- B: `runs/offline_v06_real_decode_no_vggt` decoded 60 TUM PNG frames with
+- A: `runs/offline_v07_debug_flat_depth` decoded 6 PPM frames, selected 6
+  keyframes, wrote 288 debug points and PLY.
+- B: `runs/offline_v07_real_decode_no_teachers` decoded 60 TUM PNG frames with
   Pillow, selected 16 keyframes, and correctly wrote 0 geometry points.
-- C: `runs/offline_v06_vggt_real_geometry` decoded 60 TUM PNG frames, selected
-  24 keyframes, ran VGGT, wrote 24 camera/depth proposals, 19,800 geometry
-  points, and PLY.
+- C: `runs/offline_v07_vggt_only` decoded 60 TUM PNG frames, selected 24
+  keyframes, wrote 24 VGGT camera/depth proposals, 19,800 points, and PLY.
+- D: `runs/offline_v07_depthpro_only` decoded 60 TUM PNG frames, selected 24
+  keyframes, wrote 24 Depth Pro camera/depth proposals, and wrote 0 global
+  geometry because global pose is missing.
+- E: `runs/offline_v07_vggt_depthpro_disagreement` decoded 60 TUM PNG frames,
+  selected 24 keyframes, wrote 24 VGGT and 24 Depth Pro depth proposals,
+  7,372,800 valid overlap pixels, 18,432 geometry points, and PLY.
 
 ## Known Gaps
 
-- VGGT scale is unanchored and not measured.
-- No consensus optimizer, render-repair optimizer, object witness, or final mesh
-  reconstruction exists yet.
+- VGGT and Depth Pro scales are unanchored teacher proposals.
+- The consensus preview is diagnostic only; no optimizer has adjusted depth
+  scale/bias, intrinsics, or poses.
+- No physical scale anchor, render-repair optimizer, object permanence, final
+  mesh reconstruction, or named evaluation report exists.
 - Training cache remains a manifest and is not training-quality.
