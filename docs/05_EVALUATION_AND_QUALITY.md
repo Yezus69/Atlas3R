@@ -67,6 +67,21 @@ Reports with fused world-map export must summarize:
 - unchanged truth boundary: teacher-pseudo fused map, not measured, not
   physically accurate, not optimized, and not training-quality.
 
+## Offline V0.9 Report Requirements
+
+Reports with map consistency optimization must summarize:
+
+- optimizer status and whether hard improvement target passed;
+- raw and optimized fused point, voxel, and observed mesh triangle counts;
+- retained point ratio and anti-cheat status;
+- before/after VGGT-vs-Depth-Pro absolute, relative, and log-depth metrics;
+- before/after cross-view projection residual mean and p95;
+- accepted/rejected Depth Pro scale/bias rows;
+- intrinsics adjustment summary when enabled;
+- raw and optimized PLY paths;
+- unchanged truth boundary: teacher-pseudo optimized map, observed-only,
+  unanchored, not measured, not physically accurate, and not training-quality.
+
 ## Claim Rules
 
 - A smoke test is not an accuracy report.

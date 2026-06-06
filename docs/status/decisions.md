@@ -18,3 +18,4 @@ This is a compact ADR index for the reset foundation.
 | D-0012 | Window stitching | V0.6 uses only minimal overlap Sim3 stitching and creates pseudo-submaps on rejected overlaps rather than silently fusing windows. | Yes |
 | D-0013 | Depth Pro disagreement | Depth Pro is a second depth/intrinsics witness; V0.7 records VGGT-vs-Depth-Pro disagreement and diagnostic consensus without claiming optimization, physical accuracy, or training quality. | Yes |
 | D-0014 | Fused map output | V0.8 exports teacher-pseudo fused points, sparse occupancy, observed voxel mesh, and camera trajectory only when global pose exists; Depth Pro alone cannot create a global map. | Yes |
+| D-0015 | Map optimizer | V0.9 optimizes only diagnostic teacher consistency using Depth Pro scale/bias, optional focal scale, confidence updates, and projection residuals; optimized maps remain teacher-pseudo and not measured. | Yes |

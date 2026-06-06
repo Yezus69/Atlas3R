@@ -4,52 +4,53 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Active branch: `codex/offline-world-builder-v08-fused-map-output`.
-- Offline V0.8 exports the first persistent fused world-map artifacts through
-  `offline build-world --export-world-map`.
-- The map exporter uses VGGT `T_world_camera` plus diagnostic VGGT/Depth-Pro
-  consensus depth when both witnesses exist, and VGGT depth for VGGT-only runs.
-- Depth Pro without VGGT pose writes an explicit missing-global-pose failure and
-  does not create a fake global map.
-- `world_map/` now contains manifest, camera trajectory, fused points NPZ/PLY,
-  sparse occupancy NPZ/metadata, optional observed voxel mesh, and map-quality
-  JSON/Markdown.
-- Training-cache manifests reference fused-map artifacts but remain
-  `usable_for_training: false`.
+- Active branch: `codex/offline-world-builder-v09-map-consistency-optimizer`.
+- Offline V0.9 adds a diagnostic map consistency optimizer through
+  `offline build-world`.
+- `--optimize-map-consistency` implies raw map export and writes optimizer
+  artifacts under `optimizer/`.
+- Optimized maps are exported under `world_map_optimized/` and remain
+  teacher-pseudo, observed-only, unanchored, not measured, and not
+  training-quality.
+- Training-cache manifests now reference raw and optimized map artifacts while
+  remaining `usable_for_training: false`.
 
 ## Evidence
 
-- A: `runs/offline_v08_debug_flat_depth_map` decoded 6 PPM frames, selected 6
-  keyframes, wrote 6 fused debug points, 5 occupied voxels, 96 mesh vertices,
-  48 triangles, and `inspectable_map_available: true`.
-- B: `runs/offline_v08_vggt_world_map` decoded 60 TUM RGB frames, selected 24
-  keyframes, wrote 24 VGGT camera/depth proposals, 76,440 fused points, 2,313
-  occupied voxels, 21,248 mesh vertices, 10,624 triangles, and
-  `inspectable_map_available: true`.
-- C: `runs/offline_v08_consensus_world_map` decoded 60 TUM RGB frames, selected
-  24 keyframes, wrote 24 VGGT and 24 Depth Pro proposals, 111,550 fused points,
-  3,641 occupied voxels, 21,432 mesh vertices, 10,716 triangles, and
-  `inspectable_map_available: true`.
-- D: skipped because no `.mp4` or `.mov` was found under `runs/`, `data/`,
-  `datasets/`, `videos/`, or `inputs/`.
+- A: `runs/offline_v09_debug_flat_depth_optimizer` decoded the tiny PPM input,
+  wrote a raw debug map with 6 fused points and 5 occupied voxels, and marked
+  optimizer status `insufficient_witnesses`.
+- B: `runs/offline_v09_tum_consistency_optimizer` decoded 60 TUM RGB frames,
+  selected 24 keyframes, wrote 24 VGGT and 24 Depth Pro proposals, and exported
+  both raw and optimized maps.
+- B raw map: 111,550 fused points, 3,641 occupied voxels, 10,716 observed mesh
+  triangles.
+- B optimized map: 111,808 fused points, 2,435 occupied voxels, 9,848 observed
+  mesh triangles.
+- B retained point ratio: 1.002312864.
+- B relative disagreement mean: 0.087864511 -> 0.046452649.
+- B projection residual mean m: 0.027318565 -> 0.009636894.
+- C: skipped because no `.mp4`, `.mov`, or `.m4v` was found under `inputs/`,
+  `videos/`, `data/`, `datasets/`, or `runs/`.
 
 ## Verification
 
+- Passed: `python -m ruff check src tests`.
 - Passed: `python -m ruff format src tests`.
 - Passed: `python -m ruff format --check src tests`.
-- Passed: `python -m ruff check src tests`.
 - Passed: `python -m mypy src`.
-- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 55 tests.
-- Passed: `python -m atlas3r --help`, `python -m atlas3r offline --help`,
-  `python -m atlas3r offline build-world --help`,
-  `python -m atlas3r teachers list`, and
-  `python -m atlas3r smoke contracts`.
-- Passed: `git diff --check` with Windows line-ending warnings only.
+- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 59 tests.
+- Passed: `python -m atlas3r --help`.
+- Passed: `python -m atlas3r offline --help`.
+- Passed: `python -m atlas3r offline build-world --help`.
+- Passed: `python -m atlas3r teachers list`.
+- Passed: `python -m atlas3r smoke contracts`.
+- Passed: `git diff --check` with CRLF warnings only.
 
 ## Known Gaps
 
-- VGGT and Depth Pro scales are unanchored teacher proposals.
-- The fused map is not optimized, measured, physically accurate, or
-  training-quality.
-- No physical scale anchor, render-repair optimizer, object permanence, final
-  mesh reconstruction, or named evaluation report exists.
+- VGGT and Depth Pro scales remain unanchored teacher proposals.
+- The optimized map improves internal consistency only; it is not measured,
+  physically accurate, or training-quality.
+- No physical scale anchor, object permanence, final mesh reconstruction, or
+  named evaluation report exists.

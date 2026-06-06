@@ -9,6 +9,7 @@ from atlas3r.offline.camera_scale_ledger import CameraScaleLedgerResult
 from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.fused_world_map import FusedWorldMapResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
+from atlas3r.offline.map_consistency_optimizer import MapConsistencyOptimizerResult
 from atlas3r.offline.object_ledger import ObjectLedgerResult
 from atlas3r.offline.proposal_cache import ProposalCacheResult
 from atlas3r.offline.render_repair import RenderRepairResult
@@ -36,6 +37,7 @@ def write_quality_report(
     render: RenderRepairResult,
     training: TrainingCacheResult,
     failure_points: list[FailurePoint],
+    optimizer: MapConsistencyOptimizerResult | None = None,
 ) -> QualityReportResult:
     teachers = [
         {
@@ -113,9 +115,30 @@ def write_quality_report(
             "physical_accuracy_claim": False,
             "training_quality_claim": False,
         },
+        "map_consistency_optimizer": {
+            "status": "disabled" if optimizer is None else optimizer.status,
+            "manifest": None if optimizer is None else optimizer.manifest_path,
+            "before_metrics": None if optimizer is None else optimizer.before_metrics,
+            "after_metrics": None if optimizer is None else optimizer.after_metrics,
+            "improvement_passed": False if optimizer is None else optimizer.improvement_passed,
+            "improvement_summary": None if optimizer is None else optimizer.improvement_summary,
+            "optimized_world_map": None
+            if optimizer is None
+            else {
+                "status": optimizer.optimized_world_map.status,
+                "manifest": optimizer.optimized_world_map.manifest_path,
+                "point_count": optimizer.optimized_world_map.point_count,
+                "occupied_voxel_count": optimizer.optimized_world_map.occupied_voxel_count,
+                "observed_mesh_triangle_count": optimizer.optimized_world_map.mesh_triangle_count,
+                "inspectable_map_available": (
+                    optimizer.optimized_world_map.inspectable_map_available
+                ),
+            },
+            "physical_accuracy_claim": False,
+            "training_quality_claim": False,
+        },
         "missing_blockers": [
             "scale_anchor",
-            "teacher_consensus_optimizer",
             "render_repair_optimizer",
             "named_evaluation_report",
         ],
@@ -141,6 +164,9 @@ def _markdown_report(payload: dict[str, object]) -> str:
     training_cache = payload["training_cache"]
     if not isinstance(training_cache, dict):
         raise ValueError("training payload must be a dict")
+    optimizer = payload["map_consistency_optimizer"]
+    if not isinstance(optimizer, dict):
+        raise ValueError("optimizer payload must be a dict")
     failure_points = payload["failure_points"]
     if not isinstance(failure_points, list):
         raise ValueError("failure_points payload must be a list")
@@ -156,13 +182,14 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Teacher-proposed geometry: {geometry['teacher_proposed_geometry_available']}",
         f"- Geometry measured: {geometry['measured_geometry']}",
         f"- Fused world map: {_world_map_status(payload)}",
+        f"- Map optimizer: {optimizer.get('status', 'disabled')}",
+        f"- Optimizer improvement passed: {optimizer.get('improvement_passed', False)}",
         f"- Teacher disagreement: {_disagreement_status(payload)}",
         f"- Consensus preview: {_consensus_status(payload)}",
         f"- Object tracking: {payload['object_tracking_status']}",
         f"- Render diagnostics: {payload['render_diagnostic_status']}",
         f"- Training usable: {training_cache['usable_for_training']}",
-        "- Missing blockers: scale anchor, consensus optimizer, render repair optimizer, "
-        "named evaluation report",
+        "- Missing blockers: scale anchor, render repair optimizer, named evaluation report",
         f"- Failure points: {len(failure_points)}",
         "",
         "This report is a tracer report, not an accuracy report. VGGT and Depth Pro output, "

@@ -18,6 +18,11 @@ from atlas3r.offline.fused_world_map import (
 )
 from atlas3r.offline.geometry_preview import write_geometry_preview
 from atlas3r.offline.keyframes import select_keyframes
+from atlas3r.offline.map_consistency_optimizer import (
+    MapConsistencyOptimizerOptions,
+    MapConsistencyOptimizerResult,
+    write_map_consistency_optimizer,
+)
 from atlas3r.offline.object_ledger import write_object_ledger
 from atlas3r.offline.proposal_cache import DebugGeometryMode, write_proposal_cache
 from atlas3r.offline.quality_report import write_quality_report
@@ -68,6 +73,18 @@ class BuildWorldOptions:
     map_depth_source: MapDepthSource | None = None
     map_write_observed_mesh: bool = False
     map_write_occupancy: bool = False
+    optimize_map_consistency: bool = False
+    optimizer_max_iterations: int = 5
+    optimizer_depth_scale_min: float = 0.5
+    optimizer_depth_scale_max: float = 2.0
+    optimizer_depth_bias_max_m: float = 1.0
+    optimizer_enable_intrinsics_scale: bool = False
+    optimizer_focal_scale_min: float = 0.8
+    optimizer_focal_scale_max: float = 1.25
+    optimizer_cross_view_pairs: int = 3
+    optimizer_min_overlap_pixels: int = 512
+    optimizer_min_improvement_ratio: float = 0.05
+    export_optimized_world_map: bool = False
 
 
 @dataclass(frozen=True)
@@ -80,6 +97,9 @@ class BuildWorldResult:
     world_map_point_count: int = 0
     occupied_voxel_count: int = 0
     inspectable_map_available: bool = False
+    optimized_world_map_point_count: int = 0
+    optimized_occupied_voxel_count: int = 0
+    optimized_inspectable_map_available: bool = False
 
 
 def build_world(options: BuildWorldOptions) -> BuildWorldResult:
@@ -169,6 +189,17 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         failure_points=failure_points,
         disagreement=disagreement,
     )
+    map_options = FusedWorldMapOptions(
+        export_world_map=options.export_world_map or options.optimize_map_consistency,
+        point_stride=options.map_point_stride,
+        max_points=options.map_max_points,
+        min_confidence=options.map_min_confidence,
+        max_relative_disagreement=options.map_max_relative_disagreement,
+        voxel_size_m=options.map_voxel_size_m,
+        depth_source=options.map_depth_source,
+        write_observed_mesh=options.map_write_observed_mesh,
+        write_occupancy=options.map_write_occupancy,
+    )
     world_map = write_fused_world_map(
         run_dir,
         input_path=options.input_path,
@@ -176,16 +207,32 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         keyframes=keyframes.keyframes,
         proposal_cache=proposals,
         disagreement=disagreement,
-        options=FusedWorldMapOptions(
-            export_world_map=options.export_world_map,
-            point_stride=options.map_point_stride,
-            max_points=options.map_max_points,
-            min_confidence=options.map_min_confidence,
-            max_relative_disagreement=options.map_max_relative_disagreement,
-            voxel_size_m=options.map_voxel_size_m,
-            depth_source=options.map_depth_source,
-            write_observed_mesh=options.map_write_observed_mesh,
-            write_occupancy=options.map_write_occupancy,
+        options=map_options,
+        failure_points=failure_points,
+    )
+    optimizer = write_map_consistency_optimizer(
+        run_dir,
+        input_path=options.input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        proposal_cache=proposals,
+        disagreement=disagreement,
+        raw_world_map=world_map,
+        map_options=map_options,
+        optimizer_options=MapConsistencyOptimizerOptions(
+            enabled=options.optimize_map_consistency,
+            export_optimized_world_map=options.export_optimized_world_map
+            or options.optimize_map_consistency,
+            max_iterations=options.optimizer_max_iterations,
+            depth_scale_min=options.optimizer_depth_scale_min,
+            depth_scale_max=options.optimizer_depth_scale_max,
+            depth_bias_max_m=options.optimizer_depth_bias_max_m,
+            enable_intrinsics_scale=options.optimizer_enable_intrinsics_scale,
+            focal_scale_min=options.optimizer_focal_scale_min,
+            focal_scale_max=options.optimizer_focal_scale_max,
+            cross_view_pairs=options.optimizer_cross_view_pairs,
+            min_overlap_pixels=options.optimizer_min_overlap_pixels,
+            min_improvement_ratio=options.optimizer_min_improvement_ratio,
         ),
         failure_points=failure_points,
     )
@@ -205,6 +252,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         geometry=geometry,
         disagreement=disagreement,
         world_map=world_map,
+        optimized_world_map=optimizer.optimized_world_map,
+        optimizer=optimizer,
     )
     write_json(
         run_dir / "diagnostics" / "failure_points.json",
@@ -218,12 +267,13 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         ledgers=ledgers,
         geometry=geometry,
         world_map=world_map,
+        optimizer=optimizer,
         objects=objects,
         render=render,
         training=training,
         failure_points=failure_points,
     )
-    artifact_paths = _artifact_paths(geometry.geometry_ply_path, world_map)
+    artifact_paths = _artifact_paths(geometry.geometry_ply_path, world_map, optimizer)
     manifest = {
         "format_name": "atlas3r_offline_world_builder_run_manifest",
         "format_version": 1,
@@ -264,6 +314,18 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "map_depth_source": options.map_depth_source,
             "map_write_observed_mesh": options.map_write_observed_mesh,
             "map_write_occupancy": options.map_write_occupancy,
+            "optimize_map_consistency": options.optimize_map_consistency,
+            "optimizer_max_iterations": options.optimizer_max_iterations,
+            "optimizer_depth_scale_min": options.optimizer_depth_scale_min,
+            "optimizer_depth_scale_max": options.optimizer_depth_scale_max,
+            "optimizer_depth_bias_max_m": options.optimizer_depth_bias_max_m,
+            "optimizer_enable_intrinsics_scale": options.optimizer_enable_intrinsics_scale,
+            "optimizer_focal_scale_min": options.optimizer_focal_scale_min,
+            "optimizer_focal_scale_max": options.optimizer_focal_scale_max,
+            "optimizer_cross_view_pairs": options.optimizer_cross_view_pairs,
+            "optimizer_min_overlap_pixels": options.optimizer_min_overlap_pixels,
+            "optimizer_min_improvement_ratio": options.optimizer_min_improvement_ratio,
+            "export_optimized_world_map": options.export_optimized_world_map,
         },
         "module_status": {
             "frame_cache": frame_cache.status,
@@ -275,6 +337,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "consensus_world": consensus.status,
             "geometry_preview": geometry.status,
             "fused_world_map": world_map.status,
+            "map_consistency_optimizer": optimizer.status,
+            "optimized_world_map": optimizer.optimized_world_map.status,
             "object_ledger": objects.status,
             "render_repair": render.status,
             "training_cache": training.status,
@@ -297,11 +361,16 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         world_map_point_count=world_map.point_count,
         occupied_voxel_count=world_map.occupied_voxel_count,
         inspectable_map_available=world_map.inspectable_map_available,
+        optimized_world_map_point_count=optimizer.optimized_world_map.point_count,
+        optimized_occupied_voxel_count=optimizer.optimized_world_map.occupied_voxel_count,
+        optimized_inspectable_map_available=optimizer.optimized_world_map.inspectable_map_available,
     )
 
 
 def _artifact_paths(
-    geometry_ply_path: str | None, world_map: FusedWorldMapResult
+    geometry_ply_path: str | None,
+    world_map: FusedWorldMapResult,
+    optimizer: MapConsistencyOptimizerResult,
 ) -> tuple[str, ...]:
     paths = [
         "run_manifest.json",
@@ -326,4 +395,5 @@ def _artifact_paths(
     if geometry_ply_path is not None:
         paths.insert(9, geometry_ply_path)
     paths.extend(world_map.artifact_paths)
+    paths.extend(optimizer.artifact_paths)
     return tuple(paths)

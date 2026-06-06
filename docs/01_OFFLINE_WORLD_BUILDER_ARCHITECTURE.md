@@ -96,3 +96,17 @@ only marks observed voxels from fused points, and the observed voxel mesh only
 emits boundary faces of occupied voxels. This is not an optimized consensus,
 hidden-geometry completion, physical accuracy report, or final mesh
 reconstruction.
+
+## V0.9 Implementation Boundary
+
+Offline V0.9 keeps the same witnesses and adds a diagnostic consistency
+optimizer inside `offline build-world`. It fits bounded per-keyframe Depth Pro
+scale/bias to VGGT depth on common valid pixels, optionally searches a bounded
+global focal scale, lowers consensus confidence where teachers still disagree,
+and records before/after projection residuals.
+
+The optimizer writes `optimizer/` artifacts and, when enabled, exports
+`world_map_optimized/` in the same inspectable map schema as `world_map/`.
+The optimized map is still observed-only teacher-pseudo geometry. It is not an
+anchored physical world, measured depth, hidden completion, training-quality
+cache, or final mesh reconstruction.

@@ -88,6 +88,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_world_parser.add_argument("--map-write-observed-mesh", action="store_true")
     build_world_parser.add_argument("--map-write-occupancy", action="store_true")
+    build_world_parser.add_argument("--optimize-map-consistency", action="store_true")
+    build_world_parser.add_argument("--optimizer-max-iterations", type=int, default=5)
+    build_world_parser.add_argument("--optimizer-depth-scale-min", type=float, default=0.5)
+    build_world_parser.add_argument("--optimizer-depth-scale-max", type=float, default=2.0)
+    build_world_parser.add_argument("--optimizer-depth-bias-max-m", type=float, default=1.0)
+    build_world_parser.add_argument("--optimizer-enable-intrinsics-scale", action="store_true")
+    build_world_parser.add_argument("--optimizer-focal-scale-min", type=float, default=0.8)
+    build_world_parser.add_argument("--optimizer-focal-scale-max", type=float, default=1.25)
+    build_world_parser.add_argument("--optimizer-cross-view-pairs", type=int, default=3)
+    build_world_parser.add_argument("--optimizer-min-overlap-pixels", type=int, default=512)
+    build_world_parser.add_argument("--optimizer-min-improvement-ratio", type=float, default=0.05)
+    build_world_parser.add_argument("--export-optimized-world-map", action="store_true")
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -169,6 +181,18 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             map_depth_source=args.map_depth_source,
             map_write_observed_mesh=bool(args.map_write_observed_mesh),
             map_write_occupancy=bool(args.map_write_occupancy),
+            optimize_map_consistency=bool(args.optimize_map_consistency),
+            optimizer_max_iterations=int(args.optimizer_max_iterations),
+            optimizer_depth_scale_min=float(args.optimizer_depth_scale_min),
+            optimizer_depth_scale_max=float(args.optimizer_depth_scale_max),
+            optimizer_depth_bias_max_m=float(args.optimizer_depth_bias_max_m),
+            optimizer_enable_intrinsics_scale=bool(args.optimizer_enable_intrinsics_scale),
+            optimizer_focal_scale_min=float(args.optimizer_focal_scale_min),
+            optimizer_focal_scale_max=float(args.optimizer_focal_scale_max),
+            optimizer_cross_view_pairs=int(args.optimizer_cross_view_pairs),
+            optimizer_min_overlap_pixels=int(args.optimizer_min_overlap_pixels),
+            optimizer_min_improvement_ratio=float(args.optimizer_min_improvement_ratio),
+            export_optimized_world_map=bool(args.export_optimized_world_map),
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")
@@ -176,6 +200,9 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
     print(f"world map points: {result.world_map_point_count}")
     print(f"occupied voxels: {result.occupied_voxel_count}")
     print(f"inspectable map: {result.inspectable_map_available}")
+    print(f"optimized world map points: {result.optimized_world_map_point_count}")
+    print(f"optimized occupied voxels: {result.optimized_occupied_voxel_count}")
+    print(f"optimized inspectable map: {result.optimized_inspectable_map_available}")
     print(f"failure points: {result.failure_count}")
     return result.exit_code
 

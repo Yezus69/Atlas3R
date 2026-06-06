@@ -30,6 +30,21 @@ TRUTH_BOUNDARY: dict[str, object] = {
     "usable_for_training": False,
 }
 
+OPTIMIZED_TRUTH_BOUNDARY: dict[str, object] = {
+    "label_type": "teacher_pseudo_optimized_map",
+    "measured_geometry": False,
+    "observed_only": True,
+    "predicted_completion": False,
+    "hidden_geometry_measured": False,
+    "metric_scale_source": "unanchored_vggt_depthpro_teacher_consensus",
+    "physical_accuracy_claim": False,
+    "training_quality": False,
+    "realtime_claim": False,
+    "optimized_world_state": "diagnostic_depth_consistency_only",
+    "accuracy_report": False,
+    "usable_for_training": False,
+}
+
 
 @dataclass(frozen=True)
 class FusedPointCloud:
@@ -237,22 +252,28 @@ def write_map_artifacts(
     trajectory: list[dict[str, object]],
     write_observed_mesh: bool,
     rejected_pose_count: int,
+    map_dir_name: str = "world_map",
+    truth_boundary: dict[str, object] | None = None,
 ) -> dict[str, str]:
-    map_dir = run_dir / "world_map"
+    truth = TRUTH_BOUNDARY if truth_boundary is None else truth_boundary
+    map_dir = run_dir / map_dir_name
     map_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
-    _write_fused_points_npz(map_dir / "fused_points.npz", cloud)
-    paths["fused_points_npz"] = "world_map/fused_points.npz"
+    _write_fused_points_npz(map_dir / "fused_points.npz", cloud, truth)
+    paths["fused_points_npz"] = f"{map_dir_name}/fused_points.npz"
     if cloud.points_world_m.shape[0] > 0:
-        _write_point_ply(map_dir / "fused_points.ply", cloud.points_world_m, cloud.colors_u8)
-        paths["fused_points_ply"] = "world_map/fused_points.ply"
-    _write_occupancy_npz(map_dir / "occupancy_grid.npz", occupancy)
-    write_json(map_dir / "occupancy_grid_metadata.json", occupancy_metadata(occupancy, cloud))
-    paths["occupancy_grid_npz"] = "world_map/occupancy_grid.npz"
-    paths["occupancy_grid_metadata"] = "world_map/occupancy_grid_metadata.json"
+        _write_point_ply(map_dir / "fused_points.ply", cloud.points_world_m, cloud.colors_u8, truth)
+        paths["fused_points_ply"] = f"{map_dir_name}/fused_points.ply"
+    _write_occupancy_npz(map_dir / "occupancy_grid.npz", occupancy, truth)
+    write_json(
+        map_dir / "occupancy_grid_metadata.json",
+        occupancy_metadata(occupancy, cloud, truth),
+    )
+    paths["occupancy_grid_npz"] = f"{map_dir_name}/occupancy_grid.npz"
+    paths["occupancy_grid_metadata"] = f"{map_dir_name}/occupancy_grid_metadata.json"
     if write_observed_mesh:
-        _write_mesh_ply(map_dir / "observed_voxel_mesh.ply", mesh)
-        paths["observed_voxel_mesh"] = "world_map/observed_voxel_mesh.ply"
+        _write_mesh_ply(map_dir / "observed_voxel_mesh.ply", mesh, truth)
+        paths["observed_voxel_mesh"] = f"{map_dir_name}/observed_voxel_mesh.ply"
     write_json(
         map_dir / "camera_trajectory.json",
         {
@@ -260,12 +281,12 @@ def write_map_artifacts(
             "format_version": 1,
             "trajectory_count": len(trajectory),
             "rejected_nonfinite_pose_count": rejected_pose_count,
-            "metric_scale_source": TRUTH_BOUNDARY["metric_scale_source"],
-            "truth_boundary": TRUTH_BOUNDARY,
+            "metric_scale_source": truth["metric_scale_source"],
+            "truth_boundary": truth,
             "poses": trajectory,
         },
     )
-    paths["camera_trajectory"] = "world_map/camera_trajectory.json"
+    paths["camera_trajectory"] = f"{map_dir_name}/camera_trajectory.json"
     return paths
 
 
@@ -287,8 +308,11 @@ def write_quality_and_manifest(
     paths: dict[str, str],
     failure_reasons: list[str],
     rejected_pose_count: int,
+    map_dir_name: str = "world_map",
+    truth_boundary: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    map_dir = run_dir / "world_map"
+    truth = TRUTH_BOUNDARY if truth_boundary is None else truth_boundary
+    map_dir = run_dir / map_dir_name
     quality = map_quality_payload(
         input_path=input_path,
         frame_cache=frame_cache,
@@ -302,6 +326,7 @@ def write_quality_and_manifest(
         paths=paths,
         failure_reasons=failure_reasons,
         rejected_pose_count=rejected_pose_count,
+        truth_boundary=truth,
     )
     write_json(map_dir / "map_quality.json", quality)
     (map_dir / "map_quality.md").write_text(map_quality_markdown(quality), encoding="utf-8")
@@ -313,6 +338,7 @@ def write_quality_and_manifest(
         max_relative_disagreement=max_relative_disagreement,
         paths=paths,
         failure_reasons=failure_reasons,
+        truth_boundary=truth,
     )
     write_json(map_dir / "world_map_manifest.json", manifest)
     return quality
@@ -327,7 +353,9 @@ def manifest_payload(
     max_relative_disagreement: float,
     paths: dict[str, str],
     failure_reasons: list[str],
+    truth_boundary: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    truth = TRUTH_BOUNDARY if truth_boundary is None else truth_boundary
     bbox_min, bbox_max = bbox(cloud.points_world_m)
     return {
         "format_name": "atlas3r_fused_world_map",
@@ -343,8 +371,8 @@ def manifest_payload(
         "bbox_world_min_m": None if bbox_min is None else bbox_min.tolist(),
         "bbox_world_max_m": None if bbox_max is None else bbox_max.tolist(),
         "occupied_voxel_count": occupancy.occupied_voxel_count,
-        "metric_scale_source": TRUTH_BOUNDARY["metric_scale_source"],
-        "truth_boundary": TRUTH_BOUNDARY,
+        "metric_scale_source": truth["metric_scale_source"],
+        "truth_boundary": truth,
         "failure_points": failure_reasons,
         "artifacts": paths,
     }
@@ -364,7 +392,9 @@ def map_quality_payload(
     paths: dict[str, str],
     failure_reasons: list[str],
     rejected_pose_count: int,
+    truth_boundary: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    truth = TRUTH_BOUNDARY if truth_boundary is None else truth_boundary
     bbox_min, bbox_max = bbox(cloud.points_world_m)
     bbox_size = None if bbox_min is None or bbox_max is None else (bbox_max - bbox_min).tolist()
     inspectable = (
@@ -405,12 +435,12 @@ def map_quality_payload(
             "p50": cloud.mapped_disagreement_p50,
             "p95": cloud.mapped_disagreement_p95,
         },
-        "scale_source": TRUTH_BOUNDARY["metric_scale_source"],
+        "scale_source": truth["metric_scale_source"],
         "physical_accuracy_claim": False,
         "training_quality_claim": False,
         "known_failure_points": failure_reasons,
         "inspectable_map_available": inspectable,
-        "truth_boundary": TRUTH_BOUNDARY,
+        "truth_boundary": truth,
         "artifacts": paths,
     }
 
@@ -436,16 +466,19 @@ def map_quality_markdown(payload: dict[str, object]) -> str:
             f"- Physical accuracy claim: {payload['physical_accuracy_claim']}",
             f"- Training-quality claim: {payload['training_quality_claim']}",
             "",
-            "This fused map is teacher-pseudo, observed-only, unoptimized, and not an "
-            "accuracy or training-quality report.",
+            "This map is teacher-pseudo, observed-only, and not an accuracy or "
+            "training-quality report.",
             "",
         ]
     )
 
 
 def occupancy_metadata(
-    occupancy: SparseOccupancyGrid, cloud: FusedPointCloud | None
+    occupancy: SparseOccupancyGrid,
+    cloud: FusedPointCloud | None,
+    truth_boundary: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    truth = TRUTH_BOUNDARY if truth_boundary is None else truth_boundary
     return {
         "format_name": "atlas3r_sparse_occupancy_grid",
         "format_version": 1,
@@ -455,7 +488,7 @@ def occupancy_metadata(
         "unknown_space_filled": False,
         "free_space_carving": False,
         "source_point_count": 0 if cloud is None else int(cloud.points_world_m.shape[0]),
-        "truth_boundary": TRUTH_BOUNDARY,
+        "truth_boundary": truth,
     }
 
 
@@ -467,7 +500,9 @@ def bbox(
     return points.min(axis=0).astype(np.float32), points.max(axis=0).astype(np.float32)
 
 
-def _write_fused_points_npz(path: Path, cloud: FusedPointCloud) -> None:
+def _write_fused_points_npz(
+    path: Path, cloud: FusedPointCloud, truth_boundary: dict[str, object]
+) -> None:
     np.savez_compressed(
         path,
         points_world_m=cloud.points_world_m.astype(np.float32),
@@ -485,14 +520,16 @@ def _write_fused_points_npz(path: Path, cloud: FusedPointCloud) -> None:
                 "point_count": int(cloud.points_world_m.shape[0]),
                 "depth_source": cloud.depth_source,
                 "metric_scale_source": cloud.metric_scale_source,
-                "truth_boundary": TRUTH_BOUNDARY,
+                "truth_boundary": truth_boundary,
             },
             sort_keys=True,
         ),
     )
 
 
-def _write_occupancy_npz(path: Path, occupancy: SparseOccupancyGrid) -> None:
+def _write_occupancy_npz(
+    path: Path, occupancy: SparseOccupancyGrid, truth_boundary: dict[str, object]
+) -> None:
     np.savez_compressed(
         path,
         voxel_indices_ijk=occupancy.voxel_indices_ijk.astype(np.int32),
@@ -501,14 +538,19 @@ def _write_occupancy_npz(path: Path, occupancy: SparseOccupancyGrid) -> None:
         color_mean_u8=occupancy.color_mean_u8.astype(np.uint8),
         bbox_world_min_m=occupancy.bbox_world_min_m.astype(np.float32),
         voxel_size_m=np.asarray([occupancy.voxel_size_m], dtype=np.float32),
-        metadata_json=json.dumps(occupancy_metadata(occupancy, None), sort_keys=True),
+        metadata_json=json.dumps(
+            occupancy_metadata(occupancy, None, truth_boundary), sort_keys=True
+        ),
     )
 
 
 def _write_point_ply(
-    path: Path, points_world_m: NDArray[np.float32], colors_u8: NDArray[np.uint8]
+    path: Path,
+    points_world_m: NDArray[np.float32],
+    colors_u8: NDArray[np.uint8],
+    truth_boundary: dict[str, object],
 ) -> None:
-    metadata = json.dumps({"truth_boundary": TRUTH_BOUNDARY}, sort_keys=True)
+    metadata = json.dumps({"truth_boundary": truth_boundary}, sort_keys=True)
     lines = [
         "ply",
         "format ascii 1.0",
@@ -532,9 +574,9 @@ def _write_point_ply(
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_mesh_ply(path: Path, mesh: ObservedVoxelMesh) -> None:
+def _write_mesh_ply(path: Path, mesh: ObservedVoxelMesh, truth_boundary: dict[str, object]) -> None:
     metadata = json.dumps(
-        {"mesh_kind": "observed_voxel_mesh", "truth_boundary": TRUTH_BOUNDARY},
+        {"mesh_kind": "observed_voxel_mesh", "truth_boundary": truth_boundary},
         sort_keys=True,
     )
     lines = [

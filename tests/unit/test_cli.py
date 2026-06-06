@@ -86,6 +86,18 @@ class CliTest(unittest.TestCase):
         self.assertIn("--map-point-stride", result.stdout)
         self.assertIn("--map-depth-source", result.stdout)
         self.assertIn("--map-write-observed-mesh", result.stdout)
+        self.assertIn("--optimize-map-consistency", result.stdout)
+        self.assertIn("--optimizer-max-iterations", result.stdout)
+        self.assertIn("--optimizer-depth-scale-min", result.stdout)
+        self.assertIn("--optimizer-depth-scale-max", result.stdout)
+        self.assertIn("--optimizer-depth-bias-max-m", result.stdout)
+        self.assertIn("--optimizer-enable-intrinsics-scale", result.stdout)
+        self.assertIn("--optimizer-focal-scale-min", result.stdout)
+        self.assertIn("--optimizer-focal-scale-max", result.stdout)
+        self.assertIn("--optimizer-cross-view-pairs", result.stdout)
+        self.assertIn("--optimizer-min-overlap-pixels", result.stdout)
+        self.assertIn("--optimizer-min-improvement-ratio", result.stdout)
+        self.assertIn("--export-optimized-world-map", result.stdout)
 
 
 if __name__ == "__main__":

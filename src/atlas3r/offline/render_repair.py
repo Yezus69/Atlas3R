@@ -25,6 +25,9 @@ def write_render_repair_diagnostics(
     failure_points: list[FailurePoint],
     disagreement: DisagreementResult | None = None,
 ) -> RenderRepairResult:
+    root = Path(run_dir)
+    projection_before = root / "diagnostics" / "projection_consistency_before.json"
+    projection_after = root / "diagnostics" / "projection_consistency_after.json"
     if geometry.point_count == 0:
         status = "unavailable"
         why = "geometry preview is empty, so render/projection diagnostics cannot run"
@@ -57,9 +60,17 @@ def write_render_repair_diagnostics(
         "keyframe_count": len(keyframes),
         "projection_sample_count": projection_count,
         "coverage_placeholder": coverage,
-        "projection_status": "teacher_geometry_placeholder"
+        "projection_status": "before_after_depth_projection_available"
+        if projection_before.is_file() and projection_after.is_file()
+        else "teacher_geometry_placeholder"
         if geometry.point_count
         else "unavailable",
+        "projection_consistency_before": "diagnostics/projection_consistency_before.json"
+        if projection_before.is_file()
+        else None,
+        "projection_consistency_after": "diagnostics/projection_consistency_after.json"
+        if projection_after.is_file()
+        else None,
         "render_mismatch": None,
         "repair_hooks": {
             "pose_repair_needed": True,
@@ -68,7 +79,7 @@ def write_render_repair_diagnostics(
             "scale_repair_needed": True,
         },
     }
-    write_json(Path(run_dir) / "diagnostics" / "render_repair_diagnostics.json", payload)
+    write_json(root / "diagnostics" / "render_repair_diagnostics.json", payload)
     return RenderRepairResult(
         status=status, diagnostics_path="diagnostics/render_repair_diagnostics.json"
     )

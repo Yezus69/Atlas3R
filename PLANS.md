@@ -102,9 +102,22 @@ inconsistency.
 
 Acceptance:
 
-- optimizer inputs and outputs are documented before schema changes;
+- `offline build-world --optimize-map-consistency` writes optimizer artifacts
+  under `optimizer/`;
+- raw `world_map/` and optimized `world_map_optimized/` are both inspectable;
 - residuals and before/after map quality are reported;
 - physical accuracy remains blocked without anchors or evaluation.
+
+## Offline V1.0 - Anchored Capture Mode
+
+Add capture modes using a known-size marker/object or manual scale measurement
+so maps can carry an explicit physical scale source.
+
+Acceptance:
+
+- anchored labels are separated from unanchored pseudo labels;
+- scale source is recorded in ledgers and map truth boundaries;
+- physical scale claims cite the anchor or measurement source.
 
 ## Offline V1 - Additional Teacher Witnesses
 

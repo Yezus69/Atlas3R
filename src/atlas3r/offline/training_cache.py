@@ -8,6 +8,7 @@ from pathlib import Path
 from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.fused_world_map import FusedWorldMapResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
+from atlas3r.offline.map_consistency_optimizer import MapConsistencyOptimizerResult
 from atlas3r.offline.run_manifest import write_json
 
 
@@ -27,6 +28,8 @@ def write_training_cache_manifest(
     geometry: GeometryPreviewResult,
     disagreement: DisagreementResult | None = None,
     world_map: FusedWorldMapResult | None = None,
+    optimized_world_map: FusedWorldMapResult | None = None,
+    optimizer: MapConsistencyOptimizerResult | None = None,
 ) -> TrainingCacheResult:
     usable_for_training = False
     payload = {
@@ -53,6 +56,26 @@ def write_training_cache_manifest(
             "observed_voxel_mesh": None
             if world_map is None
             else world_map.observed_voxel_mesh_ply_path,
+            "optimizer_manifest": None if optimizer is None else optimizer.manifest_path,
+            "optimizer_before_metrics": None
+            if optimizer is None
+            else optimizer.before_metrics_path,
+            "optimizer_after_metrics": None if optimizer is None else optimizer.after_metrics_path,
+            "optimized_world_map_manifest": None
+            if optimized_world_map is None
+            else optimized_world_map.manifest_path,
+            "optimized_fused_points": None
+            if optimized_world_map is None
+            else optimized_world_map.fused_points_npz_path,
+            "optimized_fused_points_ply": None
+            if optimized_world_map is None
+            else optimized_world_map.fused_points_ply_path,
+            "optimized_occupancy_grid": None
+            if optimized_world_map is None
+            else optimized_world_map.occupancy_grid_npz_path,
+            "optimized_observed_voxel_mesh": None
+            if optimized_world_map is None
+            else optimized_world_map.observed_voxel_mesh_ply_path,
         },
         "truth_boundary": {
             "label_type": (

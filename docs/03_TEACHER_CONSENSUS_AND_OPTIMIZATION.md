@@ -72,3 +72,24 @@ log-depth disagreement where frame proposals overlap.
 The V0.7 consensus preview is diagnostic only. It marks agreeing pixels as
 higher confidence and strong disagreements as lower confidence, but it is not an
 optimizer result and must not be used as training-quality labels.
+
+## V0.9 Map Consistency Optimizer
+
+V0.9 adds the first repair pass over existing VGGT and Depth Pro proposals. It
+does not add teachers or train a model.
+
+The optimizer estimates:
+
+- per-keyframe Depth Pro scale and bias;
+- optional bounded global focal scale;
+- per-frame consensus confidence after alignment.
+
+The objective measures robust VGGT-vs-Depth-Pro log-depth agreement and
+cross-view projection residuals, while regularizing scale, bias, and focal
+adjustments to conservative bounds. Disagreement is still recorded and lowers
+confidence; it is not silently converted into truth.
+
+Optimized outputs use `label_type: teacher_pseudo_optimized_map` and
+`optimized_world_state: diagnostic_depth_consistency_only`. They remain
+unanchored, observed-only, not measured geometry, not physically accurate, and
+not training-quality.

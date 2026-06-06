@@ -13,6 +13,7 @@ from atlas3r.contracts.coordinates import transform_points, unproject_depth, val
 from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.frame_cache import FrameCacheResult
 from atlas3r.offline.fused_world_map_artifacts import (
+    OPTIMIZED_TRUTH_BOUNDARY,
     TRUTH_BOUNDARY,
     FusedPointCloud,
     ObservedVoxelMesh,
@@ -36,6 +37,7 @@ _DEPTH_SOURCE_IDS = {
     "vggt": 2,
     "depth_pro_with_vggt_pose": 3,
     "debug_flat_depth": 4,
+    "optimized_consensus": 5,
 }
 
 
@@ -50,6 +52,8 @@ class FusedWorldMapOptions:
     depth_source: MapDepthSource | None = None
     write_observed_mesh: bool = False
     write_occupancy: bool = False
+    output_dir_name: str = "world_map"
+    optimized_map: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,7 +113,7 @@ def write_fused_world_map(
         return FusedWorldMapResult(status="disabled")
     _validate_options(options)
     root = Path(run_dir)
-    (root / "world_map").mkdir(parents=True, exist_ok=True)
+    (root / options.output_dir_name).mkdir(parents=True, exist_ok=True)
     failure_reasons: list[str] = []
     trajectory, rejected_pose_count = _camera_trajectory(frame_cache, proposal_cache)
     cloud = build_fused_point_cloud(
@@ -137,6 +141,8 @@ def write_fused_world_map(
         trajectory=trajectory,
         write_observed_mesh=options.write_observed_mesh,
         rejected_pose_count=rejected_pose_count,
+        map_dir_name=options.output_dir_name,
+        truth_boundary=OPTIMIZED_TRUTH_BOUNDARY if options.optimized_map else TRUTH_BOUNDARY,
     )
     quality = write_quality_and_manifest(
         root,
@@ -155,20 +161,22 @@ def write_fused_world_map(
         paths=paths,
         failure_reasons=failure_reasons,
         rejected_pose_count=rejected_pose_count,
+        map_dir_name=options.output_dir_name,
+        truth_boundary=OPTIMIZED_TRUTH_BOUNDARY if options.optimized_map else TRUTH_BOUNDARY,
     )
     bbox_min, bbox_max = bbox(cloud.points_world_m)
     return FusedWorldMapResult(
         status="available" if cloud.points_world_m.shape[0] > 0 else "unavailable",
-        manifest_path="world_map/world_map_manifest.json",
-        camera_trajectory_path="world_map/camera_trajectory.json",
-        fused_points_npz_path="world_map/fused_points.npz",
+        manifest_path=f"{options.output_dir_name}/world_map_manifest.json",
+        camera_trajectory_path=f"{options.output_dir_name}/camera_trajectory.json",
+        fused_points_npz_path=f"{options.output_dir_name}/fused_points.npz",
         fused_points_ply_path=paths.get("fused_points_ply"),
-        occupancy_grid_npz_path="world_map/occupancy_grid.npz",
-        occupancy_grid_metadata_path="world_map/occupancy_grid_metadata.json",
+        occupancy_grid_npz_path=f"{options.output_dir_name}/occupancy_grid.npz",
+        occupancy_grid_metadata_path=f"{options.output_dir_name}/occupancy_grid_metadata.json",
         observed_voxel_mesh_ply_path=paths.get("observed_voxel_mesh"),
-        map_quality_json_path="world_map/map_quality.json",
-        map_quality_markdown_path="world_map/map_quality.md",
-        depth_source=cloud.depth_source,
+        map_quality_json_path=f"{options.output_dir_name}/map_quality.json",
+        map_quality_markdown_path=f"{options.output_dir_name}/map_quality.md",
+        depth_source="optimized_consensus" if options.optimized_map else cloud.depth_source,
         point_count=int(cloud.points_world_m.shape[0]),
         occupied_voxel_count=occupancy.occupied_voxel_count,
         mesh_vertex_count=int(mesh.vertices_world_m.shape[0]),
@@ -278,6 +286,11 @@ def build_fused_point_cloud(
         metric_scale_source = str(record.get("metric_scale_source", metric_scale_source))
         per_frame_point_counts[str(frame_id)] = per_frame_point_counts.get(str(frame_id), 0) + count
     cloud = _cap_cloud(chunks.concatenate(depth_source, metric_scale_source), options.max_points)
+    output_depth_source = (
+        "optimized_consensus"
+        if options.optimized_map and cloud.depth_source == "consensus"
+        else cloud.depth_source
+    )
     return FusedPointCloud(
         points_world_m=cloud.points_world_m,
         colors_u8=cloud.colors_u8,
@@ -287,7 +300,7 @@ def build_fused_point_cloud(
         depth_source_id=cloud.depth_source_id,
         disagreement_rel=cloud.disagreement_rel,
         point_sigma_m=cloud.point_sigma_m,
-        depth_source=cloud.depth_source,
+        depth_source=output_depth_source,
         metric_scale_source=cloud.metric_scale_source,
         valid_depth_ratio=float(valid_depth_pixels / sampled_pixels) if sampled_pixels else 0.0,
         rejected_low_confidence_ratio=float(low_conf_rejected / valid_depth_pixels)

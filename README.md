@@ -7,10 +7,10 @@ MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> tra
 ```
 
 The current repository has the first connected offline tracer, two real
-teacher-witness vertical slices (VGGT and Depth Pro), and the first inspectable
-teacher-pseudo fused world-map artifact. It is not a working accurate mapper
-yet: optimization, anchored scale, object fusion, and final mesh reconstruction
-remain future work.
+teacher-witness vertical slices (VGGT and Depth Pro), the first inspectable
+teacher-pseudo fused world-map artifact, and the first diagnostic consistency
+optimizer. It is not a working accurate mapper yet: anchored scale, object
+fusion, and final mesh reconstruction remain future work.
 
 ## Boundaries
 
@@ -57,6 +57,7 @@ python -m atlas3r offline build-world --input <images> --output <run> --vggt-pro
 python -m atlas3r offline build-world --input <images> --output <run> --enable-depth-pro
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <vggt-cache> --depth-pro-proposal-cache <depth-pro-cache>
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --map-write-occupancy --map-write-observed-mesh
+python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --optimize-map-consistency --export-optimized-world-map
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -108,6 +109,23 @@ world_map/occupancy_grid_metadata.json
 world_map/observed_voxel_mesh.ply
 world_map/map_quality.json
 world_map/map_quality.md
+optimizer/optimizer_manifest.json
+optimizer/before_metrics.json
+optimizer/after_metrics.json
+optimizer/depth_scale_bias.jsonl
+optimizer/intrinsics_adjustments.json
+optimizer/projection_residuals.npz
+optimizer/optimization_trace.jsonl
+optimizer/optimizer_report.md
+world_map_optimized/world_map_manifest.json
+world_map_optimized/camera_trajectory.json
+world_map_optimized/fused_points.npz
+world_map_optimized/fused_points.ply
+world_map_optimized/occupancy_grid.npz
+world_map_optimized/occupancy_grid_metadata.json
+world_map_optimized/observed_voxel_mesh.ply
+world_map_optimized/map_quality.json
+world_map_optimized/map_quality.md
 quality_report.json
 quality_report.md
 training_cache/training_cache_manifest.json
@@ -121,5 +139,7 @@ VGGT and Depth Pro proposal geometry, when enabled or replayed, is labeled
 `usable_for_training: false` until anchoring, optimization, and evaluation
 exist. V0.8 can fuse VGGT poses with VGGT or diagnostic VGGT/Depth-Pro
 consensus depth into `world_map/` point, occupancy, observed voxel mesh, camera
-trajectory, and map-quality artifacts. These fused maps are teacher-pseudo,
-observed-only, unoptimized, not physically accurate, and not training-quality.
+trajectory, and map-quality artifacts. V0.9 can write `world_map_optimized/`
+after a diagnostic Depth Pro scale/bias consistency pass. Raw and optimized
+maps are teacher-pseudo, observed-only, unanchored, not physically accurate, and
+not training-quality.

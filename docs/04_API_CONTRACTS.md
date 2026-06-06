@@ -212,3 +212,57 @@ optimized_world_state: false
 `map_quality.json` may set `inspectable_map_available: true` only when fused
 points, sparse occupancy, requested observed mesh, and nonzero point and voxel
 counts exist. This is an inspectability verdict, not an accuracy claim.
+
+## V0.9 Map Consistency Optimizer Artifacts
+
+`offline build-world --optimize-map-consistency` writes optimizer artifacts
+under `optimizer/` and projection diagnostics under `diagnostics/`.
+
+Required optimizer files:
+
+- `optimizer/optimizer_manifest.json`
+- `optimizer/before_metrics.json`
+- `optimizer/after_metrics.json`
+- `optimizer/depth_scale_bias.jsonl`
+- `optimizer/intrinsics_adjustments.json`
+- `optimizer/projection_residuals.npz`
+- `optimizer/optimization_trace.jsonl`
+- `optimizer/optimizer_report.md`
+
+Each `depth_scale_bias.jsonl` row contains `frame_id`, `keyframe_id`,
+`depth_source: depth_pro`, `scale`, `bias_m`, `robust_loss_before`,
+`robust_loss_after`, `valid_overlap_pixels`, `accepted`, and optional
+`rejection_reason`.
+
+Before/after metric JSON files include depth disagreement, cross-view
+projection residuals, fused point count, occupied voxel count, observed mesh
+triangle count, retained point ratio, rejection ratios, and
+`inspectable_map_available`.
+
+Projection diagnostics are:
+
+- `diagnostics/projection_consistency_before.json`
+- `diagnostics/projection_consistency_after.json`
+- `diagnostics/projection_residuals_before.npz`
+- `diagnostics/projection_residuals_after.npz`
+
+When enabled, optimized map artifacts are written under `world_map_optimized/`
+with the same filenames and array schemas as `world_map/`.
+
+Every optimized map artifact carries this truth boundary:
+
+```text
+label_type: teacher_pseudo_optimized_map
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+metric_scale_source: unanchored_vggt_depthpro_teacher_consensus
+physical_accuracy_claim: false
+training_quality: false
+realtime_claim: false
+optimized_world_state: diagnostic_depth_consistency_only
+```
+
+The optimizer is a diagnostic teacher-consistency pass, not an evaluation
+report or physical accuracy claim.
