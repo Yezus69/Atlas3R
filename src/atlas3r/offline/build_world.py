@@ -10,6 +10,12 @@ from atlas3r.offline.consensus_world import write_consensus_world_state
 from atlas3r.offline.depth_pro_witness import DepthProRuntimeOptions, run_depth_pro_witness
 from atlas3r.offline.disagreement import write_teacher_disagreement
 from atlas3r.offline.frame_cache import build_frame_cache
+from atlas3r.offline.fused_world_map import (
+    FusedWorldMapOptions,
+    FusedWorldMapResult,
+    MapDepthSource,
+    write_fused_world_map,
+)
 from atlas3r.offline.geometry_preview import write_geometry_preview
 from atlas3r.offline.keyframes import select_keyframes
 from atlas3r.offline.object_ledger import write_object_ledger
@@ -53,6 +59,15 @@ class BuildWorldOptions:
     depth_pro_image_size: int | None = None
     depth_pro_max_keyframes: int | None = None
     depth_pro_proposal_cache: str | None = None
+    export_world_map: bool = False
+    map_point_stride: int = 8
+    map_max_points: int = 2_000_000
+    map_min_confidence: float = 0.25
+    map_max_relative_disagreement: float = 0.25
+    map_voxel_size_m: float = 0.05
+    map_depth_source: MapDepthSource | None = None
+    map_write_observed_mesh: bool = False
+    map_write_occupancy: bool = False
 
 
 @dataclass(frozen=True)
@@ -62,6 +77,9 @@ class BuildWorldResult:
     artifact_paths: tuple[str, ...]
     geometry_point_count: int
     failure_count: int
+    world_map_point_count: int = 0
+    occupied_voxel_count: int = 0
+    inspectable_map_available: bool = False
 
 
 def build_world(options: BuildWorldOptions) -> BuildWorldResult:
@@ -151,6 +169,26 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         failure_points=failure_points,
         disagreement=disagreement,
     )
+    world_map = write_fused_world_map(
+        run_dir,
+        input_path=options.input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        proposal_cache=proposals,
+        disagreement=disagreement,
+        options=FusedWorldMapOptions(
+            export_world_map=options.export_world_map,
+            point_stride=options.map_point_stride,
+            max_points=options.map_max_points,
+            min_confidence=options.map_min_confidence,
+            max_relative_disagreement=options.map_max_relative_disagreement,
+            voxel_size_m=options.map_voxel_size_m,
+            depth_source=options.map_depth_source,
+            write_observed_mesh=options.map_write_observed_mesh,
+            write_occupancy=options.map_write_occupancy,
+        ),
+        failure_points=failure_points,
+    )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
         run_dir,
@@ -166,6 +204,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         world_state_path=consensus.world_state_path,
         geometry=geometry,
         disagreement=disagreement,
+        world_map=world_map,
     )
     write_json(
         run_dir / "diagnostics" / "failure_points.json",
@@ -178,12 +217,13 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         disagreement=disagreement,
         ledgers=ledgers,
         geometry=geometry,
+        world_map=world_map,
         objects=objects,
         render=render,
         training=training,
         failure_points=failure_points,
     )
-    artifact_paths = _artifact_paths(geometry.geometry_ply_path)
+    artifact_paths = _artifact_paths(geometry.geometry_ply_path, world_map)
     manifest = {
         "format_name": "atlas3r_offline_world_builder_run_manifest",
         "format_version": 1,
@@ -215,6 +255,15 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "depth_pro_image_size": options.depth_pro_image_size,
             "depth_pro_max_keyframes": options.depth_pro_max_keyframes,
             "depth_pro_proposal_cache": options.depth_pro_proposal_cache,
+            "export_world_map": options.export_world_map,
+            "map_point_stride": options.map_point_stride,
+            "map_max_points": options.map_max_points,
+            "map_min_confidence": options.map_min_confidence,
+            "map_max_relative_disagreement": options.map_max_relative_disagreement,
+            "map_voxel_size_m": options.map_voxel_size_m,
+            "map_depth_source": options.map_depth_source,
+            "map_write_observed_mesh": options.map_write_observed_mesh,
+            "map_write_occupancy": options.map_write_occupancy,
         },
         "module_status": {
             "frame_cache": frame_cache.status,
@@ -225,6 +274,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "camera_scale_ledger": "partial",
             "consensus_world": consensus.status,
             "geometry_preview": geometry.status,
+            "fused_world_map": world_map.status,
             "object_ledger": objects.status,
             "render_repair": render.status,
             "training_cache": training.status,
@@ -244,10 +294,15 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         artifact_paths=artifact_paths,
         geometry_point_count=geometry.point_count,
         failure_count=len(failure_points),
+        world_map_point_count=world_map.point_count,
+        occupied_voxel_count=world_map.occupied_voxel_count,
+        inspectable_map_available=world_map.inspectable_map_available,
     )
 
 
-def _artifact_paths(geometry_ply_path: str | None) -> tuple[str, ...]:
+def _artifact_paths(
+    geometry_ply_path: str | None, world_map: FusedWorldMapResult
+) -> tuple[str, ...]:
     paths = [
         "run_manifest.json",
         "frames/frame_index.jsonl",
@@ -270,4 +325,5 @@ def _artifact_paths(geometry_ply_path: str | None) -> tuple[str, ...]:
     ]
     if geometry_ply_path is not None:
         paths.insert(9, geometry_ply_path)
+    paths.extend(world_map.artifact_paths)
     return tuple(paths)

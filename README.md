@@ -6,11 +6,11 @@ Atlas3R is being reset around one foundation:
 MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> training cache
 ```
 
-The current repository has the first connected offline tracer plus two
-real teacher-witness vertical slices: VGGT and Depth Pro. It is not a working
-mapper yet: optimization, anchored scale, final consensus, and mesh
-reconstruction remain future work. The tracer exists so every future module is
-wired through one end-to-end command instead of isolated scaffolding.
+The current repository has the first connected offline tracer, two real
+teacher-witness vertical slices (VGGT and Depth Pro), and the first inspectable
+teacher-pseudo fused world-map artifact. It is not a working accurate mapper
+yet: optimization, anchored scale, object fusion, and final mesh reconstruction
+remain future work.
 
 ## Boundaries
 
@@ -56,6 +56,7 @@ python -m atlas3r offline build-world --input <images> --output <run> --enable-v
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <cache>
 python -m atlas3r offline build-world --input <images> --output <run> --enable-depth-pro
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <vggt-cache> --depth-pro-proposal-cache <depth-pro-cache>
+python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --map-write-occupancy --map-write-observed-mesh
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -98,6 +99,15 @@ diagnostics/teacher_disagreement.json
 diagnostics/disagreement_maps.npz
 diagnostics/consensus_preview.npz
 diagnostics/failure_points.json
+world_map/world_map_manifest.json
+world_map/camera_trajectory.json
+world_map/fused_points.npz
+world_map/fused_points.ply
+world_map/occupancy_grid.npz
+world_map/occupancy_grid_metadata.json
+world_map/observed_voxel_mesh.ply
+world_map/map_quality.json
+world_map/map_quality.md
 quality_report.json
 quality_report.md
 training_cache/training_cache_manifest.json
@@ -109,5 +119,7 @@ and is not training-quality.
 VGGT and Depth Pro proposal geometry, when enabled or replayed, is labeled
 `teacher_pseudo`, `measured_geometry: false`, `observed_only: true`, and remains
 `usable_for_training: false` until anchoring, optimization, and evaluation
-exist. V0.7 writes VGGT-vs-Depth-Pro disagreement maps and a diagnostic
-consensus preview; neither is an optimized world state or accuracy report.
+exist. V0.8 can fuse VGGT poses with VGGT or diagnostic VGGT/Depth-Pro
+consensus depth into `world_map/` point, occupancy, observed voxel mesh, camera
+trajectory, and map-quality artifacts. These fused maps are teacher-pseudo,
+observed-only, unoptimized, not physically accurate, and not training-quality.

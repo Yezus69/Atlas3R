@@ -75,6 +75,19 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--depth-pro-image-size", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-max-keyframes", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-proposal-cache", default=None)
+    build_world_parser.add_argument("--export-world-map", action="store_true")
+    build_world_parser.add_argument("--map-point-stride", type=int, default=8)
+    build_world_parser.add_argument("--map-max-points", type=int, default=2_000_000)
+    build_world_parser.add_argument("--map-min-confidence", type=float, default=0.25)
+    build_world_parser.add_argument("--map-max-relative-disagreement", type=float, default=0.25)
+    build_world_parser.add_argument("--map-voxel-size-m", type=float, default=0.05)
+    build_world_parser.add_argument(
+        "--map-depth-source",
+        choices=("consensus", "vggt", "depth_pro_with_vggt_pose"),
+        default=None,
+    )
+    build_world_parser.add_argument("--map-write-observed-mesh", action="store_true")
+    build_world_parser.add_argument("--map-write-occupancy", action="store_true")
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -147,10 +160,22 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             depth_pro_image_size=args.depth_pro_image_size,
             depth_pro_max_keyframes=args.depth_pro_max_keyframes,
             depth_pro_proposal_cache=args.depth_pro_proposal_cache,
+            export_world_map=bool(args.export_world_map),
+            map_point_stride=int(args.map_point_stride),
+            map_max_points=int(args.map_max_points),
+            map_min_confidence=float(args.map_min_confidence),
+            map_max_relative_disagreement=float(args.map_max_relative_disagreement),
+            map_voxel_size_m=float(args.map_voxel_size_m),
+            map_depth_source=args.map_depth_source,
+            map_write_observed_mesh=bool(args.map_write_observed_mesh),
+            map_write_occupancy=bool(args.map_write_occupancy),
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")
     print(f"geometry points: {result.geometry_point_count}")
+    print(f"world map points: {result.world_map_point_count}")
+    print(f"occupied voxels: {result.occupied_voxel_count}")
+    print(f"inspectable map: {result.inspectable_map_available}")
     print(f"failure points: {result.failure_count}")
     return result.exit_code
 

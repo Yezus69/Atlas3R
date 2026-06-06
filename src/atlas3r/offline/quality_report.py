@@ -7,6 +7,7 @@ from pathlib import Path
 
 from atlas3r.offline.camera_scale_ledger import CameraScaleLedgerResult
 from atlas3r.offline.disagreement import DisagreementResult
+from atlas3r.offline.fused_world_map import FusedWorldMapResult
 from atlas3r.offline.geometry_preview import GeometryPreviewResult
 from atlas3r.offline.object_ledger import ObjectLedgerResult
 from atlas3r.offline.proposal_cache import ProposalCacheResult
@@ -30,6 +31,7 @@ def write_quality_report(
     disagreement: DisagreementResult | None,
     ledgers: CameraScaleLedgerResult,
     geometry: GeometryPreviewResult,
+    world_map: FusedWorldMapResult,
     objects: ObjectLedgerResult,
     render: RenderRepairResult,
     training: TrainingCacheResult,
@@ -94,6 +96,23 @@ def write_quality_report(
             "valid_point_ratio": geometry.valid_point_ratio,
             "per_frame_point_counts": geometry.per_frame_point_counts,
         },
+        "world_map": {
+            "status": world_map.status,
+            "depth_source": world_map.depth_source,
+            "point_count": world_map.point_count,
+            "occupied_voxel_count": world_map.occupied_voxel_count,
+            "observed_mesh_vertex_count": world_map.mesh_vertex_count,
+            "observed_mesh_triangle_count": world_map.mesh_triangle_count,
+            "camera_trajectory_count": world_map.trajectory_count,
+            "inspectable_map_available": world_map.inspectable_map_available,
+            "manifest": world_map.manifest_path,
+            "fused_points_ply": world_map.fused_points_ply_path,
+            "occupancy_grid": world_map.occupancy_grid_npz_path,
+            "observed_voxel_mesh": world_map.observed_voxel_mesh_ply_path,
+            "map_quality": world_map.map_quality_json_path,
+            "physical_accuracy_claim": False,
+            "training_quality_claim": False,
+        },
         "missing_blockers": [
             "scale_anchor",
             "teacher_consensus_optimizer",
@@ -136,6 +155,7 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Geometry source: {geometry['source_teacher']}",
         f"- Teacher-proposed geometry: {geometry['teacher_proposed_geometry_available']}",
         f"- Geometry measured: {geometry['measured_geometry']}",
+        f"- Fused world map: {_world_map_status(payload)}",
         f"- Teacher disagreement: {_disagreement_status(payload)}",
         f"- Consensus preview: {_consensus_status(payload)}",
         f"- Object tracking: {payload['object_tracking_status']}",
@@ -164,3 +184,14 @@ def _consensus_status(payload: dict[str, object]) -> str:
     if not isinstance(consensus, dict):
         return "unavailable"
     return str(consensus.get("status", "unavailable"))
+
+
+def _world_map_status(payload: dict[str, object]) -> str:
+    world_map = payload["world_map"]
+    if not isinstance(world_map, dict):
+        return "unavailable"
+    status = str(world_map.get("status", "unavailable"))
+    points = int(world_map.get("point_count", 0))
+    voxels = int(world_map.get("occupied_voxel_count", 0))
+    inspectable = bool(world_map.get("inspectable_map_available", False))
+    return f"{status}, points={points}, voxels={voxels}, inspectable={inspectable}"

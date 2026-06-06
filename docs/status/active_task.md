@@ -1,21 +1,21 @@
 # Active Task
 
-Offline V0.7: add Depth Pro as a second teacher-pseudo geometry witness and
-compute VGGT-vs-Depth-Pro disagreement through `offline build-world`.
+Offline V0.8: export the first inspectable fused world map from existing VGGT
+and Depth Pro teacher-pseudo proposals through `offline build-world`.
 
 ## Checklist
 
-- [x] Confirm clean worktree and create V0.7 branch.
+- [x] Confirm clean worktree and switch to the V0.8 branch.
 - [x] Read required architecture, status, pipeline, witness, proposal, geometry,
-  quality, and CLI files.
-- [x] Reflow touched Markdown docs without restoring old phase history.
-- [x] Add dependency-safe Depth Pro adapter and witness runtime/replay path.
-- [x] Normalize Depth Pro proposals into the proposal cache and teacher status.
-- [x] Add disagreement and diagnostic consensus preview artifacts.
-- [x] Wire disagreement into ledgers, world state, geometry preview, diagnostics,
-  quality report, and training manifest.
-- [x] Add focused adapter, cache, disagreement, preview, CLI, and pipeline tests.
-- [x] Run formatting, lint, typecheck, unit, CLI, smoke, and evidence commands.
-- [x] Update concise V0.7 report, progress, decisions, current state, and next
-  task docs.
-- [x] Commit `feat(offline): add depth pro witness disagreement`.
+  reporting, CLI, and test files.
+- [x] Reflow touched status Markdown and keep docs compact.
+- [x] Add fused world-map module for points, occupancy, observed voxel mesh,
+  camera trajectory, manifest, and map-quality report.
+- [x] Wire map export flags and artifacts through `offline build-world`.
+- [x] Keep all map artifacts teacher-pseudo, observed-only, non-measured, and
+  non-training-quality.
+- [x] Add focused unit and integration tests.
+- [x] Run format, lint, typecheck, unit, CLI, smoke, and evidence commands.
+- [x] Update V0.8 report, contracts, architecture, progress, decisions, current
+  state, and next task docs.
+- [x] Commit `feat(offline): export fused world map artifacts`.

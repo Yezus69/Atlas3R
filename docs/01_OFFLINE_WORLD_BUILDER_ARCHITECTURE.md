@@ -47,13 +47,14 @@ MP4/RGB input
     confidence, render mismatch, observed/predicted separation, and failure
     points.
 
-## V0.7 Implementation Boundary
+## V0.8 Implementation Boundary
 
-Offline V0.7 keeps normal RGB decoding and VGGT geometry from V0.6, then adds
-Depth Pro as a second independent witness. `offline build-world` can decode PPM,
-PNG/JPG, and MP4/MOV when optional decoders are available, normalize frames into
-the frame cache, run or replay VGGT and Depth Pro, compare their depth proposals,
-and write diagnostic disagreement artifacts.
+Offline V0.8 keeps normal RGB decoding, VGGT geometry, and Depth Pro
+disagreement from V0.7, then exports the first inspectable fused world map.
+`offline build-world --export-world-map` can decode PPM, PNG/JPG, and MP4/MOV
+when optional decoders are available, normalize frames into the frame cache, run
+or replay VGGT and Depth Pro, compare their depth proposals, and fuse sampled
+observed depth into `world_map/`.
 
 VGGT writes normalized streams:
 
@@ -68,6 +69,15 @@ proposals/proposal_manifest.json
 diagnostics/teacher_disagreement.json
 diagnostics/disagreement_maps.npz
 diagnostics/consensus_preview.npz
+world_map/world_map_manifest.json
+world_map/camera_trajectory.json
+world_map/fused_points.npz
+world_map/fused_points.ply
+world_map/occupancy_grid.npz
+world_map/occupancy_grid_metadata.json
+world_map/observed_voxel_mesh.ply
+world_map/map_quality.json
+world_map/map_quality.md
 ```
 
 Multiple VGGT windows are stitched only by a minimal overlap Sim3 estimate. If
@@ -79,6 +89,10 @@ It is not measured geometry, not physically accurate, and not training-quality.
 
 Depth Pro output is also `teacher_pseudo`, unanchored, and observed-only. It
 proposes per-frame depth and intrinsics/focal length but no global trajectory, so
-Depth Pro alone cannot create a global world preview. When both witnesses exist,
-V0.7 may lift a diagnostic consensus depth preview with VGGT poses. This is not
-an optimized consensus or final mesh reconstruction.
+Depth Pro alone cannot create a global fused map. When both witnesses exist,
+V0.8 prefers diagnostic consensus depth lifted with VGGT poses; when only VGGT
+exists, it falls back to VGGT depth with VGGT poses. The sparse occupancy grid
+only marks observed voxels from fused points, and the observed voxel mesh only
+emits boundary faces of occupied voxels. This is not an optimized consensus,
+hidden-geometry completion, physical accuracy report, or final mesh
+reconstruction.

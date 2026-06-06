@@ -1,6 +1,6 @@
 # 04 - API Contracts
 
-This is the concise contract index for Offline World Builder V0.7. Units are
+This is the concise contract index for Offline World Builder V0.8. Units are
 meters unless a field says otherwise. Transform names use `T_A_B`, mapping
 points from frame `B` into frame `A`.
 
@@ -153,3 +153,62 @@ When VGGT and Depth Pro depths overlap by frame ID, V0.7 writes:
 
 The consensus preview is diagnostic only, not optimized, not physically
 accurate, and not training-quality.
+
+## V0.8 Fused World Map Artifacts
+
+`offline build-world --export-world-map` writes `world_map/` artifacts from
+existing proposals. VGGT pose plus diagnostic consensus depth is preferred when
+both VGGT and Depth Pro exist. VGGT depth is used for VGGT-only maps. Depth Pro
+without VGGT pose writes an explicit failure reason and does not create a fake
+global map.
+
+Required files for a successful inspectable map:
+
+- `world_map/world_map_manifest.json`
+- `world_map/camera_trajectory.json`
+- `world_map/fused_points.npz`
+- `world_map/fused_points.ply`
+- `world_map/occupancy_grid.npz`
+- `world_map/occupancy_grid_metadata.json`
+- `world_map/observed_voxel_mesh.ply` when requested
+- `world_map/map_quality.json`
+- `world_map/map_quality.md`
+
+`fused_points.npz` contains:
+
+- `points_world_m`: `float32[N,3]`
+- `colors_u8`: `uint8[N,3]`
+- `confidence`: `float32[N]`
+- `source_frame_ids`: `int64[N]`
+- `source_keyframe_ids`: `int64[N]`
+- `depth_source_id`: `int32[N]`
+- `disagreement_rel`: `float32[N]`
+- `point_sigma_m`: `float32[N]`
+
+`occupancy_grid.npz` is sparse, not dense. It contains
+`voxel_indices_ijk`, `occupancy_count`, `confidence_mean`, `color_mean_u8`,
+`bbox_world_min_m`, and `voxel_size_m`. Unknown space is not filled and
+free-space carving is not claimed.
+
+`camera_trajectory.json` records frame ID, keyframe ID, timestamp,
+`T_world_camera`, camera center, pose source, pose confidence, metric scale
+source, and pseudo-submap ID for finite pose proposals.
+
+Every fused-map artifact carries this truth boundary:
+
+```text
+label_type: teacher_pseudo_fused_map
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+metric_scale_source: unanchored_vggt_depthpro_teacher_consensus
+physical_accuracy_claim: false
+training_quality: false
+realtime_claim: false
+optimized_world_state: false
+```
+
+`map_quality.json` may set `inspectable_map_available: true` only when fused
+points, sparse occupancy, requested observed mesh, and nonzero point and voxel
+counts exist. This is an inspectability verdict, not an accuracy claim.

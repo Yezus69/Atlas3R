@@ -14,6 +14,7 @@ RUN_SUBDIRS = (
     "teachers",
     "proposals",
     "world",
+    "world_map",
     "geometry",
     "objects",
     "diagnostics",

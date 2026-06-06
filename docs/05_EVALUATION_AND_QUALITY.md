@@ -48,6 +48,25 @@ Reports with Depth Pro must summarize:
 - unchanged truth boundary: teacher-pseudo, not measured, not physically
   accurate, and not training-quality.
 
+## Offline V0.8 Report Requirements
+
+Reports with fused world-map export must summarize:
+
+- input source, frames decoded, and keyframes selected;
+- VGGT and Depth Pro proposal counts;
+- depth source used for the map: diagnostic consensus, VGGT, or explicit
+  failure without VGGT pose;
+- fused point count, occupied voxel count, observed mesh vertex/triangle count,
+  camera trajectory count, and bounding-box size;
+- valid depth ratio, low-confidence rejection ratio, high-disagreement
+  rejection ratio, and disagreement mean/p50/p95 for mapped pixels when
+  available;
+- fused-map paths under `world_map/`;
+- `inspectable_map_available`, which means only that the requested artifacts
+  exist with nonzero point and voxel counts;
+- unchanged truth boundary: teacher-pseudo fused map, not measured, not
+  physically accurate, not optimized, and not training-quality.
+
 ## Claim Rules
 
 - A smoke test is not an accuracy report.

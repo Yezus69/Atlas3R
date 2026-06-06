@@ -40,6 +40,9 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                     "3",
                     "--debug-geometry-mode",
                     "flat-depth",
+                    "--export-world-map",
+                    "--map-write-occupancy",
+                    "--map-write-observed-mesh",
                     "--write-ply",
                 ],
                 check=False,
@@ -57,6 +60,15 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                 "world/world_state.json",
                 "world/camera_ledger.json",
                 "world/scale_ledger.json",
+                "world_map/world_map_manifest.json",
+                "world_map/camera_trajectory.json",
+                "world_map/fused_points.npz",
+                "world_map/fused_points.ply",
+                "world_map/occupancy_grid.npz",
+                "world_map/occupancy_grid_metadata.json",
+                "world_map/observed_voxel_mesh.ply",
+                "world_map/map_quality.json",
+                "world_map/map_quality.md",
                 "geometry/geometry_preview.npz",
                 "geometry/geometry_preview.ply",
                 "objects/object_ledger.json",
@@ -72,6 +84,9 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                 point_count = int(data["points_world_m"].shape[0])
                 metadata = json.loads(str(data["metadata_json"].item()))
             quality = json.loads((output / "quality_report.json").read_text(encoding="utf-8"))
+            map_quality = json.loads(
+                (output / "world_map" / "map_quality.json").read_text(encoding="utf-8")
+            )
             training = json.loads(
                 (output / "training_cache" / "training_cache_manifest.json").read_text(
                     encoding="utf-8"
@@ -84,7 +99,13 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertEqual(metadata["metric_scale_source"], "debug_flat_depth")
             self.assertFalse(metadata["measured_geometry"])
             self.assertFalse(quality["physical_accuracy"])
+            self.assertTrue(quality["world_map"]["inspectable_map_available"])
+            self.assertTrue(map_quality["inspectable_map_available"])
             self.assertFalse(training["usable_for_training"])
+            self.assertEqual(
+                training["refs"]["fused_world_map_manifest"],
+                "world_map/world_map_manifest.json",
+            )
             self.assertGreater(len(failures["failure_points"]), 0)
 
     def test_png_folder_without_vggt_decodes_but_geometry_is_unavailable(self) -> None:
@@ -159,6 +180,11 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                     "none",
                     "--vggt-proposal-cache",
                     str(cache_dir),
+                    "--export-world-map",
+                    "--map-depth-source",
+                    "vggt",
+                    "--map-write-occupancy",
+                    "--map-write-observed-mesh",
                     "--write-ply",
                 ],
                 check=False,
@@ -192,6 +218,10 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertFalse(quality["physical_accuracy"])
             self.assertFalse(training["usable_for_training"])
             self.assertTrue((output / "geometry" / "geometry_preview.ply").is_file())
+            self.assertTrue((output / "world_map" / "fused_points.ply").is_file())
+            self.assertTrue((output / "world_map" / "observed_voxel_mesh.ply").is_file())
+            self.assertTrue(quality["world_map"]["inspectable_map_available"])
+            self.assertGreater(quality["world_map"]["occupied_voxel_count"], 0)
 
     def test_replayed_vggt_and_depth_pro_write_disagreement_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -233,6 +263,11 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                     str(vggt_cache),
                     "--depth-pro-proposal-cache",
                     str(depth_pro_cache),
+                    "--export-world-map",
+                    "--map-depth-source",
+                    "consensus",
+                    "--map-write-occupancy",
+                    "--map-write-observed-mesh",
                     "--write-ply",
                 ],
                 check=False,
@@ -266,6 +301,11 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertEqual(metadata["source_teacher"], "vggt_pose_consensus_depth_diagnostic")
             self.assertGreater(point_count, 0)
             self.assertTrue((output / "geometry" / "geometry_preview.ply").is_file())
+            self.assertTrue((output / "world_map" / "fused_points.ply").is_file())
+            self.assertTrue((output / "world_map" / "occupancy_grid.npz").is_file())
+            self.assertTrue((output / "world_map" / "observed_voxel_mesh.ply").is_file())
+            self.assertEqual(quality["world_map"]["depth_source"], "consensus")
+            self.assertTrue(quality["world_map"]["inspectable_map_available"])
             self.assertFalse(quality["physical_accuracy"])
 
     def test_replayed_depth_pro_only_explains_missing_global_pose(self) -> None:
@@ -297,6 +337,9 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
                     "none",
                     "--depth-pro-proposal-cache",
                     str(depth_pro_cache),
+                    "--export-world-map",
+                    "--map-write-occupancy",
+                    "--map-write-observed-mesh",
                     "--write-ply",
                 ],
                 check=False,
@@ -314,7 +357,10 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertEqual(world["map_status"], "none")
             self.assertEqual(point_count, 0)
             self.assertEqual(quality["depth_pro"]["depth_proposals"], 2)
+            self.assertEqual(quality["world_map"]["point_count"], 0)
+            self.assertFalse(quality["world_map"]["inspectable_map_available"])
             self.assertFalse((output / "geometry" / "geometry_preview.ply").is_file())
+            self.assertFalse((output / "world_map" / "fused_points.ply").is_file())
 
 
 def _write_png(path: Path, rgb: np.ndarray) -> None:

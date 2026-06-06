@@ -77,6 +77,35 @@ Acceptance:
 - all outputs remain teacher-pseudo, unanchored, not optimized, and not
   training-quality.
 
+## Offline V0.8 - Fused World Map Output
+
+Export the first persistent, inspectable teacher-pseudo world map from existing
+VGGT and Depth Pro proposals.
+
+Acceptance:
+
+- `offline build-world --export-world-map` writes fused points, sparse
+  occupancy, observed voxel mesh, camera trajectory, manifest, and map-quality
+  artifacts under `world_map/`;
+- VGGT pose plus diagnostic consensus depth is preferred when both witnesses
+  exist, with VGGT depth as the VGGT-only fallback;
+- Depth Pro alone does not create a fake global map because it has no global
+  pose proposal;
+- all fused-map artifacts are observed-only, not measured, not optimized, not
+  physically accurate, and not training-quality.
+
+## Offline V0.9 - Map Consistency Optimizer
+
+Add the first real optimizer pass that adjusts per-frame depth scale/bias and
+intrinsics to reduce VGGT-vs-Depth-Pro disagreement and reprojected map
+inconsistency.
+
+Acceptance:
+
+- optimizer inputs and outputs are documented before schema changes;
+- residuals and before/after map quality are reported;
+- physical accuracy remains blocked without anchors or evaluation.
+
 ## Offline V1 - Additional Teacher Witnesses
 
 Run additional teacher witnesses where available: Depth Pro, COLMAP/GLOMAP,
