@@ -29,8 +29,10 @@ def write_training_cache_manifest(
         "status": "skeleton",
         "usable_for_training": usable_for_training,
         "why_not_training_quality": (
-            "no real optimized labels, teacher consensus, scale anchor, or evaluation report exists"
+            "no real optimized labels, teacher consensus optimizer, scale anchor, or evaluation "
+            "report exists"
         ),
+        "proposal_source": geometry.source_teacher if geometry.point_count else None,
         "refs": {
             "frame_index": frame_index_path,
             "keyframes": keyframes_path,
@@ -39,13 +41,21 @@ def write_training_cache_manifest(
             "geometry_ply": geometry.geometry_ply_path,
         },
         "truth_boundary": {
-            "label_type": "debug_synthetic" if geometry.point_count else "unknown",
+            "label_type": (
+                "teacher_pseudo"
+                if geometry.source_teacher == "vggt" and geometry.point_count
+                else "debug_synthetic"
+                if geometry.point_count
+                else "unknown"
+            ),
             "metric_scale_source": geometry.metric_scale_source,
             "measured_geometry": geometry.measured_geometry,
             "observed_only": geometry.observed_only,
             "predicted_completion": geometry.predicted_completion,
+            "hidden_geometry_measured": False,
             "accuracy_report": False,
             "realtime_claim": False,
+            "usable_for_training": usable_for_training,
         },
     }
     write_json(Path(run_dir) / "training_cache" / "training_cache_manifest.json", payload)

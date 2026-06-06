@@ -47,8 +47,26 @@ MP4/RGB input
     confidence, render mismatch, observed/predicted separation, and failure
     points.
 
-## Reset Implementation Boundary
+## V0.6 Implementation Boundary
 
-The reset branch kept contracts, dependency-safe input inspection, teacher
-status, and artifact helpers. Offline V0.5 adds the first connected tracer; it
-does not run heavy teacher models or optimize geometry.
+Offline V0.6 adds normal RGB decoding and the first real geometry witness:
+VGGT. `offline build-world` can decode PPM, PNG/JPG, and MP4/MOV when optional
+decoders are available, normalize frames into the frame cache, run or replay
+VGGT, and lift teacher depth/K/`T_world_camera` into an inspectable point
+preview.
+
+VGGT writes normalized streams:
+
+```text
+proposals/vggt_cameras.jsonl
+proposals/vggt_depths.npz
+proposals/vggt_windows.jsonl
+proposals/proposal_manifest.json
+```
+
+Multiple VGGT windows are stitched only by a minimal overlap Sim3 estimate. If
+overlap is insufficient or inconsistent, the later window becomes a separate
+`pseudo_submap_id`; no global optimization is implied.
+
+VGGT output is `teacher_pseudo`, unanchored, observed-only proposal geometry.
+It is not measured geometry, not physically accurate, and not training-quality.

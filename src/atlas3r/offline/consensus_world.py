@@ -31,7 +31,10 @@ def write_consensus_world_state(
 ) -> ConsensusWorldResult:
     pose_status = "proposed" if proposal_cache.depth_proposal_available else "unknown"
     depth_status = "proposed" if proposal_cache.depth_proposal_available else "missing"
-    map_status = "none"
+    map_status = "preview" if proposal_cache.depth_proposal_available else "none"
+    proposal_source = (
+        proposal_cache.geometry_source if proposal_cache.depth_proposal_available else None
+    )
     payload = {
         "status": "partial",
         "world_id": "offline_world_candidate",
@@ -43,6 +46,7 @@ def write_consensus_world_state(
         "pose_status": pose_status,
         "depth_status": depth_status,
         "map_status": map_status,
+        "proposal_source": proposal_source,
         "optimization_status": "not_run",
         "uncertainty_status": "heuristic_or_missing",
         "unresolved_fields": [
@@ -53,13 +57,17 @@ def write_consensus_world_state(
             "scale_anchor",
         ],
         "truth_boundary": {
-            "label_type": "unanchored_mp4_pseudo",
+            "label_type": "teacher_pseudo"
+            if proposal_source == "vggt"
+            else "unanchored_mp4_pseudo",
             "metric_scale_source": ledgers.scale_source,
             "measured_geometry": False,
             "observed_only": True,
             "predicted_completion": False,
+            "hidden_geometry_measured": False,
             "accuracy_report": False,
             "realtime_claim": False,
+            "usable_for_training": False,
         },
     }
     write_json(Path(run_dir) / "world" / "world_state.json", payload)

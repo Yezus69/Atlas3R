@@ -14,3 +14,5 @@ This is a compact ADR index for the reset foundation.
 | D-0008 | Stale code | Old SMGT, training, measured replay, runtime student mapping, and phase reports are deleted rather than carried as legacy code. | Yes |
 | D-0009 | Offline milestones | Future work must advance through `offline build-world` vertical slices, not isolated single-stage modules. | Yes |
 | D-0010 | Debug geometry | `debug_flat_depth` may create preview geometry only under explicit debug modes and must not claim measured geometry or training quality. | Yes |
+| D-0011 | VGGT witness | VGGT runtime/replay is a vertical teacher-proposal path through `offline build-world`; its unanchored geometry is not measured and not training-quality. | Yes |
+| D-0012 | Window stitching | V0.6 uses only minimal overlap Sim3 stitching and creates pseudo-submaps on rejected overlaps rather than silently fusing windows. | Yes |

@@ -40,10 +40,28 @@ Acceptance:
   claiming measured geometry or training quality;
 - future work must continue by vertical slices through the tracer.
 
-## Offline V1 - First Teacher Witnesses
+## Offline V0.6 - VGGT Geometry Witness
 
-Run the first teacher witnesses where available: Depth Pro, VGGT, and
-COLMAP/GLOMAP. Each witness is a proposal source, not truth.
+Wire real RGB decoding and VGGT teacher proposals through the full
+`offline build-world` artifact tree.
+
+Acceptance:
+
+- PPM, PNG/JPG folders, single PNG/JPG files, and MP4/MOV inputs decode through
+  dependency-safe optional decoders or explicit failure points;
+- VGGT can run from an external package/repo or replay a normalized proposal
+  cache without importing heavy dependencies at `atlas3r` import time;
+- VGGT cameras/depths/windows feed proposal cache, camera/scale ledgers,
+  consensus state, geometry preview, diagnostics, quality report, and
+  training-cache manifest;
+- VGGT geometry is labeled `teacher_pseudo`, unanchored, not measured, not
+  physically accurate, and not training-quality.
+
+## Offline V1 - Additional Teacher Witnesses
+
+Run additional teacher witnesses where available: Depth Pro, COLMAP/GLOMAP,
+MapAnything, LingBot-Map, SAM/DINO, and CoTracker. Each witness is a proposal
+source, not truth.
 
 Acceptance:
 

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+from atlas3r.models.adapters.vggt_adapter import probe_vggt_runtime
 from atlas3r.teachers.base import AdapterCapabilities, AdapterStatus, UnavailableTeacherAdapter
 
 
 def list_teacher_statuses() -> tuple[AdapterStatus, ...]:
-    return tuple(_STATUSES.values())
+    statuses = dict(_STATUSES)
+    statuses["vggt"] = _vggt_status()
+    return tuple(statuses.values())
 
 
 def get_teacher_status(name: str) -> AdapterStatus:
     key = _normalize(name)
+    if key == "vggt":
+        return _vggt_status()
     if key not in _STATUSES:
         raise KeyError(f"unknown teacher adapter: {name}")
     return _STATUSES[key]
@@ -25,6 +30,21 @@ def _normalize(name: str) -> str:
     return name.strip().lower().replace("-", "_")
 
 
+def _vggt_status() -> AdapterStatus:
+    available, reason = probe_vggt_runtime(None)
+    return AdapterStatus(
+        name="vggt",
+        display_name="VGGT",
+        available=available,
+        capabilities=AdapterCapabilities(depth=True, intrinsics=True, pose=True, point_tracks=True),
+        install_hint=(
+            "Install VGGT externally, pass --vggt-repo if using a local checkout, "
+            "or use --vggt-proposal-cache to replay normalized proposals."
+        ),
+        reason=reason,
+    )
+
+
 _STATUSES: dict[str, AdapterStatus] = {
     "depth_pro": AdapterStatus(
         name="depth_pro",
@@ -35,14 +55,6 @@ _STATUSES: dict[str, AdapterStatus] = {
             "Install Depth Pro externally and add an adapter under src/atlas3r/models/adapters/."
         ),
         reason="no external model dependency is bundled in this reset foundation",
-    ),
-    "vggt": AdapterStatus(
-        name="vggt",
-        display_name="VGGT",
-        available=False,
-        capabilities=AdapterCapabilities(depth=True, intrinsics=True, pose=True, point_tracks=True),
-        install_hint="Install VGGT externally and expose it through a dependency-safe adapter.",
-        reason="VGGT is tracked as a future witness, not imported by Atlas3R",
     ),
     "mapanything": AdapterStatus(
         name="mapanything",

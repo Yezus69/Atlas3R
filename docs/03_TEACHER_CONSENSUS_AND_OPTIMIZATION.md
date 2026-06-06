@@ -40,3 +40,19 @@ parallax, poor lighting, missing calibration, bad masks, or teacher failure.
 Consensus is an optimization target, not an assumption. Until the optimizer
 runs and an evaluation report supports it, outputs are proposals or debug
 artifacts, not physical accuracy claims.
+
+## V0.6 VGGT Witness
+
+VGGT is the first wired geometry witness. The runtime adapter is dependency
+safe: `atlas3r` import and CLI help do not import Torch or VGGT. A build can
+either run an external VGGT package/repo or replay a previous normalized
+proposal cache.
+
+VGGT contributes camera, intrinsics, depth, uncertainty/confidence, and window
+metadata. The camera/scale ledger marks the scale source as
+`vggt_unanchored_metric_proposal`. The consensus state may mark pose and depth
+as `proposed`, and map status as `preview`, but optimization remains `not_run`.
+
+V0.6 only estimates adjacent Sim3 transforms from overlapping window camera
+centers. Rejected overlaps create separate pseudo-submaps instead of silent
+fusion.

@@ -77,6 +77,9 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--debug-geometry-mode", result.stdout)
+        self.assertIn("--enable-vggt", result.stdout)
+        self.assertIn("--vggt-proposal-cache", result.stdout)
+        self.assertIn("--vggt-stitch-mode", result.stdout)
 
 
 if __name__ == "__main__":

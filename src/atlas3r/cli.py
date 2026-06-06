@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "build-world", help="Run the connected offline world-builder tracer."
     )
     build_world_parser.add_argument(
-        "--input", required=True, help="Input MP4, PPM file, or PPM image folder."
+        "--input", required=True, help="Input MP4/MOV, PNG/JPG/PPM file, or image folder."
     )
     build_world_parser.add_argument("--output", required=True, help="Output run folder.")
     build_world_parser.add_argument("--max-frames", type=int, default=120)
@@ -54,6 +54,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     build_world_parser.add_argument("--write-ply", action="store_true")
+    build_world_parser.add_argument("--enable-vggt", action="store_true")
+    build_world_parser.add_argument("--vggt-repo", default=None)
+    build_world_parser.add_argument("--vggt-checkpoint", default=None)
+    build_world_parser.add_argument("--vggt-device", default="cuda:0")
+    build_world_parser.add_argument("--vggt-image-size", type=int, default=518)
+    build_world_parser.add_argument("--vggt-window-size", type=int, default=24)
+    build_world_parser.add_argument("--vggt-window-overlap", type=int, default=8)
+    build_world_parser.add_argument("--vggt-max-keyframes", type=int, default=None)
+    build_world_parser.add_argument("--vggt-proposal-cache", default=None)
+    build_world_parser.add_argument(
+        "--vggt-stitch-mode",
+        choices=("none", "overlap-sim3"),
+        default="overlap-sim3",
+    )
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -109,6 +123,16 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             keyframe_max_count=int(args.keyframe_max_count),
             debug_geometry_mode=args.debug_geometry_mode,
             write_ply=bool(args.write_ply),
+            enable_vggt=bool(args.enable_vggt),
+            vggt_repo=args.vggt_repo,
+            vggt_checkpoint=args.vggt_checkpoint,
+            vggt_device=str(args.vggt_device),
+            vggt_image_size=int(args.vggt_image_size),
+            vggt_window_size=int(args.vggt_window_size),
+            vggt_window_overlap=int(args.vggt_window_overlap),
+            vggt_max_keyframes=args.vggt_max_keyframes,
+            vggt_proposal_cache=args.vggt_proposal_cache,
+            vggt_stitch_mode=args.vggt_stitch_mode,
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")

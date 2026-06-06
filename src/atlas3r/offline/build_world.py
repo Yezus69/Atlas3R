@@ -22,6 +22,7 @@ from atlas3r.offline.run_manifest import (
 )
 from atlas3r.offline.teacher_witnesses import write_teacher_statuses
 from atlas3r.offline.training_cache import write_training_cache_manifest
+from atlas3r.offline.vggt_witness import VggtRuntimeOptions, VggtStitchMode, run_vggt_witness
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,16 @@ class BuildWorldOptions:
     keyframe_max_count: int = 32
     debug_geometry_mode: DebugGeometryMode = "none"
     write_ply: bool = False
+    enable_vggt: bool = False
+    vggt_repo: str | None = None
+    vggt_checkpoint: str | None = None
+    vggt_device: str = "cuda:0"
+    vggt_image_size: int = 518
+    vggt_window_size: int = 24
+    vggt_window_overlap: int = 8
+    vggt_max_keyframes: int | None = None
+    vggt_proposal_cache: str | None = None
+    vggt_stitch_mode: VggtStitchMode = "overlap-sim3"
 
 
 @dataclass(frozen=True)
@@ -62,19 +73,39 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         keyframe_max_count=options.keyframe_max_count,
         failure_points=failure_points,
     )
-    teacher_statuses = write_teacher_statuses(run_dir, failure_points)
+    vggt_result = run_vggt_witness(
+        run_dir,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        options=VggtRuntimeOptions(
+            enabled=options.enable_vggt,
+            proposal_cache=options.vggt_proposal_cache,
+            repo_path=options.vggt_repo,
+            checkpoint=options.vggt_checkpoint,
+            device=options.vggt_device,
+            image_size=options.vggt_image_size,
+            window_size=options.vggt_window_size,
+            window_overlap=options.vggt_window_overlap,
+            max_keyframes=options.vggt_max_keyframes,
+            stitch_mode=options.vggt_stitch_mode,
+        ),
+        failure_points=failure_points,
+    )
+    teacher_statuses = write_teacher_statuses(run_dir, failure_points, vggt_result=vggt_result)
     proposals = write_proposal_cache(
         run_dir,
         teacher_statuses=teacher_statuses,
         frame_records=frame_cache.records,
         keyframes=keyframes.keyframes,
         debug_geometry_mode=options.debug_geometry_mode,
+        vggt_result=vggt_result,
     )
     ledgers = write_camera_scale_ledgers(
         run_dir,
         camera=frame_cache.camera,
         frame_count=len(frame_cache.records),
         debug_geometry_mode=options.debug_geometry_mode,
+        proposal_cache=proposals,
     )
     consensus = write_consensus_world_state(
         run_dir,
@@ -133,6 +164,16 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "keyframe_max_count": options.keyframe_max_count,
             "debug_geometry_mode": options.debug_geometry_mode,
             "write_ply": options.write_ply,
+            "enable_vggt": options.enable_vggt,
+            "vggt_repo": options.vggt_repo,
+            "vggt_checkpoint": options.vggt_checkpoint,
+            "vggt_device": options.vggt_device,
+            "vggt_image_size": options.vggt_image_size,
+            "vggt_window_size": options.vggt_window_size,
+            "vggt_window_overlap": options.vggt_window_overlap,
+            "vggt_max_keyframes": options.vggt_max_keyframes,
+            "vggt_proposal_cache": options.vggt_proposal_cache,
+            "vggt_stitch_mode": options.vggt_stitch_mode,
         },
         "module_status": {
             "frame_cache": frame_cache.status,

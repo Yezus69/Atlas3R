@@ -46,15 +46,30 @@ def write_quality_report(
         "teacher_disagreement": "unavailable until at least two proposal streams exist",
         "scale_source": ledgers.scale_source,
         "physical_accuracy": False,
-        "physical_accuracy_reason": "no measured scale anchor or evaluation report",
+        "physical_accuracy_reason": (
+            "no measured scale anchor, calibration target, measured depth, external pose, "
+            "or named evaluation report"
+        ),
         "geometry": {
             "status": geometry.status,
             "point_count": geometry.point_count,
+            "source_teacher": geometry.source_teacher,
+            "teacher_proposed_geometry_available": bool(
+                geometry.source_teacher == "vggt" and geometry.point_count > 0
+            ),
             "observed_only": geometry.observed_only,
             "predicted_completion": geometry.predicted_completion,
             "measured_geometry": geometry.measured_geometry,
             "metric_scale_source": geometry.metric_scale_source,
+            "valid_point_ratio": geometry.valid_point_ratio,
+            "per_frame_point_counts": geometry.per_frame_point_counts,
         },
+        "missing_blockers": [
+            "scale_anchor",
+            "teacher_consensus_optimizer",
+            "render_repair_optimizer",
+            "named_evaluation_report",
+        ],
         "object_tracking_status": objects.status,
         "render_diagnostic_status": render.status,
         "training_cache": {
@@ -86,13 +101,19 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Status: {payload['status']}",
         f"- Scale source: {payload['scale_source']}",
         f"- Physically accurate: {payload['physical_accuracy']}",
+        f"- Physical accuracy reason: {payload['physical_accuracy_reason']}",
         f"- Geometry points: {geometry['point_count']}",
+        f"- Geometry source: {geometry['source_teacher']}",
+        f"- Teacher-proposed geometry: {geometry['teacher_proposed_geometry_available']}",
         f"- Geometry measured: {geometry['measured_geometry']}",
         f"- Object tracking: {payload['object_tracking_status']}",
         f"- Render diagnostics: {payload['render_diagnostic_status']}",
         f"- Training usable: {training_cache['usable_for_training']}",
+        "- Missing blockers: scale anchor, consensus optimizer, render repair optimizer, "
+        "named evaluation report",
         f"- Failure points: {len(failure_points)}",
         "",
-        "This report is a tracer report, not an accuracy report.",
+        "This report is a tracer report, not an accuracy report. VGGT output, when present, is "
+        "teacher-proposed geometry rather than measured geometry or training-quality labels.",
     ]
     return "\n".join(lines) + "\n"

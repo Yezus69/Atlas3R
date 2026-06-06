@@ -49,9 +49,13 @@ def write_render_repair_diagnostics(
         "status": status,
         "why": why,
         "geometry_point_count": geometry.point_count,
+        "geometry_source_teacher": geometry.source_teacher,
         "keyframe_count": len(keyframes),
         "projection_sample_count": projection_count,
         "coverage_placeholder": coverage,
+        "projection_status": "teacher_geometry_placeholder"
+        if geometry.point_count
+        else "unavailable",
         "render_mismatch": None,
         "repair_hooks": {
             "pose_repair_needed": True,

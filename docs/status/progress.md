@@ -4,15 +4,18 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Active branch: `codex/offline-world-builder-v0-parallel-tracer`.
-- Offline V0.5 adds `python -m atlas3r offline build-world` as a connected
-  tracer across frame cache, keyframes, teacher status/proposal cache,
-  camera-scale ledger, consensus world state, geometry preview, object ledger,
-  render diagnostics, quality report, and training-cache manifest.
-- PPM input works dependency-free. MP4 and PNG/JPEG folders produce explicit
-  decoder failure points until adapters exist.
-- Debug flat-depth can write nonzero NPZ/PLY preview geometry, labeled
-  `debug_synthetic`, not measured geometry and not training-quality.
+- Active branch: `codex/offline-world-builder-v06-vggt-witness`.
+- Offline V0.6 wires PPM/PNG/JPG/MP4 decoding and VGGT teacher proposals
+  through `python -m atlas3r offline build-world`.
+- Frame cache writes stable normalized PPM copies and records decoder name,
+  source URI, timestamps, quality scores, guessed K, and truth boundary.
+- VGGT can run from an external runtime or replay normalized proposal caches.
+- Proposal cache writes `vggt_cameras.jsonl`, `vggt_depths.npz`,
+  `vggt_windows.jsonl`, and manifest counts.
+- Camera/scale ledger, world state, geometry preview, diagnostics, quality
+  report, and training manifest consume VGGT proposals vertically.
+- VGGT output remains `teacher_pseudo`, unanchored, not measured, not
+  physically accurate, and not training-quality.
 
 ## Verification
 
@@ -20,25 +23,27 @@ This is a rolling current-state summary, not an append-only transcript.
 - Passed: `python -m ruff format --check src tests`.
 - Passed: `python -m ruff check src tests`.
 - Passed: `python -m mypy src`.
-- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 27 tests.
-- Passed: `git diff --check`; Git emitted Windows CRLF replacement warnings
-  only.
+- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 39 tests.
 - Passed: `python -m atlas3r --help`, `python -m atlas3r offline --help`,
   `python -m atlas3r offline build-world --help`,
   `python -m atlas3r teachers list`, and
   `python -m atlas3r smoke contracts`.
-- Unavailable: `make test`, `make lint`, `make typecheck`, and `make smoke`
+- Passed: `git diff --check`; Git emitted Windows CRLF replacement warnings.
+- Unavailable: `make lint`, `make typecheck`, `make test`, and `make smoke`
   because `make` is not installed on this Windows host.
-- Evidence A: tiny PPM debug run wrote 288 geometry points to
-  `runs/offline_v05_tiny_ppm`.
-- Evidence B: local TUM RGB PNG folder wrote the full tree to
-  `runs/offline_v05_real_input` with 0 geometry points and explicit decoder,
-  geometry, object, render, and teacher failure points.
+
+## Evidence
+
+- A: `runs/offline_v06_debug_flat_depth` wrote 288 debug points and PLY.
+- B: `runs/offline_v06_real_decode_no_vggt` decoded 60 TUM PNG frames with
+  Pillow, selected 16 keyframes, and correctly wrote 0 geometry points.
+- C: `runs/offline_v06_vggt_real_geometry` decoded 60 TUM PNG frames, selected
+  24 keyframes, ran VGGT, wrote 24 camera/depth proposals, 19,800 geometry
+  points, and PLY.
 
 ## Known Gaps
 
-- No MP4, PNG, or JPEG decoder adapter is implemented yet.
-- No real teacher model adapter runs yet.
-- No consensus optimizer or real render-and-repair loop exists yet.
-- Geometry is empty without debug flat-depth or future teacher proposals.
-- Training cache is a manifest skeleton only and is not training-quality.
+- VGGT scale is unanchored and not measured.
+- No consensus optimizer, render-repair optimizer, object witness, or final mesh
+  reconstruction exists yet.
+- Training cache remains a manifest and is not training-quality.

@@ -1,6 +1,6 @@
 # 04 - API Contracts
 
-This is the concise contract index for Offline World Builder V0.5. Units are
+This is the concise contract index for Offline World Builder V0.6. Units are
 meters unless a field says otherwise. Transform names use `T_A_B`, mapping
 points from frame `B` into frame `A`.
 
@@ -33,8 +33,9 @@ points from frame `B` into frame `A`.
 
 - `RunManifest`: run ID, command args, input path, output paths, module status
   map, artifact list, failure-point reference, started/completed timestamps.
-- `FrameRecord`: stable frame ID, timestamp, copied frame path, source URI,
-  dimensions, guessed/known camera metadata, blur/exposure/visual-change
+- `FrameRecord`: stable frame ID, original video frame index when available,
+  timestamp, copied normalized PPM frame path, source URI, dimensions,
+  guessed/known camera metadata, decoder name, blur/exposure/visual-change
   scores, and truth boundary.
 - `KeyframeRecord`: frame ID, timestamp, source frame path, quality scores,
   selection rank, and reasons. It contains no pose assumption.
@@ -49,7 +50,8 @@ points from frame `B` into frame `A`.
   ledger refs, `pose_status`, `depth_status`, `map_status`, uncertainties, and
   unresolved fields. It must not imply optimization ran.
 - `GeometryPreview`: NPZ with `points_world_m`, colors, uncertainty, frame IDs,
-  metadata JSON, observed/predicted flags, and optional PLY point preview.
+  source teacher IDs, pseudo-submap IDs, metadata JSON, observed/predicted
+  flags, and optional PLY point preview.
 - `ObjectLedger`: object-track status, object candidates, witness sources, and
   explicit unavailable state when mask/feature proposals are missing.
 - `RenderRepairDiagnostics`: render/projection status, geometry count, coverage
@@ -65,3 +67,37 @@ points from frame `B` into frame `A`.
 `import atlas3r` must not import Torch, OpenCV, Open3D, Depth Pro, VGGT, SAM,
 DINO, COLMAP, or other heavy optional dependencies. Third-party model code must
 live behind dependency-safe adapters.
+
+## V0.6 VGGT Proposal Streams
+
+`offline build-world --enable-vggt` runs an external VGGT runtime when
+available. `--vggt-proposal-cache <path>` replays normalized streams without
+importing VGGT.
+
+Required stream files:
+
+- `proposals/vggt_cameras.jsonl`
+- `proposals/vggt_depths.npz`
+- `proposals/vggt_windows.jsonl`
+- `proposals/proposal_manifest.json`
+
+Each VGGT camera proposal includes `frame_id`, `keyframe_index`, `K`,
+`T_world_camera`, `camera_center_world_m`, confidence, intrinsics/pose source,
+`metric_scale_source: vggt_unanchored_metric_proposal`,
+`coordinate_convention`, `pseudo_submap_id`, and a truth boundary.
+
+Each VGGT depth proposal references NPZ array keys for depth, sigma,
+confidence, and valid mask. Depth is in the VGGT unanchored proposal scale.
+
+Truth flags for VGGT streams:
+
+```text
+label_type: teacher_pseudo
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+accuracy_report: false
+realtime_claim: false
+usable_for_training: false
+```

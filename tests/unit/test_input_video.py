@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from importlib.util import find_spec
 from pathlib import Path
 
 import numpy as np
@@ -26,8 +27,11 @@ class InputVideoTest(unittest.TestCase):
             self.assertEqual([frame.frame_id for frame in frames], [0, 1])
             self.assertEqual(frames[0].camera_metadata["source_format"], "ppm_sequence")
 
-    def test_missing_video_dependency_fails_clearly(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "video decoding is not bundled"):
+    def test_video_decoder_probe_is_explicit(self) -> None:
+        if any(find_spec(name) is not None for name in ("imageio", "cv2")):
+            require_video_decoder()
+            return
+        with self.assertRaisesRegex(RuntimeError, "video decoding requires imageio or opencv"):
             require_video_decoder()
 
 

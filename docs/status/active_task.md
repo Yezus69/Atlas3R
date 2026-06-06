@@ -1,36 +1,22 @@
-# Active Task - Offline V0.5 Parallel Tracer
+# Active Task - Offline V0.6 VGGT Witness
 
-Branch: `codex/offline-world-builder-v0-parallel-tracer`
-
-## Goal
-
-Build the first dependency-safe vertical Offline World Builder tracer:
-`python -m atlas3r offline build-world` must run ingestion, keyframes,
-teacher witness status/proposal cache, camera-scale ledger, consensus world
-state, geometry preview, object ledger, render/repair diagnostics, quality
-report, and training-cache skeleton in one command.
+Branch: `codex/offline-world-builder-v06-vggt-witness`
 
 ## Checklist
 
-- [x] Confirm clean worktree on reset branch and create working branch.
-- [x] Read required objective, architecture, truth, consensus, API, quality,
-  and status docs.
-- [x] Expand concise docs for V0.5 module contracts and vertical-slice rule.
-- [x] Implement connected offline pipeline modules with explicit artifacts and
-  failure points.
-- [x] Add focused tests for frame cache, keyframes, proposal cache, consensus,
-  geometry preview, object ledger, render/repair, CLI, and full tracer.
-- [x] Run dependency-free tiny PPM evidence command with debug flat-depth.
-- [x] Search local ignored inputs and run real-input evidence command if
-  available.
-- [x] Run format, lint, typecheck, unit, CLI, smoke, diff, and make checks as
-  available.
-- [x] Update progress, current state, next task, and V0.5 report.
-- [x] Confirm generated runs/data are not staged and commit.
+- [x] Confirm clean worktree and create V0.6 branch from V0.5 tracer.
+- [x] Read required architecture, truth-boundary, status, source, and test files.
+- [x] Add dependency-safe PNG/JPG and MP4 frame decoding through frame cache.
+- [x] Add dependency-safe VGGT witness runtime, cache replay, and unavailable status.
+- [x] Normalize VGGT camera/depth proposals into proposal-cache artifacts.
+- [x] Add minimal overlap Sim3 stitching and rejection metadata.
+- [x] Lift teacher depth/K/`T_world_camera` into geometry preview with truth flags.
+- [x] Propagate VGGT proposal state through ledgers, world state, diagnostics, quality, and training cache.
+- [x] Add focused unit and vertical build-world tests.
+- [x] Run required verification and ignored evidence runs.
+- [x] Update concise docs/status report and commit.
 
-## Stop Conditions
+## Truth Boundary
 
-- Unknown user changes appear in the worktree.
-- `import atlas3r` becomes dependent on heavy optional packages.
-- PPM/image-folder input cannot be supported dependency-free.
-- The package cannot import without rewriting the reset foundation.
+VGGT output is `teacher_pseudo`, unanchored, observed-only proposal geometry.
+It is not measured geometry, not physically accurate, and not training-quality.

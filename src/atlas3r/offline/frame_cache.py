@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,7 +11,14 @@ from numpy.typing import NDArray
 from atlas3r.contracts.frames import CameraModel, FramePacket
 from atlas3r.contracts.truth import TruthBoundary
 from atlas3r.input.metadata import camera_from_focal
-from atlas3r.input.video import VideoInspection, inspect_video_input, read_ppm_image
+from atlas3r.input.video import (
+    DecodedFrame,
+    VideoDependencyError,
+    VideoInspection,
+    decode_input_frames,
+    inspect_video_input,
+    write_ppm_image,
+)
 from atlas3r.offline.run_manifest import FailurePoint, relative_to_run, write_jsonl
 
 
@@ -45,16 +51,20 @@ class FrameRecord:
     camera: CameraModel
     quality: FrameQuality
     truth_boundary: TruthBoundary
+    original_frame_index: int | None = None
+    decoder_name: str = "unknown"
 
     def to_dict(self) -> dict[str, object]:
         return {
             "frame_id": self.frame_id,
+            "original_frame_index": self.original_frame_index,
             "timestamp_ns": self.timestamp_ns,
             "frame_path": self.frame_path,
             "source_uri": self.source_uri,
             "width": self.width,
             "height": self.height,
             "camera": self.camera.to_dict(),
+            "decoder_name": self.decoder_name,
             "quality": self.quality.to_dict(),
             "truth_boundary": self.truth_boundary.to_dict(),
         }
@@ -92,7 +102,7 @@ def build_frame_cache(
             status="unavailable",
             why="input path does not exist",
             input_missing=str(input_path),
-            future_module="provide a readable MP4 or PPM image sequence",
+            future_module="provide a readable MP4 or image sequence",
             artifact_path="frames/frame_index.jsonl",
         )
         failure_points.append(failure)
@@ -108,16 +118,18 @@ def build_frame_cache(
             frame_index_path="frames/frame_index.jsonl",
             input_error=True,
         )
-    if inspection.kind == "video_file":
+    try:
+        decoded_frames = decode_input_frames(input_path, max_frames=max_frames)
+    except (VideoDependencyError, ValueError) as exc:
         failure_points.append(
             FailurePoint(
                 module="frame_cache",
-                code="video_decoder_unavailable",
+                code=_decoder_failure_code(inspection),
                 severity="warning",
                 status="unavailable",
-                why=inspection.message,
-                dependency_missing="imageio or opencv video decoder",
-                future_module="dependency-safe MP4 decoder adapter",
+                why=str(exc),
+                dependency_missing=_decoder_dependency_name(inspection),
+                future_module="dependency-safe image/video decoder",
                 artifact_path="frames/frame_index.jsonl",
             )
         )
@@ -130,18 +142,17 @@ def build_frame_cache(
             camera=None,
             frame_index_path="frames/frame_index.jsonl",
         )
-    ppm_paths = _resolve_ppm_inputs(input_path, inspection)[:max_frames]
-    if not ppm_paths:
+    if not decoded_frames:
         failure_points.append(
             FailurePoint(
                 module="frame_cache",
-                code="no_dependency_free_frames",
+                code="no_decoded_frames",
                 severity="warning",
                 status="unavailable",
-                why="input exists but contains no dependency-free PPM frames",
-                input_missing="*.ppm frames",
-                dependency_missing="PNG/JPEG image decoder adapter",
-                future_module="image-folder decoder adapter for additional formats",
+                why="input exists but no frames could be decoded",
+                input_missing="decodable frames",
+                dependency_missing=_decoder_dependency_name(inspection),
+                future_module="dependency-safe image/video decoder",
                 artifact_path="frames/frame_index.jsonl",
             )
         )
@@ -154,7 +165,7 @@ def build_frame_cache(
             camera=None,
             frame_index_path="frames/frame_index.jsonl",
         )
-    frames, records, camera = _load_ppm_frames(ppm_paths, root)
+    frames, records, camera = _load_decoded_frames(decoded_frames, root)
     write_jsonl(frame_index, [record.to_dict() for record in records])
     return FrameCacheResult(
         status="complete",
@@ -166,19 +177,10 @@ def build_frame_cache(
     )
 
 
-def _resolve_ppm_inputs(input_path: str | Path, inspection: VideoInspection) -> list[Path]:
-    path = Path(input_path)
-    if inspection.kind == "image_file" and path.suffix.lower() == ".ppm":
-        return [path]
-    if inspection.kind == "image_directory":
-        return sorted(item for item in path.iterdir() if item.suffix.lower() == ".ppm")
-    return []
-
-
-def _load_ppm_frames(
-    ppm_paths: list[Path], run_dir: Path
+def _load_decoded_frames(
+    decoded_frames: tuple[DecodedFrame, ...], run_dir: Path
 ) -> tuple[list[FramePacket], list[FrameRecord], CameraModel]:
-    first_rgb = read_ppm_image(ppm_paths[0])
+    first_rgb = decoded_frames[0].rgb_u8
     height, width = int(first_rgb.shape[0]), int(first_rgb.shape[1])
     focal = float(max(width, height))
     camera = camera_from_focal(
@@ -193,43 +195,64 @@ def _load_ppm_frames(
     frames: list[FramePacket] = []
     records: list[FrameRecord] = []
     previous_rgb: NDArray[np.uint8] | None = None
-    for frame_id, source_path in enumerate(ppm_paths):
-        rgb = first_rgb if frame_id == 0 else read_ppm_image(source_path)
+    for frame_id, decoded in enumerate(decoded_frames):
+        rgb = first_rgb if frame_id == 0 else decoded.rgb_u8
         if rgb.shape[:2] != (height, width):
-            raise InputDataError(f"{source_path} dimensions do not match first frame")
+            raise InputDataError(f"{decoded.source_uri} dimensions do not match first frame")
         target = run_dir / "frames" / "images" / f"frame_{frame_id:06d}.ppm"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, target)
-        timestamp_ns = frame_id * 33_333_333
+        write_ppm_image(target, rgb)
         quality = _score_frame_quality(rgb, previous_rgb)
         relative_frame_path = relative_to_run(target, run_dir)
         frames.append(
             FramePacket(
                 frame_id=frame_id,
-                timestamp_ns=timestamp_ns,
+                timestamp_ns=decoded.timestamp_ns,
                 rgb_u8=rgb,
                 K_original=None,
                 K_model=camera.K,
                 resize_transform=np.eye(3, dtype=np.float32),
-                camera_metadata={"source_format": "ppm", "camera_source": camera.source},
-                source_uri=str(source_path),
+                camera_metadata={
+                    "source_format": "normalized_ppm",
+                    "camera_source": camera.source,
+                    "decoder_name": decoded.decoder_name,
+                    "original_frame_index": decoded.original_frame_index,
+                },
+                source_uri=decoded.source_uri,
             )
         )
         records.append(
             FrameRecord(
                 frame_id=frame_id,
-                timestamp_ns=timestamp_ns,
+                timestamp_ns=decoded.timestamp_ns,
                 frame_path=relative_frame_path,
-                source_uri=str(source_path),
+                source_uri=decoded.source_uri,
                 width=width,
                 height=height,
                 camera=camera,
                 quality=quality,
                 truth_boundary=truth,
+                original_frame_index=decoded.original_frame_index,
+                decoder_name=decoded.decoder_name,
             )
         )
         previous_rgb = rgb
     return frames, records, camera
+
+
+def _decoder_failure_code(inspection: VideoInspection) -> str:
+    if inspection.kind == "video_file":
+        return "video_decoder_unavailable"
+    if inspection.decoder == "optional_image":
+        return "image_decoder_unavailable"
+    return "frame_decoder_unavailable"
+
+
+def _decoder_dependency_name(inspection: VideoInspection) -> str | None:
+    if inspection.kind == "video_file":
+        return "imageio or OpenCV video decoder"
+    if inspection.decoder == "optional_image":
+        return "Pillow, imageio, or OpenCV image decoder"
+    return None
 
 
 def _score_frame_quality(

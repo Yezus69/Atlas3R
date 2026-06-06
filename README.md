@@ -6,10 +6,11 @@ Atlas3R is being reset around one foundation:
 MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> training cache
 ```
 
-The current repository has the first connected offline tracer. It is not a
-working mapper yet: real teacher models, optimization, anchored scale, and mesh
-reconstruction remain future work. The tracer exists so every future module is
-wired through one end-to-end command instead of isolated scaffolding.
+The current repository has the first connected offline tracer plus the first
+real teacher-witness vertical slice. It is not a working mapper yet:
+optimization, anchored scale, consensus, and mesh reconstruction remain future
+work. The tracer exists so every future module is wired through one
+end-to-end command instead of isolated scaffolding.
 
 ## Boundaries
 
@@ -18,6 +19,7 @@ wired through one end-to-end command instead of isolated scaffolding.
 - No RGB-only production readiness claim exists.
 - No final neural checkpoint exists.
 - Teacher models are witnesses and proposal generators, not truth.
+- VGGT output is teacher-proposed geometry, not measured geometry.
 - Physical accuracy requires anchors, calibration, measured depth, LiDAR/ARKit,
   or known-scale objects.
 - Unanchored MP4 input produces pseudo labels only.
@@ -47,8 +49,10 @@ the next immediate foundation.
 ```bash
 python -m atlas3r --help
 python -m atlas3r offline --help
-python -m atlas3r offline inspect-video --input <mp4-or-ppm-folder> --output <run>
-python -m atlas3r offline build-world --input <mp4-or-ppm-folder> --output <run>
+python -m atlas3r offline inspect-video --input <mp4-or-image-folder> --output <run>
+python -m atlas3r offline build-world --input <mp4-or-image-folder> --output <run>
+python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --write-ply
+python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <cache>
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -62,9 +66,10 @@ old phase smoke commands.
 - `docs/`: reset objective, architecture, truth boundary, contracts, quality.
 - `src/atlas3r/contracts/`: coordinate, frame, pose, proposal, world, artifact,
   and truth-boundary contracts.
-- `src/atlas3r/input/`: dependency-safe PPM/video inspection and recording
-  manifest primitives.
+- `src/atlas3r/input/`: dependency-safe PPM/PNG/JPG/video inspection and
+  decoding primitives.
 - `src/atlas3r/teachers/`: dependency-safe teacher witness registry.
+- `src/atlas3r/models/adapters/`: optional external model adapters.
 - `src/atlas3r/offline/`: connected Offline World Builder tracer modules.
 - `src/atlas3r/mapping/`: minimal NPZ/PLY artifact writers for inspection.
 - `tests/`: focused unit and vertical tracer tests.
@@ -94,3 +99,7 @@ training_cache/training_cache_manifest.json
 
 Debug flat-depth geometry is labeled `debug_synthetic`, not measured geometry,
 and is not training-quality.
+
+VGGT proposal geometry, when enabled or replayed, is labeled `teacher_pseudo`,
+`measured_geometry: false`, `observed_only: true`, and remains
+`usable_for_training: false` until anchoring, optimization, and evaluation exist.
