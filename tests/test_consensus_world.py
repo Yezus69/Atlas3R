@@ -60,7 +60,9 @@ class ConsensusWorldTest(unittest.TestCase):
             self.assertEqual(world["depth_status"], "missing")
             self.assertEqual(world["map_status"], "none")
             self.assertFalse(scale["physical_accuracy_allowed"])
-            self.assertEqual(scale["scale_source"], "unanchored_rgb_prior")
+            self.assertEqual(scale["scale_source"], "depth_pro_vggt_soft_metric_prior")
+            self.assertEqual(scale["legacy_scale_source"], "unanchored_rgb_prior")
+            self.assertEqual(scale["scale_status"], "soft_metric_unanchored")
 
 
 if __name__ == "__main__":

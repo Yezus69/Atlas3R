@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from atlas3r.offline.camera_scale_ledger import write_camera_scale_ledgers
+from atlas3r.offline.best_map_selection import BestMapSelectionResult, write_best_world_map
+from atlas3r.offline.camera_scale_ledger import (
+    ScaleMode,
+    update_soft_metric_scale_ledgers,
+    write_camera_scale_ledgers,
+)
 from atlas3r.offline.consensus_world import write_consensus_world_state
 from atlas3r.offline.depth_pro_witness import DepthProRuntimeOptions, run_depth_pro_witness
 from atlas3r.offline.disagreement import write_teacher_disagreement
@@ -27,6 +32,7 @@ from atlas3r.offline.object_ledger import write_object_ledger
 from atlas3r.offline.proposal_cache import DebugGeometryMode, write_proposal_cache
 from atlas3r.offline.quality_report import write_quality_report
 from atlas3r.offline.render_repair import write_render_repair_diagnostics
+from atlas3r.offline.room_diagnostics import write_room_walk_diagnostics
 from atlas3r.offline.run_manifest import (
     FailurePoint,
     ensure_run_tree,
@@ -64,6 +70,7 @@ class BuildWorldOptions:
     depth_pro_image_size: int | None = None
     depth_pro_max_keyframes: int | None = None
     depth_pro_proposal_cache: str | None = None
+    scale_mode: ScaleMode = "unanchored-soft-metric"
     export_world_map: bool = False
     map_point_stride: int = 8
     map_max_points: int = 2_000_000
@@ -85,6 +92,7 @@ class BuildWorldOptions:
     optimizer_min_overlap_pixels: int = 512
     optimizer_min_improvement_ratio: float = 0.05
     export_optimized_world_map: bool = False
+    export_best_world_map: bool = False
 
 
 @dataclass(frozen=True)
@@ -100,6 +108,11 @@ class BuildWorldResult:
     optimized_world_map_point_count: int = 0
     optimized_occupied_voxel_count: int = 0
     optimized_inspectable_map_available: bool = False
+    best_world_map_point_count: int = 0
+    best_occupied_voxel_count: int = 0
+    best_mesh_triangle_count: int = 0
+    best_camera_trajectory_count: int = 0
+    best_map_source: str = "none"
 
 
 def build_world(options: BuildWorldOptions) -> BuildWorldResult:
@@ -172,6 +185,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         frame_count=len(frame_cache.records),
         debug_geometry_mode=options.debug_geometry_mode,
         proposal_cache=proposals,
+        disagreement=disagreement,
+        scale_mode=options.scale_mode,
     )
     consensus = write_consensus_world_state(
         run_dir,
@@ -236,6 +251,27 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         ),
         failure_points=failure_points,
     )
+    soft_metric_ledger = update_soft_metric_scale_ledgers(
+        run_dir,
+        frame_metadata_summary=frame_cache.metadata_summary,
+        proposal_cache=proposals,
+        disagreement=optimizer.optimized_disagreement or disagreement,
+        cross_view_metrics=optimizer.after_metrics or optimizer.before_metrics,
+        scale_mode=options.scale_mode,
+    )
+    best_map = write_best_world_map(
+        run_dir,
+        input_path=options.input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        proposal_cache=proposals,
+        disagreement=disagreement,
+        raw_world_map=world_map,
+        optimizer=optimizer,
+        map_options=map_options,
+        export_best_world_map=options.export_best_world_map,
+        failure_points=failure_points,
+    )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
         run_dir,
@@ -268,12 +304,32 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         geometry=geometry,
         world_map=world_map,
         optimizer=optimizer,
+        best_map=best_map,
         objects=objects,
         render=render,
         training=training,
         failure_points=failure_points,
     )
-    artifact_paths = _artifact_paths(geometry.geometry_ply_path, world_map, optimizer)
+    room_diagnostics_json, room_report_md = write_room_walk_diagnostics(
+        run_dir,
+        input_path=options.input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        proposal_cache=proposals,
+        disagreement=disagreement,
+        optimizer=optimizer,
+        best_map=best_map,
+        ledgers=ledgers,
+        soft_metric_ledger=soft_metric_ledger,
+    )
+    artifact_paths = _artifact_paths(
+        geometry.geometry_ply_path,
+        world_map,
+        optimizer,
+        best_map,
+        room_diagnostics_json,
+        room_report_md,
+    )
     manifest = {
         "format_name": "atlas3r_offline_world_builder_run_manifest",
         "format_version": 1,
@@ -305,6 +361,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "depth_pro_image_size": options.depth_pro_image_size,
             "depth_pro_max_keyframes": options.depth_pro_max_keyframes,
             "depth_pro_proposal_cache": options.depth_pro_proposal_cache,
+            "scale_mode": options.scale_mode,
             "export_world_map": options.export_world_map,
             "map_point_stride": options.map_point_stride,
             "map_max_points": options.map_max_points,
@@ -326,6 +383,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "optimizer_min_overlap_pixels": options.optimizer_min_overlap_pixels,
             "optimizer_min_improvement_ratio": options.optimizer_min_improvement_ratio,
             "export_optimized_world_map": options.export_optimized_world_map,
+            "export_best_world_map": options.export_best_world_map,
         },
         "module_status": {
             "frame_cache": frame_cache.status,
@@ -339,6 +397,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "fused_world_map": world_map.status,
             "map_consistency_optimizer": optimizer.status,
             "optimized_world_map": optimizer.optimized_world_map.status,
+            "best_world_map": best_map.status,
             "object_ledger": objects.status,
             "render_repair": render.status,
             "training_cache": training.status,
@@ -350,6 +409,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "json": quality.json_path,
             "markdown": quality.markdown_path,
         },
+        "room_walk_001_report": room_report_md,
     }
     write_json(run_dir / "run_manifest.json", manifest)
     return BuildWorldResult(
@@ -364,6 +424,11 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         optimized_world_map_point_count=optimizer.optimized_world_map.point_count,
         optimized_occupied_voxel_count=optimizer.optimized_world_map.occupied_voxel_count,
         optimized_inspectable_map_available=optimizer.optimized_world_map.inspectable_map_available,
+        best_world_map_point_count=best_map.point_count,
+        best_occupied_voxel_count=best_map.occupied_voxel_count,
+        best_mesh_triangle_count=best_map.mesh_triangle_count,
+        best_camera_trajectory_count=best_map.trajectory_count,
+        best_map_source=best_map.selected_source,
     )
 
 
@@ -371,16 +436,22 @@ def _artifact_paths(
     geometry_ply_path: str | None,
     world_map: FusedWorldMapResult,
     optimizer: MapConsistencyOptimizerResult,
+    best_map: BestMapSelectionResult,
+    room_diagnostics_json: str,
+    room_report_md: str,
 ) -> tuple[str, ...]:
     paths = [
         "run_manifest.json",
         "frames/frame_index.jsonl",
+        "frames/metadata_summary.json",
         "keyframes/keyframes.json",
         "teachers/teacher_status.json",
         "proposals/proposal_manifest.json",
         "world/world_state.json",
         "world/camera_ledger.json",
         "world/scale_ledger.json",
+        "world/scale_hypotheses.json",
+        "world/soft_metric_scale_ledger.json",
         "geometry/geometry_preview.npz",
         "objects/object_ledger.json",
         "diagnostics/teacher_disagreement.json",
@@ -388,12 +459,15 @@ def _artifact_paths(
         "diagnostics/consensus_preview.npz",
         "diagnostics/render_repair_diagnostics.json",
         "diagnostics/failure_points.json",
+        room_diagnostics_json,
         "quality_report.json",
         "quality_report.md",
+        room_report_md,
         "training_cache/training_cache_manifest.json",
     ]
     if geometry_ply_path is not None:
         paths.insert(9, geometry_ply_path)
     paths.extend(world_map.artifact_paths)
     paths.extend(optimizer.artifact_paths)
+    paths.extend(best_map.artifact_paths)
     return tuple(paths)

@@ -1,1 +1,1 @@
-Offline V1.0: add anchored capture mode using a known-size marker/object or manual scale measurement, so maps can have an explicit physical scale source instead of unanchored teacher scale.
+Offline V1.1: add a COLMAP/GLOMAP or VGGT-COLMAP bundle-adjustment witness for `C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames`, compare its trajectory and sparse geometry against `runs/room_walk_001_v10_soft_metric/world_map_best/`, and keep all outputs as unanchored proposals unless an explicit scale anchor is supplied.

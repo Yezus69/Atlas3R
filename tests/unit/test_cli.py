@@ -82,6 +82,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("--vggt-stitch-mode", result.stdout)
         self.assertIn("--enable-depth-pro", result.stdout)
         self.assertIn("--depth-pro-proposal-cache", result.stdout)
+        self.assertIn("--scale-mode", result.stdout)
         self.assertIn("--export-world-map", result.stdout)
         self.assertIn("--map-point-stride", result.stdout)
         self.assertIn("--map-depth-source", result.stdout)
@@ -98,6 +99,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("--optimizer-min-overlap-pixels", result.stdout)
         self.assertIn("--optimizer-min-improvement-ratio", result.stdout)
         self.assertIn("--export-optimized-world-map", result.stdout)
+        self.assertIn("--export-best-world-map", result.stdout)
 
 
 if __name__ == "__main__":

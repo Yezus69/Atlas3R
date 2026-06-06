@@ -91,10 +91,11 @@ def write_consensus_world_state(
             "scale_anchor",
         ],
         "truth_boundary": {
-            "label_type": "teacher_pseudo"
+            "label_type": "unanchored_teacher_consensus_map"
             if has_vggt or has_depth_pro
             else "unanchored_mp4_pseudo",
             "metric_scale_source": ledgers.scale_source,
+            "scale_status": "soft_metric_unanchored",
             "measured_geometry": False,
             "observed_only": True,
             "predicted_completion": False,

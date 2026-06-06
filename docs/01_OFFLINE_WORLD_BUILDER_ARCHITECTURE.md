@@ -110,3 +110,30 @@ The optimizer writes `optimizer/` artifacts and, when enabled, exports
 The optimized map is still observed-only teacher-pseudo geometry. It is not an
 anchored physical world, measured depth, hidden completion, training-quality
 cache, or final mesh reconstruction.
+
+## V1.0 Implementation Boundary
+
+Offline V1.0 keeps the run unanchored and exports the first room-walk
+`world_map_best/` for inspection. The CLI adds
+`--scale-mode unanchored-soft-metric` and `--export-best-world-map`.
+
+The frame cache writes `frames/metadata_summary.json` with decoded image
+dimensions and EXIF-derived camera hints when present. Missing EXIF is recorded
+explicitly and never becomes calibration.
+
+The scale ledger writes `world/scale_hypotheses.json` and
+`world/soft_metric_scale_ledger.json`, combining Depth Pro soft-metric priors,
+VGGT multi-view priors, EXIF/focal availability, teacher agreement, and
+cross-view projection agreement into a low/medium/high confidence label. The
+scale status remains `soft_metric_unanchored`.
+
+Best-map selection chooses the optimized map when the optimizer improved and
+the map is noncollapsed, otherwise raw consensus or a VGGT-only fallback. It
+applies conservative finite/outlier/component cleanup and writes PLYs, sparse
+occupancy, camera trajectory, quality report, inspection instructions, and
+`topdown_preview.svg` under `world_map_best/`.
+
+V1.0 outputs use `label_type: unanchored_teacher_consensus_map` and
+`metric_scale_source: depth_pro_vggt_soft_metric_prior`. They are observed-only,
+not measured geometry, not hidden completion, not physically accurate, and not
+training-quality.

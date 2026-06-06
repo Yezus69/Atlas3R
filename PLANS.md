@@ -108,7 +108,37 @@ Acceptance:
 - residuals and before/after map quality are reported;
 - physical accuracy remains blocked without anchors or evaluation.
 
-## Offline V1.0 - Anchored Capture Mode
+## Offline V1.0 - Room Walk Soft-Metric Map
+
+Run the no-anchor room-walk path on real RGB frames and export the first
+inspectable soft-metric `world_map_best/`.
+
+Acceptance:
+
+- `--scale-mode unanchored-soft-metric` records Depth Pro, VGGT, and EXIF
+  scale hypotheses without inventing anchors;
+- every run writes `frames/metadata_summary.json`,
+  `world/scale_hypotheses.json`, and `world/soft_metric_scale_ledger.json`;
+- best-map selection prefers an improved optimized map, otherwise falls back to
+  raw consensus or VGGT-only maps with explicit failure reasons;
+- `world_map_best/` contains PLYs, sparse occupancy, trajectory, map quality,
+  inspection instructions, and a top-down preview;
+- room diagnostics report frame counts, proposal counts, optimizer before/after
+  metrics, scale confidence, and truth-boundary claims.
+
+## Offline V1.1 - Classical Geometry Witness
+
+Add COLMAP/GLOMAP or VGGT-COLMAP bundle-adjustment witness checks for the room
+frames and compare them against the current soft-metric map.
+
+Acceptance:
+
+- classical geometry outputs are isolated behind dependency-safe adapters or
+  external process wrappers;
+- results are written as proposals and consistency diagnostics, not truth;
+- reports compare trajectory/map agreement against V1.0 room artifacts.
+
+## Offline V1.2 - Anchored Capture Mode
 
 Add capture modes using a known-size marker/object or manual scale measurement
 so maps can carry an explicit physical scale source.

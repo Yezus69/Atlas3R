@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--depth-pro-image-size", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-max-keyframes", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-proposal-cache", default=None)
+    build_world_parser.add_argument(
+        "--scale-mode",
+        choices=("unanchored-soft-metric",),
+        default="unanchored-soft-metric",
+    )
     build_world_parser.add_argument("--export-world-map", action="store_true")
     build_world_parser.add_argument("--map-point-stride", type=int, default=8)
     build_world_parser.add_argument("--map-max-points", type=int, default=2_000_000)
@@ -100,6 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--optimizer-min-overlap-pixels", type=int, default=512)
     build_world_parser.add_argument("--optimizer-min-improvement-ratio", type=float, default=0.05)
     build_world_parser.add_argument("--export-optimized-world-map", action="store_true")
+    build_world_parser.add_argument("--export-best-world-map", action="store_true")
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -172,6 +178,7 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             depth_pro_image_size=args.depth_pro_image_size,
             depth_pro_max_keyframes=args.depth_pro_max_keyframes,
             depth_pro_proposal_cache=args.depth_pro_proposal_cache,
+            scale_mode=args.scale_mode,
             export_world_map=bool(args.export_world_map),
             map_point_stride=int(args.map_point_stride),
             map_max_points=int(args.map_max_points),
@@ -193,6 +200,7 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             optimizer_min_overlap_pixels=int(args.optimizer_min_overlap_pixels),
             optimizer_min_improvement_ratio=float(args.optimizer_min_improvement_ratio),
             export_optimized_world_map=bool(args.export_optimized_world_map),
+            export_best_world_map=bool(args.export_best_world_map),
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")
@@ -203,6 +211,11 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
     print(f"optimized world map points: {result.optimized_world_map_point_count}")
     print(f"optimized occupied voxels: {result.optimized_occupied_voxel_count}")
     print(f"optimized inspectable map: {result.optimized_inspectable_map_available}")
+    print(f"best world map source: {result.best_map_source}")
+    print(f"best world map points: {result.best_world_map_point_count}")
+    print(f"best occupied voxels: {result.best_occupied_voxel_count}")
+    print(f"best observed mesh triangles: {result.best_mesh_triangle_count}")
+    print(f"best camera trajectory poses: {result.best_camera_trajectory_count}")
     print(f"failure points: {result.failure_count}")
     return result.exit_code
 

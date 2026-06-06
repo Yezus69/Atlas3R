@@ -10,7 +10,12 @@ from numpy.typing import NDArray
 
 from atlas3r.contracts.frames import CameraModel, FramePacket
 from atlas3r.contracts.truth import TruthBoundary
-from atlas3r.input.metadata import camera_from_focal
+from atlas3r.input.metadata import (
+    ImageMetadata,
+    camera_from_focal,
+    metadata_summary,
+    read_image_metadata,
+)
 from atlas3r.input.video import (
     DecodedFrame,
     VideoDependencyError,
@@ -19,7 +24,7 @@ from atlas3r.input.video import (
     inspect_video_input,
     write_ppm_image,
 )
-from atlas3r.offline.run_manifest import FailurePoint, relative_to_run, write_jsonl
+from atlas3r.offline.run_manifest import FailurePoint, relative_to_run, write_json, write_jsonl
 
 
 class InputDataError(RuntimeError):
@@ -53,6 +58,7 @@ class FrameRecord:
     truth_boundary: TruthBoundary
     original_frame_index: int | None = None
     decoder_name: str = "unknown"
+    image_metadata: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -66,6 +72,7 @@ class FrameRecord:
             "camera": self.camera.to_dict(),
             "decoder_name": self.decoder_name,
             "quality": self.quality.to_dict(),
+            "image_metadata": self.image_metadata,
             "truth_boundary": self.truth_boundary.to_dict(),
         }
 
@@ -78,6 +85,8 @@ class FrameCacheResult:
     records: tuple[FrameRecord, ...]
     camera: CameraModel | None
     frame_index_path: str
+    metadata_summary_path: str
+    metadata_summary: dict[str, object]
     input_error: bool = False
 
 
@@ -93,8 +102,11 @@ def build_frame_cache(
         raise ValueError("max_frames must be positive")
     root = Path(run_dir)
     frame_index = root / "frames" / "frame_index.jsonl"
+    metadata_summary_path = root / "frames" / "metadata_summary.json"
     inspection = inspect_video_input(input_path)
     if inspection.kind == "missing":
+        empty_metadata = metadata_summary(())
+        write_json(metadata_summary_path, empty_metadata)
         failure = FailurePoint(
             module="frame_cache",
             code="input_missing",
@@ -116,6 +128,8 @@ def build_frame_cache(
             records=(),
             camera=None,
             frame_index_path="frames/frame_index.jsonl",
+            metadata_summary_path="frames/metadata_summary.json",
+            metadata_summary=empty_metadata,
             input_error=True,
         )
     try:
@@ -134,6 +148,8 @@ def build_frame_cache(
             )
         )
         write_jsonl(frame_index, [])
+        empty_metadata = metadata_summary(())
+        write_json(metadata_summary_path, empty_metadata)
         return FrameCacheResult(
             status="unavailable",
             inspection=inspection,
@@ -141,6 +157,8 @@ def build_frame_cache(
             records=(),
             camera=None,
             frame_index_path="frames/frame_index.jsonl",
+            metadata_summary_path="frames/metadata_summary.json",
+            metadata_summary=empty_metadata,
         )
     if not decoded_frames:
         failure_points.append(
@@ -157,6 +175,8 @@ def build_frame_cache(
             )
         )
         write_jsonl(frame_index, [])
+        empty_metadata = metadata_summary(())
+        write_json(metadata_summary_path, empty_metadata)
         return FrameCacheResult(
             status="unavailable",
             inspection=inspection,
@@ -164,9 +184,13 @@ def build_frame_cache(
             records=(),
             camera=None,
             frame_index_path="frames/frame_index.jsonl",
+            metadata_summary_path="frames/metadata_summary.json",
+            metadata_summary=empty_metadata,
         )
-    frames, records, camera = _load_decoded_frames(decoded_frames, root)
+    frames, records, camera, metadata_records = _load_decoded_frames(decoded_frames, root)
     write_jsonl(frame_index, [record.to_dict() for record in records])
+    summary = metadata_summary(tuple(metadata_records))
+    write_json(metadata_summary_path, summary)
     return FrameCacheResult(
         status="complete",
         inspection=inspection,
@@ -174,12 +198,14 @@ def build_frame_cache(
         records=tuple(records),
         camera=camera,
         frame_index_path="frames/frame_index.jsonl",
+        metadata_summary_path="frames/metadata_summary.json",
+        metadata_summary=summary,
     )
 
 
 def _load_decoded_frames(
     decoded_frames: tuple[DecodedFrame, ...], run_dir: Path
-) -> tuple[list[FramePacket], list[FrameRecord], CameraModel]:
+) -> tuple[list[FramePacket], list[FrameRecord], CameraModel, list[ImageMetadata]]:
     first_rgb = decoded_frames[0].rgb_u8
     height, width = int(first_rgb.shape[0]), int(first_rgb.shape[1])
     focal = float(max(width, height))
@@ -194,11 +220,14 @@ def _load_decoded_frames(
     truth = TruthBoundary.unanchored_mp4("RGB frames have no physical scale anchor yet.")
     frames: list[FramePacket] = []
     records: list[FrameRecord] = []
+    metadata_records: list[ImageMetadata] = []
     previous_rgb: NDArray[np.uint8] | None = None
     for frame_id, decoded in enumerate(decoded_frames):
         rgb = first_rgb if frame_id == 0 else decoded.rgb_u8
         if rgb.shape[:2] != (height, width):
             raise InputDataError(f"{decoded.source_uri} dimensions do not match first frame")
+        image_metadata = _metadata_for_decoded(decoded, width=width, height=height)
+        metadata_records.append(image_metadata)
         target = run_dir / "frames" / "images" / f"frame_{frame_id:06d}.ppm"
         write_ppm_image(target, rgb)
         quality = _score_frame_quality(rgb, previous_rgb)
@@ -216,6 +245,8 @@ def _load_decoded_frames(
                     "camera_source": camera.source,
                     "decoder_name": decoded.decoder_name,
                     "original_frame_index": decoded.original_frame_index,
+                    "image_metadata": image_metadata.to_dict(),
+                    "intrinsics_proposal_only": True,
                 },
                 source_uri=decoded.source_uri,
             )
@@ -233,10 +264,23 @@ def _load_decoded_frames(
                 truth_boundary=truth,
                 original_frame_index=decoded.original_frame_index,
                 decoder_name=decoded.decoder_name,
+                image_metadata=image_metadata.to_dict(),
             )
         )
         previous_rgb = rgb
-    return frames, records, camera
+    return frames, records, camera, metadata_records
+
+
+def _metadata_for_decoded(decoded: DecodedFrame, *, width: int, height: int) -> ImageMetadata:
+    source = Path(decoded.source_uri)
+    if source.suffix.lower() not in {".jpg", ".jpeg", ".png"} or not source.is_file():
+        return ImageMetadata(
+            source_uri=decoded.source_uri,
+            width=width,
+            height=height,
+            metadata_status="not_image_metadata_source",
+        )
+    return read_image_metadata(decoded.source_uri, width=width, height=height)
 
 
 def _decoder_failure_code(inspection: VideoInspection) -> str:

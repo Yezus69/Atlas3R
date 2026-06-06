@@ -452,12 +452,13 @@ def optimizer_markdown(
 
 def optimized_truth_boundary() -> dict[str, object]:
     return {
-        "label_type": "teacher_pseudo_optimized_map",
+        "label_type": "unanchored_teacher_consensus_map",
         "measured_geometry": False,
         "observed_only": True,
         "predicted_completion": False,
         "hidden_geometry_measured": False,
-        "metric_scale_source": "unanchored_vggt_depthpro_teacher_consensus",
+        "metric_scale_source": "depth_pro_vggt_soft_metric_prior",
+        "scale_status": "soft_metric_unanchored",
         "physical_accuracy_claim": False,
         "training_quality": False,
         "realtime_claim": False,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from atlas3r.offline.best_map_selection import BestMapSelectionResult
 from atlas3r.offline.camera_scale_ledger import CameraScaleLedgerResult
 from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.fused_world_map import FusedWorldMapResult
@@ -38,6 +39,7 @@ def write_quality_report(
     training: TrainingCacheResult,
     failure_points: list[FailurePoint],
     optimizer: MapConsistencyOptimizerResult | None = None,
+    best_map: BestMapSelectionResult | None = None,
 ) -> QualityReportResult:
     teachers = [
         {
@@ -115,6 +117,23 @@ def write_quality_report(
             "physical_accuracy_claim": False,
             "training_quality_claim": False,
         },
+        "world_map_best": None
+        if best_map is None
+        else {
+            "status": best_map.status,
+            "selected_source": best_map.selected_source,
+            "point_count": best_map.point_count,
+            "occupied_voxel_count": best_map.occupied_voxel_count,
+            "observed_mesh_triangle_count": best_map.mesh_triangle_count,
+            "camera_trajectory_count": best_map.trajectory_count,
+            "manifest": best_map.manifest_path,
+            "fused_points_ply": best_map.fused_points_ply_path,
+            "observed_voxel_mesh": best_map.observed_voxel_mesh_ply_path,
+            "topdown_preview": best_map.topdown_preview_path,
+            "map_quality": best_map.map_quality_json_path,
+            "physical_accuracy_claim": False,
+            "training_quality_claim": False,
+        },
         "map_consistency_optimizer": {
             "status": "disabled" if optimizer is None else optimizer.status,
             "manifest": None if optimizer is None else optimizer.manifest_path,
@@ -167,6 +186,8 @@ def _markdown_report(payload: dict[str, object]) -> str:
     optimizer = payload["map_consistency_optimizer"]
     if not isinstance(optimizer, dict):
         raise ValueError("optimizer payload must be a dict")
+    best_map = payload.get("world_map_best")
+    best_status = "disabled" if best_map is None else _world_map_best_status(best_map)
     failure_points = payload["failure_points"]
     if not isinstance(failure_points, list):
         raise ValueError("failure_points payload must be a list")
@@ -182,6 +203,7 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Teacher-proposed geometry: {geometry['teacher_proposed_geometry_available']}",
         f"- Geometry measured: {geometry['measured_geometry']}",
         f"- Fused world map: {_world_map_status(payload)}",
+        f"- Best world map: {best_status}",
         f"- Map optimizer: {optimizer.get('status', 'disabled')}",
         f"- Optimizer improvement passed: {optimizer.get('improvement_passed', False)}",
         f"- Teacher disagreement: {_disagreement_status(payload)}",
@@ -222,3 +244,14 @@ def _world_map_status(payload: dict[str, object]) -> str:
     voxels = int(world_map.get("occupied_voxel_count", 0))
     inspectable = bool(world_map.get("inspectable_map_available", False))
     return f"{status}, points={points}, voxels={voxels}, inspectable={inspectable}"
+
+
+def _world_map_best_status(value: object) -> str:
+    if not isinstance(value, dict):
+        return "unavailable"
+    status = str(value.get("status", "unavailable"))
+    source = str(value.get("selected_source", "none"))
+    points = int(value.get("point_count", 0))
+    voxels = int(value.get("occupied_voxel_count", 0))
+    triangles = int(value.get("observed_mesh_triangle_count", 0))
+    return f"{status}, source={source}, points={points}, voxels={voxels}, triangles={triangles}"

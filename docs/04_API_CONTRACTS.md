@@ -1,6 +1,6 @@
 # 04 - API Contracts
 
-This is the concise contract index for Offline World Builder V0.8. Units are
+This is the concise contract index for Offline World Builder V1.0. Units are
 meters unless a field says otherwise. Transform names use `T_A_B`, mapping
 points from frame `B` into frame `A`.
 
@@ -35,8 +35,8 @@ points from frame `B` into frame `A`.
   map, artifact list, failure-point reference, started/completed timestamps.
 - `FrameRecord`: stable frame ID, original video frame index when available,
   timestamp, copied normalized PPM frame path, source URI, dimensions,
-  guessed/known camera metadata, decoder name, blur/exposure/visual-change
-  scores, and truth boundary.
+  dependency-safe JPG/EXIF metadata summary, guessed/known camera metadata,
+  decoder name, blur/exposure/visual-change scores, and truth boundary.
 - `KeyframeRecord`: frame ID, timestamp, source frame path, quality scores,
   selection rank, and reasons. It contains no pose assumption.
 - `TeacherWitnessStatus`: teacher name, availability, capabilities, install
@@ -194,15 +194,16 @@ free-space carving is not claimed.
 `T_world_camera`, camera center, pose source, pose confidence, metric scale
 source, and pseudo-submap ID for finite pose proposals.
 
-Every fused-map artifact carries this truth boundary:
+V1.0 fused-map artifacts carry this truth boundary:
 
 ```text
-label_type: teacher_pseudo_fused_map
+label_type: unanchored_teacher_consensus_map
 measured_geometry: false
 observed_only: true
 predicted_completion: false
 hidden_geometry_measured: false
-metric_scale_source: unanchored_vggt_depthpro_teacher_consensus
+metric_scale_source: depth_pro_vggt_soft_metric_prior
+scale_status: soft_metric_unanchored
 physical_accuracy_claim: false
 training_quality: false
 realtime_claim: false
@@ -249,15 +250,16 @@ Projection diagnostics are:
 When enabled, optimized map artifacts are written under `world_map_optimized/`
 with the same filenames and array schemas as `world_map/`.
 
-Every optimized map artifact carries this truth boundary:
+V1.0 optimized map artifacts carry this truth boundary:
 
 ```text
-label_type: teacher_pseudo_optimized_map
+label_type: unanchored_teacher_consensus_map
 measured_geometry: false
 observed_only: true
 predicted_completion: false
 hidden_geometry_measured: false
-metric_scale_source: unanchored_vggt_depthpro_teacher_consensus
+metric_scale_source: depth_pro_vggt_soft_metric_prior
+scale_status: soft_metric_unanchored
 physical_accuracy_claim: false
 training_quality: false
 realtime_claim: false
@@ -266,3 +268,44 @@ optimized_world_state: diagnostic_depth_consistency_only
 
 The optimizer is a diagnostic teacher-consistency pass, not an evaluation
 report or physical accuracy claim.
+
+## V1.0 Soft-Metric Room Map Artifacts
+
+`offline build-world --scale-mode unanchored-soft-metric
+--export-best-world-map` adds:
+
+- `frames/metadata_summary.json`
+- `world/scale_hypotheses.json`
+- `world/soft_metric_scale_ledger.json`
+- `world_map_best/world_map_manifest.json`
+- `world_map_best/camera_trajectory.json`
+- `world_map_best/fused_points.npz`
+- `world_map_best/fused_points.ply`
+- `world_map_best/occupancy_grid.npz`
+- `world_map_best/occupancy_grid_metadata.json`
+- `world_map_best/observed_voxel_mesh.ply`
+- `world_map_best/map_quality.json`
+- `world_map_best/map_quality.md`
+- `world_map_best/topdown_preview.svg`
+- `world_map_best/inspection_instructions.md`
+- `diagnostics/room_walk_001_diagnostics.json`
+- `room_walk_001_report.md`
+
+`metadata_summary.json` records decoded frame dimensions and EXIF-derived
+fields when present: focal length, 35mm focal length, camera make/model,
+timestamp, and orientation. Missing EXIF is explicit and keeps
+`intrinsics_proposal_only: true`.
+
+`soft_metric_scale_ledger.json` records:
+
+- `selected_scale_mode: unanchored_soft_metric`
+- `scale_status: soft_metric_unanchored`
+- `metric_scale_source: depth_pro_vggt_soft_metric_prior`
+- Depth Pro, VGGT, EXIF, focal, teacher-agreement, and cross-view-agreement
+  availability booleans
+- `scale_confidence: low|medium|high`
+- `physical_accuracy_claim: false`
+- `training_quality: false`
+
+`world_map_best/` uses the same NPZ/PLY/occupancy schemas as `world_map/`, with
+additional cleanup and selected-source metadata in `map_quality.json`.

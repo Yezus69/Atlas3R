@@ -135,6 +135,7 @@ class MapConsistencyOptimizerTest(unittest.TestCase):
                     "--optimizer-min-overlap-pixels",
                     "1",
                     "--export-optimized-world-map",
+                    "--export-best-world-map",
                     "--write-ply",
                 ],
                 check=False,
@@ -151,6 +152,10 @@ class MapConsistencyOptimizerTest(unittest.TestCase):
                 "optimizer/depth_scale_bias.jsonl",
                 "diagnostics/projection_consistency_before.json",
                 "diagnostics/projection_consistency_after.json",
+                "world_map_best/world_map_manifest.json",
+                "world_map_best/fused_points.ply",
+                "world_map_best/observed_voxel_mesh.ply",
+                "world_map_best/topdown_preview.svg",
             ):
                 self.assertTrue((output / relative).is_file(), relative)
             before = json.loads((output / "optimizer" / "before_metrics.json").read_text())
@@ -168,9 +173,15 @@ class MapConsistencyOptimizerTest(unittest.TestCase):
             self.assertGreaterEqual(after["retained_point_ratio"], 0.5)
             self.assertEqual(
                 manifest["truth_boundary"]["label_type"],
-                "teacher_pseudo_optimized_map",
+                "unanchored_teacher_consensus_map",
             )
             self.assertFalse(manifest["truth_boundary"]["measured_geometry"])
+            best_manifest = json.loads(
+                (output / "world_map_best" / "world_map_manifest.json").read_text()
+            )
+            self.assertEqual(best_manifest["selected_best_map_source"], "optimized")
+            self.assertGreater(best_manifest["point_count"], 0)
+            self.assertFalse(best_manifest["truth_boundary"]["physical_accuracy_claim"])
             self.assertFalse(training["usable_for_training"])
             self.assertEqual(
                 training["refs"]["optimized_world_map_manifest"],

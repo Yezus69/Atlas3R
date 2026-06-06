@@ -89,7 +89,20 @@ cross-view projection residuals, while regularizing scale, bias, and focal
 adjustments to conservative bounds. Disagreement is still recorded and lowers
 confidence; it is not silently converted into truth.
 
-Optimized outputs use `label_type: teacher_pseudo_optimized_map` and
-`optimized_world_state: diagnostic_depth_consistency_only`. They remain
-unanchored, observed-only, not measured geometry, not physically accurate, and
-not training-quality.
+Optimized outputs use `optimized_world_state:
+diagnostic_depth_consistency_only`. In V1.0 map exports they use
+`label_type: unanchored_teacher_consensus_map`,
+`metric_scale_source: depth_pro_vggt_soft_metric_prior`, and
+`scale_status: soft_metric_unanchored`. They remain unanchored, observed-only,
+not measured geometry, not physically accurate, and not training-quality.
+
+## V1.0 Soft-Metric Best Map
+
+V1.0 selects one inspectable map under `world_map_best/`. Selection is based on
+optimizer improvement, map noncollapse, conservative cleanup, and availability
+of raw or fallback proposals. The selected map is not a new truth source; it is
+the best current teacher-consensus artifact for inspection.
+
+The soft-metric ledger records why scale confidence is low, medium, or high.
+Depth Pro and VGGT agreement can raise confidence, but without an anchor or
+named evaluation report it still cannot become a physical accuracy claim.

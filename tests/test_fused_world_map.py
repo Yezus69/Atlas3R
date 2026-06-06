@@ -55,7 +55,10 @@ class FusedWorldMapTest(unittest.TestCase):
                 points = payload["points_world_m"]
                 metadata = json.loads(str(payload["metadata_json"].item()))
             np.testing.assert_allclose(points[0], [-0.5, -0.5, 2.0], atol=1e-6)
-            self.assertEqual(metadata["truth_boundary"]["label_type"], "teacher_pseudo_fused_map")
+            self.assertEqual(
+                metadata["truth_boundary"]["label_type"], "unanchored_teacher_consensus_map"
+            )
+            self.assertFalse(metadata["truth_boundary"]["physical_accuracy_claim"])
             ply = (run.run_dir / "world_map" / "fused_points.ply").read_text(encoding="utf-8")
             self.assertIn(f"element vertex {result.point_count}", ply)
             trajectory = json.loads(

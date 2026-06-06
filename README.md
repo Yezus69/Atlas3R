@@ -8,9 +8,10 @@ MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> tra
 
 The current repository has the first connected offline tracer, two real
 teacher-witness vertical slices (VGGT and Depth Pro), the first inspectable
-teacher-pseudo fused world-map artifact, and the first diagnostic consistency
-optimizer. It is not a working accurate mapper yet: anchored scale, object
-fusion, and final mesh reconstruction remain future work.
+teacher-pseudo fused world-map artifact, the first diagnostic consistency
+optimizer, and an unanchored soft-metric room-walk `world_map_best/` export.
+It is not a working accurate mapper yet: anchored scale, object fusion, and
+final mesh reconstruction remain future work.
 
 ## Boundaries
 
@@ -58,6 +59,7 @@ python -m atlas3r offline build-world --input <images> --output <run> --enable-d
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <vggt-cache> --depth-pro-proposal-cache <depth-pro-cache>
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --map-write-occupancy --map-write-observed-mesh
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --optimize-map-consistency --export-optimized-world-map
+python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --scale-mode unanchored-soft-metric --export-world-map --optimize-map-consistency --export-optimized-world-map --export-best-world-map
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -87,12 +89,15 @@ decoders are unavailable:
 ```text
 run_manifest.json
 frames/frame_index.jsonl
+frames/metadata_summary.json
 keyframes/keyframes.json
 teachers/teacher_status.json
 proposals/proposal_manifest.json
 world/world_state.json
 world/camera_ledger.json
 world/scale_ledger.json
+world/scale_hypotheses.json
+world/soft_metric_scale_ledger.json
 geometry/geometry_preview.npz
 objects/object_ledger.json
 diagnostics/render_repair_diagnostics.json
@@ -126,8 +131,20 @@ world_map_optimized/occupancy_grid_metadata.json
 world_map_optimized/observed_voxel_mesh.ply
 world_map_optimized/map_quality.json
 world_map_optimized/map_quality.md
+world_map_best/world_map_manifest.json
+world_map_best/camera_trajectory.json
+world_map_best/fused_points.npz
+world_map_best/fused_points.ply
+world_map_best/occupancy_grid.npz
+world_map_best/occupancy_grid_metadata.json
+world_map_best/observed_voxel_mesh.ply
+world_map_best/map_quality.json
+world_map_best/map_quality.md
+world_map_best/topdown_preview.svg
+world_map_best/inspection_instructions.md
 quality_report.json
 quality_report.md
+room_walk_001_report.md
 training_cache/training_cache_manifest.json
 ```
 
@@ -142,4 +159,7 @@ consensus depth into `world_map/` point, occupancy, observed voxel mesh, camera
 trajectory, and map-quality artifacts. V0.9 can write `world_map_optimized/`
 after a diagnostic Depth Pro scale/bias consistency pass. Raw and optimized
 maps are teacher-pseudo, observed-only, unanchored, not physically accurate, and
-not training-quality.
+not training-quality. V1.0 adds `--scale-mode unanchored-soft-metric`,
+soft-metric scale ledgers, conservative `world_map_best/` selection, and a
+top-down preview. These outputs are inspectable teacher-consensus maps, not
+physical ground truth.

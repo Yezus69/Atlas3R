@@ -1,21 +1,19 @@
-# Active Task: Offline V0.9 Map Consistency Optimizer
+# Active Task - Offline V1.0 Room Walk Soft-Metric Map
 
-Branch: `codex/offline-world-builder-v09-map-consistency-optimizer`
+## Goal
+
+Run the no-anchor room-walk pipeline on
+`C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames` and
+export an inspectable `world_map_best/` without physical accuracy claims.
 
 ## Checklist
 
-- [x] Confirm clean worktree and create the V0.9 branch from V0.8.
-- [x] Read the requested architecture, truth-boundary, status, and code context.
-- [x] Reflow compressed V0.8 status docs without deleting evidence numbers.
-- [x] Add a NumPy map consistency optimizer called by `offline build-world`.
-- [x] Write optimizer artifacts under `optimizer/` with conservative truth flags.
-- [x] Export raw `world_map/` and optimized `world_map_optimized/` artifacts.
-- [x] Add before/after projection diagnostics under `diagnostics/`.
-- [x] Add CLI flags and keep `--optimize-map-consistency` tied to map export.
-- [x] Add focused unit and integration tests for optimizer math, diagnostics,
-  artifact export, CLI help, and training-cache references.
-- [x] Run the requested format, lint, type, unit, CLI, smoke, and diff checks.
-- [x] Run debug and real TUM evidence; run phone MP4 evidence only if found.
-- [x] Update V0.9 report, current status, progress, decisions, contracts, and
-  next-task docs with exact results and known gaps.
-- [x] Commit as `feat(offline): optimize teacher map consistency`.
+- [x] Confirm clean worktree and switch to V1.0 branch.
+- [x] Run V0.9 baseline on the actual room frames before code edits.
+- [x] Add dependency-safe JPG/EXIF metadata summary.
+- [x] Add `--scale-mode unanchored-soft-metric` and soft-metric ledgers.
+- [x] Add best-map selection, conservative cleanup, and top-down preview.
+- [x] Add room-specific diagnostics and inspection instructions.
+- [x] Add focused tests for metadata, scale ledger, best map, preview, CLI, and integration.
+- [x] Run final room evidence command and optional longer run if feasible.
+- [x] Run verification commands and update compact docs/status files.

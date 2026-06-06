@@ -79,8 +79,30 @@ Reports with map consistency optimization must summarize:
 - accepted/rejected Depth Pro scale/bias rows;
 - intrinsics adjustment summary when enabled;
 - raw and optimized PLY paths;
-- unchanged truth boundary: teacher-pseudo optimized map, observed-only,
-  unanchored, not measured, not physically accurate, and not training-quality.
+- unchanged truth boundary: unanchored teacher-consensus map, observed-only,
+  soft-metric unanchored, not measured, not physically accurate, and not
+  training-quality.
+
+## Offline V1.0 Report Requirements
+
+Reports with soft-metric best-map export must summarize:
+
+- actual input path, frames decoded, frame dimensions, and keyframes selected;
+- VGGT proposal count, window count, stitching mode, accepted/rejected overlaps,
+  and overlap residuals;
+- Depth Pro proposal count, checkpoint/source, and availability;
+- EXIF/camera metadata availability and whether intrinsics are proposal-only;
+- raw, optimized, and selected best-map point/voxel/observed-triangle counts;
+- optimizer before/after teacher disagreement and cross-view projection
+  residual mean/p95;
+- selected best-map source, cleanup retained ratio, connected components, and
+  bounding-box size;
+- artifact paths for PLYs, top-down preview, trajectory, map quality, and
+  inspection instructions;
+- scale mode, scale confidence, scale reasons, and `scale_status:
+  soft_metric_unanchored`;
+- physical accuracy claim: false;
+- training-quality claim: false.
 
 ## Claim Rules
 

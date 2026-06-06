@@ -16,6 +16,9 @@ Atlas3R separates label sources because they are not interchangeable.
   LingBot-Map, SAM/DINO, CoTracker, COLMAP/GLOMAP, or similar witnesses.
 - Unanchored MP4 pseudo labels: monocular RGB labels without a physical scale
   anchor.
+- Unanchored soft-metric teacher-consensus maps: observed RGB geometry using
+  Depth Pro and VGGT metric priors without an anchor, calibration target,
+  measured depth, or evaluation report.
 
 ## Rules
 
@@ -24,3 +27,5 @@ Atlas3R separates label sources because they are not interchangeable.
 - Observed geometry and predicted completion must be stored separately.
 - Every geometry artifact carries uncertainty and a scale source.
 - Accuracy claims require a named evaluation report.
+- `scale_status: soft_metric_unanchored` can support inspection and debugging,
+  but it cannot support physical accuracy or training-quality claims.
