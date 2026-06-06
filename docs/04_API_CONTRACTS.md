@@ -382,3 +382,51 @@ Optional `world_map_classical_validated/` uses the fused-map schema only when
 classical agreement is available and anti-collapse checks pass. It remains an
 unanchored teacher-consensus map with a classical validation witness, not a
 measured reconstruction.
+
+## ViPE Primary Import Artifacts
+
+`offline import-vipe` imports an external ViPE run without vendoring ViPE,
+weights, or run artifacts into this repository.
+
+Required external ViPE files:
+
+- `pose/<artifact>.npz` with `data [N,4,4]` and optional `inds`
+- `intrinsics/<artifact>.npz` with `data [N,4]` rows `[fx, fy, cx, cy]`
+- `depth/<artifact>.zip` containing EXR depth maps, or test-only
+  `depth/<artifact>.npz`
+- Optional fallback `vipe/<artifact>_slam_map.pt` with finite dense SLAM points
+
+Output uses the fused-map artifact schema under the requested map folder:
+
+- `world_map_manifest.json`
+- `camera_trajectory.json`
+- `fused_points.npz`
+- `fused_points.ply` when nonempty
+- `occupancy_grid.npz`
+- `occupancy_grid_metadata.json`
+- `observed_voxel_mesh.ply` when requested
+- `map_quality.json`
+- `map_quality.md`
+- `comparison_against_previous_map.json` when `--previous-map` is supplied
+
+ViPE depth import uses ViPE OpenCV camera frame convention directly as Atlas3R
+`x_right_y_down_z_forward` and stores finite ViPE `cam2world` matrices as
+`T_world_camera`. If the ViPE pose artifact is nonfinite, the importer must not
+invent a trajectory; it may import finite `frames_slam_map.pt` points as
+`depth_source_used: vipe_slam_dense_map_fallback` and report
+`camera_trajectory_count: 0`.
+
+ViPE truth flags:
+
+```text
+label_type: teacher_pseudo_vipe_near_metric
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+metric_scale_source: vipe_near_metric_teacher
+scale_status: teacher_near_metric_unanchored
+physical_accuracy_claim: false
+training_quality: false
+usable_for_training: false
+```

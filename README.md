@@ -10,9 +10,10 @@ The current repository has the first connected offline tracer, two real
 teacher-witness vertical slices (VGGT and Depth Pro), a dependency-safe
 classical COLMAP/GLOMAP witness wrapper, the first inspectable teacher-pseudo
 fused world-map artifact, the first diagnostic consistency optimizer, and an
-unanchored soft-metric room-walk `world_map_best/` export. It is not a working
-accurate mapper yet: anchored scale, object fusion, and final mesh
-reconstruction remain future work.
+unanchored soft-metric room-walk `world_map_best/` export. It also has a
+direct external ViPE import path for observed-only room map artifacts. It is
+not a working accurate mapper yet: anchored scale, object fusion, and final
+mesh reconstruction remain future work.
 
 ## Boundaries
 
@@ -53,6 +54,7 @@ the next immediate foundation.
 python -m atlas3r --help
 python -m atlas3r offline --help
 python -m atlas3r offline inspect-video --input <mp4-or-image-folder> --output <run>
+python -m atlas3r offline import-vipe --vipe-output <external-vipe-run> --frames <image-folder> --output <map-folder>
 python -m atlas3r offline build-world --input <mp4-or-image-folder> --output <run>
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --write-ply
 python -m atlas3r offline build-world --input <images> --output <run> --vggt-proposal-cache <cache>

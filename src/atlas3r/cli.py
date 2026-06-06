@@ -38,6 +38,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_video_parser.add_argument("--output", required=True, help="Output run folder.")
     inspect_video_parser.set_defaults(func=_run_offline_inspect_video)
+    import_vipe_parser = offline_subparsers.add_parser(
+        "import-vipe", help="Import external ViPE poses, intrinsics, and dense depth."
+    )
+    import_vipe_parser.add_argument(
+        "--vipe-output", required=True, help="External ViPE run folder."
+    )
+    import_vipe_parser.add_argument("--frames", required=True, help="Source RGB frame folder.")
+    import_vipe_parser.add_argument("--output", required=True, help="Output Atlas3R map folder.")
+    import_vipe_parser.add_argument("--artifact-name", default="frames")
+    import_vipe_parser.add_argument("--point-stride", type=int, default=8)
+    import_vipe_parser.add_argument("--max-points", type=int, default=2_000_000)
+    import_vipe_parser.add_argument("--voxel-size-m", type=float, default=0.05)
+    import_vipe_parser.add_argument("--no-observed-mesh", action="store_true")
+    import_vipe_parser.add_argument("--previous-map", default=None)
+    import_vipe_parser.set_defaults(func=_run_offline_import_vipe)
     build_world_parser = offline_subparsers.add_parser(
         "build-world", help="Run the connected offline world-builder tracer."
     )
@@ -169,6 +184,33 @@ def _run_offline_inspect_video(args: argparse.Namespace) -> int:
     )
     print(f"wrote {output / 'video_inspection.json'}")
     return 1 if inspection.kind == "missing" else 0
+
+
+def _run_offline_import_vipe(args: argparse.Namespace) -> int:
+    from atlas3r.offline.vipe_import import VipeImportOptions, import_vipe_world_map
+
+    result = import_vipe_world_map(
+        VipeImportOptions(
+            vipe_output=Path(args.vipe_output),
+            frames=Path(args.frames),
+            output=Path(args.output),
+            artifact_name=str(args.artifact_name),
+            point_stride=int(args.point_stride),
+            max_points=int(args.max_points),
+            voxel_size_m=float(args.voxel_size_m),
+            write_observed_mesh=not bool(args.no_observed_mesh),
+            previous_map=None if args.previous_map is None else Path(args.previous_map),
+        )
+    )
+    print(f"wrote {result.output_dir / 'world_map_manifest.json'}")
+    print(f"status: {result.status}")
+    print(f"points: {result.point_count}")
+    print(f"occupied voxels: {result.occupied_voxel_count}")
+    print(f"observed mesh triangles: {result.mesh_triangle_count}")
+    print(f"camera trajectory poses: {result.trajectory_count}")
+    print(f"valid depth ratio: {result.valid_depth_ratio}")
+    print(f"known failure points: {len(result.failure_reasons)}")
+    return 0 if result.status == "available" else 1
 
 
 def _run_offline_build_world(args: argparse.Namespace) -> int:

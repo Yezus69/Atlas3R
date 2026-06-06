@@ -154,6 +154,26 @@ Acceptance:
 - neural tracks or VGGT track constraints provide a new pose-consistency signal;
 - outputs remain unanchored proposals unless a scale anchor is supplied.
 
+## Offline V1.1c - ViPE Primary Room Import
+
+Use ViPE as an external primary geometry engine for the room frames, then
+import its outputs into Atlas3R observed-only map artifacts.
+
+Acceptance:
+
+- ViPE remains outside the repo under an external path;
+- `offline import-vipe` reads ViPE poses, intrinsics, dense depth, and optional
+  dense SLAM map fallback without importing ViPE at `atlas3r` import time;
+- output uses the fused-map NPZ/PLY/occupancy/mesh/quality schema;
+- maps are labeled `teacher_pseudo_vipe_near_metric`, observed-only, not
+  measured, not physically accurate, and not training-quality;
+- comparison against the current VGGT+DepthPro map is artifact-shape diagnostic
+  only.
+
+Status: implemented for the 240-frame room run. ViPE depth/intrinsics and dense
+SLAM map were finite, but `pose/frames.npz` exported nonfinite trajectories, so
+the import writes no camera trajectory and records the dense-map fallback.
+
 ## Offline V1.2 - Anchored Capture Mode
 
 Add capture modes using a known-size marker/object or manual scale measurement

@@ -4,40 +4,39 @@ This is a rolling current-state summary, not an append-only transcript.
 
 ## Current State
 
-- Active branch: `codex/offline-world-builder-v11-colmap-witness`.
-- Offline V1.1 adds COLMAP/GLOMAP as dependency-safe classical geometry
-  witnesses through `offline build-world`.
-- New CLI flags include `--enable-colmap`, `--colmap-exe`,
-  `--colmap-camera-model`, `--colmap-matcher`, `--colmap-max-images`,
-  `--colmap-image-stride`, `--colmap-use-gpu`, dense/poisson toggles,
-  `--enable-glomap`, and replay caches.
-- COLMAP sparse text import parses cameras, images, points, colors, errors,
-  track lengths, and converts COLMAP world-to-camera poses to Atlas3R
-  `T_world_camera`.
-- Classical trajectory alignment writes Sim3 metrics and aligned camera/point
-  artifacts only when common frames are sufficient.
-- Classical map comparison writes nearest-neighbor and bbox agreement against
-  raw, optimized, and best maps.
-- Optional `world_map_classical_validated/` is selected only when agreement is
-  available and the anti-collapse rule keeps at least 50% of points with
-  nonzero observed mesh.
+- Active branch: `codex/vipe-primary-room-reconstruction`.
+- Atlas3R now has `offline import-vipe` for external ViPE run artifacts.
+- ViPE remains outside git at
+  `C:/Users/Asav/source/repos/homebrain/external/vipe`.
+- Import code is dependency-safe at package import time; OpenEXR/Pillow/PyTorch
+  are loaded only inside artifact readers when needed.
+- ViPE map outputs use the fused map schema and truth boundary
+  `teacher_pseudo_vipe_near_metric`.
 
 ## Room Evidence
 
-- Input: `C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames`.
-- V1.1 run: `runs/room_walk_001_v11_colmap_witness`.
-- Decoded 240 frames and selected 64 keyframes.
-- VGGT proposals: 88 cameras, 88 depths, 4 windows.
-- Depth Pro proposals: 64 cameras, 64 depths.
-- COLMAP availability: unavailable; `colmap` was not found on PATH or checked
-  common Windows/repo-adjacent paths.
-- GLOMAP availability: not enabled; no executable used.
-- COLMAP registered images: 0; sparse points: 0.
-- Classical alignment: unavailable, common frames 0, RMSE/p95 unavailable.
-- Classical map comparison: unavailable because no classical sparse model.
-- Best map: selected `optimized`, 1,904,976 points, 2,559 occupied voxels,
-  5,600 observed triangles, 88 trajectory poses.
-- Physical and training-quality claims remain false.
+- Input:
+  `C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames`.
+- ViPE smoke run:
+  `C:/Users/Asav/source/repos/homebrain/external/vipe_runs/room_walk_001_smoke60_final`.
+- ViPE main run:
+  `C:/Users/Asav/source/repos/homebrain/external/vipe_runs/room_walk_001_main240`.
+- Main ViPE command exited `0` and logged `Finished processing frames`.
+- Main ViPE artifacts: 240 depth frames, 240 intrinsics, 240 pose rows, and a
+  finite dense SLAM map with 168,365 points.
+- ViPE `pose/frames.npz` has nonfinite `T_world_camera` rows for all 240
+  frames, so Atlas3R does not write a camera trajectory.
+- Atlas3R import output: `runs/room_walk_001_vipe_import`.
+- Imported ViPE map: 168,365 points, 10,628 occupied voxels, 42,656 observed
+  mesh triangles, 0 trajectory poses.
+- Imported bbox: about `4.60 m x 3.78 m x 5.24 m`.
+- Comparison target:
+  `runs/room_walk_001_v11_colmap_witness/world_map_best`.
+- Previous V10/V11 map: 1,904,976 points, 2,559 occupied voxels, 5,600
+  observed mesh triangles, 88 trajectory poses, bbox about
+  `1.72 m x 0.75 m x 0.96 m`.
+- ViPE import is less collapsed by bbox heuristic only; this is not a physical
+  accuracy claim.
 
 ## Verification
 
@@ -45,21 +44,22 @@ This is a rolling current-state summary, not an append-only transcript.
 - Passed: `python -m ruff format --check src tests`.
 - Passed: `python -m ruff check src tests`.
 - Passed: `python -m mypy src`.
-- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 83 tests.
-- Passed: `git diff --check` with line-ending warnings only.
-- Passed: `python -m atlas3r --help`.
+- Passed: `python -m unittest tests.test_vipe_import`: 3 tests.
+- Passed: `python -m unittest discover -s tests -p "test_*.py"`: 86 tests.
+- Passed: `python -m atlas3r offline import-vipe --help`.
 - Passed: `python -m atlas3r offline --help`.
-- Passed: `python -m atlas3r offline build-world --help`.
 - Passed: `python -m atlas3r teachers list`.
 - Passed: `python -m atlas3r smoke contracts`.
-- Not run: `make lint`; `make` is not installed in this PowerShell shell. The
-  equivalent commands from the Makefile passed.
+- Passed: `git diff --check` with line-ending warnings only.
+- Passed real import with ViPE venv:
+  `python -m atlas3r offline import-vipe --vipe-output ...room_walk_001_main240 --frames ...room_walk_001/frames --output runs/room_walk_001_vipe_import --previous-map runs/room_walk_001_v11_colmap_witness/world_map_best`.
+- Not run: `make test`; `make` is not installed in this PowerShell shell.
 
 ## Known Gaps
 
-- No COLMAP/GLOMAP reconstruction was produced because COLMAP was unavailable.
-- Classical trajectory and sparse-map agreement remain untested on the actual
-  room frames until COLMAP/GLOMAP is installed or replayed.
-- Scale remains unanchored soft-metric teacher scale.
-- No physical scale anchor, object permanence, final mesh reconstruction, or
-  named evaluation report exists.
+- ViPE pose export is nonfinite for this run; trajectory import is unavailable.
+- The dense SLAM map fallback is inspectable geometry but does not provide
+  camera poses.
+- Scale remains teacher near-metric and unanchored.
+- No physical accuracy, measured geometry, millimeter accuracy, training-quality
+  cache, object fusion, or hidden completion claim exists.
