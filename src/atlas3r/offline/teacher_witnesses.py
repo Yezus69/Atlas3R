@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from atlas3r.offline.classical_geometry import ClassicalWitnessResult
 from atlas3r.offline.depth_pro_witness import DepthProWitnessResult
 from atlas3r.offline.run_manifest import FailurePoint, write_json
 from atlas3r.offline.vggt_witness import VggtWitnessResult
@@ -17,6 +18,7 @@ def write_teacher_statuses(
     *,
     vggt_result: VggtWitnessResult | None = None,
     depth_pro_result: DepthProWitnessResult | None = None,
+    classical_result: ClassicalWitnessResult | None = None,
 ) -> tuple[AdapterStatus, ...]:
     statuses = list_teacher_statuses()
     rows: list[dict[str, object]] = []
@@ -54,15 +56,34 @@ def write_teacher_statuses(
             }
             row["model_metadata"] = depth_pro_result.metadata
             row["replay_source"] = depth_pro_result.replay_source
+        if status.name == "colmap_glomap" and classical_result is not None:
+            row["available"] = classical_result.available
+            row["status"] = classical_result.status
+            row["reason"] = classical_result.reason
+            row["install_hint"] = classical_result.install_hint
+            row["proposal_stream_path"] = classical_result.sparse_points_ply_path
+            row["proposal_counts"] = {
+                "registered_images": classical_result.registered_image_count,
+                "sparse_points": classical_result.sparse_point_count,
+            }
+            row["model_metadata"] = classical_result.metadata
         rows.append(row)
         already_reported = (
-            status.name == "vggt"
-            and vggt_result is not None
-            and vggt_result.failure_code is not None
-        ) or (
-            status.name == "depth_pro"
-            and depth_pro_result is not None
-            and depth_pro_result.failure_code is not None
+            (
+                status.name == "vggt"
+                and vggt_result is not None
+                and vggt_result.failure_code is not None
+            )
+            or (
+                status.name == "depth_pro"
+                and depth_pro_result is not None
+                and depth_pro_result.failure_code is not None
+            )
+            or (
+                status.name == "colmap_glomap"
+                and classical_result is not None
+                and classical_result.status in {"failed", "unavailable"}
+            )
         )
         row_available = bool(row["available"])
         if not row_available and not already_reported:

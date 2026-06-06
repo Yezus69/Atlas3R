@@ -106,3 +106,17 @@ the best current teacher-consensus artifact for inspection.
 The soft-metric ledger records why scale confidence is low, medium, or high.
 Depth Pro and VGGT agreement can raise confidence, but without an anchor or
 named evaluation report it still cannot become a physical accuracy claim.
+
+## V1.1 Classical Geometry Witness
+
+COLMAP/GLOMAP contributes independent classical SfM proposals when the external
+executables or replay caches are available. Its camera poses and sparse points
+are aligned into the Atlas3R/VGGT world with Sim3 over common frame IDs, then
+used only as consistency evidence for trajectory and sparse-map agreement.
+
+The witness can improve confidence or map selection only when common-frame
+support exists, residuals are recorded, sparse point agreement is computed, and
+the validated map keeps at least half of the previous best-map points with a
+nonzero observed mesh. If COLMAP/GLOMAP is missing or fails, the failure is
+reported directly and VGGT/Depth-Pro success is not treated as classical
+geometry success.

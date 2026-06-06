@@ -104,6 +104,22 @@ Reports with soft-metric best-map export must summarize:
 - physical accuracy claim: false;
 - training-quality claim: false.
 
+## Offline V1.1 Report Requirements
+
+Reports with classical geometry enabled must summarize:
+
+- COLMAP/GLOMAP availability, executable path or replay source, and exact
+  commands attempted;
+- stage results and failure reason when unavailable or failed;
+- registered image count and sparse point count when reconstruction succeeds;
+- common frame count with VGGT, Sim3 scale/rotation/translation, and
+  camera-center RMSE/p50/p95;
+- sparse point agreement against raw, optimized, and best maps;
+- whether classical validation changed best-map selection or was skipped;
+- `world_map_best/` point, voxel, triangle, and trajectory counts;
+- unchanged truth boundary: classical SfM is an unanchored proposal, not
+  measured geometry, physical accuracy, or training-quality labels.
+
 ## Claim Rules
 
 - A smoke test is not an accuracy report.

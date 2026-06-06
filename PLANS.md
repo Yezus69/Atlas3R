@@ -138,6 +138,22 @@ Acceptance:
 - results are written as proposals and consistency diagnostics, not truth;
 - reports compare trajectory/map agreement against V1.0 room artifacts.
 
+Status: implemented as a dependency-safe external-process/replay path through
+`offline build-world`. The first room evidence run reported COLMAP unavailable
+on this machine, so no classical poses or sparse points were produced.
+
+## Offline V1.1b - Pose Failure Recovery
+
+If COLMAP/GLOMAP is unavailable or cannot register the room frames, add stronger
+track constraints before object work.
+
+Acceptance:
+
+- room-frame pose failure reports identify missing executable, low texture,
+  blur, overlap, or repeated-surface failure modes;
+- neural tracks or VGGT track constraints provide a new pose-consistency signal;
+- outputs remain unanchored proposals unless a scale anchor is supplied.
+
 ## Offline V1.2 - Anchored Capture Mode
 
 Add capture modes using a known-size marker/object or manual scale measurement

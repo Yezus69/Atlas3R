@@ -27,6 +27,9 @@ def write_room_walk_diagnostics(
     best_map: BestMapSelectionResult,
     ledgers: CameraScaleLedgerResult,
     soft_metric_ledger: dict[str, object],
+    classical_result: object | None = None,
+    classical_alignment: object | None = None,
+    classical_comparison: object | None = None,
 ) -> tuple[str, str]:
     root = Path(run_dir)
     payload = _payload(
@@ -39,6 +42,9 @@ def write_room_walk_diagnostics(
         best_map=best_map,
         ledgers=ledgers,
         soft_metric_ledger=soft_metric_ledger,
+        classical_result=classical_result,
+        classical_alignment=classical_alignment,
+        classical_comparison=classical_comparison,
     )
     write_json(root / "diagnostics" / "room_walk_001_diagnostics.json", payload)
     (root / "room_walk_001_report.md").write_text(_markdown(payload), encoding="utf-8")
@@ -56,6 +62,9 @@ def _payload(
     best_map: BestMapSelectionResult,
     ledgers: CameraScaleLedgerResult,
     soft_metric_ledger: dict[str, object],
+    classical_result: object | None,
+    classical_alignment: object | None,
+    classical_comparison: object | None,
 ) -> dict[str, object]:
     bbox_min = best_map.bbox_world_min_m
     bbox_max = best_map.bbox_world_max_m
@@ -127,6 +136,9 @@ def _payload(
             ),
             "soft_metric_ledger": soft_metric_ledger,
         },
+        "classical_geometry_witness": _classical_payload(
+            classical_result, classical_alignment, classical_comparison
+        ),
         "physical_accuracy_claim": False,
         "training_quality_claim": False,
         "files_to_open": [
@@ -210,12 +222,21 @@ def _markdown(payload: dict[str, object]) -> str:
     vggt = payload["vggt"]
     depth_pro = payload["depth_pro"]
     optimizer = payload["optimizer"]
+    classical = payload["classical_geometry_witness"]
     if (
         not isinstance(vggt, dict)
         or not isinstance(depth_pro, dict)
         or not isinstance(optimizer, dict)
     ):
         raise ValueError("invalid room diagnostics payload")
+    if not isinstance(classical, dict):
+        classical = {}
+    classical_alignment = classical.get("alignment", {})
+    classical_comparison = classical.get("comparison", {})
+    if not isinstance(classical_alignment, dict):
+        classical_alignment = {}
+    if not isinstance(classical_comparison, dict):
+        classical_comparison = {}
     stitching = vggt.get("stitching", {})
     if not isinstance(stitching, dict):
         stitching = {}
@@ -256,6 +277,16 @@ def _markdown(payload: dict[str, object]) -> str:
         f"{before.get('cross_view_depth_residual_p95_m')} -> "
         f"{after.get('cross_view_depth_residual_p95_m')}",
         f"- Selected best map source: {payload['selected_best_map_source']}",
+        f"- COLMAP/GLOMAP status: {classical.get('status')}, "
+        f"registered_images={classical.get('registered_image_count')}, "
+        f"sparse_points={classical.get('sparse_point_count')}",
+        f"- Classical alignment: status={classical_alignment.get('status')}, "
+        f"common_frames={classical_alignment.get('common_frame_count')}, "
+        f"rmse_m={classical_alignment.get('camera_center_rmse_m')}, "
+        f"p95_m={classical_alignment.get('camera_center_p95_m')}",
+        "- Classical map agreement: "
+        f"trajectory={classical_comparison.get('trajectory_agreement_status')}, "
+        f"map={classical_comparison.get('map_agreement_status')}",
         f"- Best map points: {best['point_count']}",
         f"- Best map occupied voxels: {best['occupied_voxel_count']}",
         f"- Best map observed mesh triangles: {best['observed_mesh_triangle_count']}",
@@ -279,3 +310,58 @@ def _markdown(payload: dict[str, object]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _classical_payload(
+    classical_result: object | None,
+    classical_alignment: object | None,
+    classical_comparison: object | None,
+) -> dict[str, object]:
+    result = _object_to_dict(classical_result)
+    alignment = _object_to_dict(classical_alignment)
+    comparison = _object_to_dict(classical_comparison)
+    return {
+        "status": result.get("status", "disabled"),
+        "source": result.get("source", "none"),
+        "available": bool(result.get("available", False)),
+        "registered_image_count": _int_value(result.get("registered_image_count")),
+        "sparse_point_count": _int_value(result.get("sparse_point_count")),
+        "stage_failed": result.get("stage_failed"),
+        "likely_reason": result.get("likely_reason"),
+        "alignment": {
+            "status": alignment.get("status", "unavailable"),
+            "common_frame_count": _int_value(alignment.get("common_frame_count")),
+            "camera_center_rmse_m": alignment.get("camera_center_rmse_m"),
+            "camera_center_p95_m": alignment.get("camera_center_p95_m"),
+            "sim3_scale": alignment.get("sim3_scale"),
+        },
+        "comparison": {
+            "status": comparison.get("status", "unavailable"),
+            "trajectory_agreement_status": comparison.get(
+                "trajectory_agreement_status", "unavailable"
+            ),
+            "map_agreement_status": comparison.get("map_agreement_status", "unavailable"),
+        },
+        "physical_accuracy_claim": False,
+        "training_quality_claim": False,
+    }
+
+
+def _object_to_dict(value: object | None) -> dict[str, object]:
+    if value is None:
+        return {}
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        result = to_dict()
+        return result if isinstance(result, dict) else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        return int(value)
+    return 0

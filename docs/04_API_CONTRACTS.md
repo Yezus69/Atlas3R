@@ -309,3 +309,76 @@ timestamp, and orientation. Missing EXIF is explicit and keeps
 
 `world_map_best/` uses the same NPZ/PLY/occupancy schemas as `world_map/`, with
 additional cleanup and selected-source metadata in `map_quality.json`.
+
+## V1.1 Classical Geometry Witness Artifacts
+
+`offline build-world --enable-colmap` adds a classical witness under
+`classical/`. `--enable-glomap` may reuse the COLMAP database after feature
+extraction/matching. Replay mode uses `--colmap-proposal-cache` or
+`--glomap-proposal-cache` and does not run external executables.
+
+Required status/failure artifacts:
+
+- `classical/classical_status.json`
+- `classical/colmap_run_manifest.json`
+- `classical/colmap_commands.jsonl`
+- `classical/colmap_stdout_tail.txt`
+- `classical/colmap_stderr_tail.txt`
+- `classical/colmap_sparse_summary.json`
+- `classical/classical_report.md`
+
+Successful or placeholder sparse artifacts:
+
+- `classical/colmap_cameras.jsonl`
+- `classical/colmap_images.jsonl`
+- `classical/colmap_points3d.npz`
+- `classical/colmap_sparse_points.ply`
+
+`colmap_images.jsonl` stores `frame_id`, `image_name`, COLMAP
+world-to-camera `qvec/tvec`, converted Atlas3R `T_world_camera`,
+`camera_center_world_m`, observed 2D/3D counts, and
+`coordinate_convention: x_right_y_down_z_forward`.
+
+`colmap_points3d.npz` contains `points_world_m`, `colors_u8`,
+`reprojection_error`, `track_length`, and `metadata_json`.
+
+Alignment artifacts, when common frames are sufficient:
+
+- `classical/trajectory_alignment.json`
+- `classical/aligned_colmap_camera_trajectory.json`
+- `classical/aligned_colmap_sparse_points.npz`
+- `classical/aligned_colmap_sparse_points.ply`
+
+`trajectory_alignment.json` records `common_frame_count`, `sim3_scale`,
+`rotation_deg`, `translation_norm`, camera-center RMSE/p50/p95, trajectory
+lengths, registered-frame ratio, sparse point counts, and the Sim3 transform.
+If common frames are insufficient, status is `unavailable` and no aligned
+points are invented.
+
+Map comparison artifacts:
+
+- `diagnostics/classical_map_comparison.json`
+- `diagnostics/classical_map_comparison.md`
+
+Comparison metrics include nearest-neighbor mean/p50/p95, map/classical
+near-point ratios, bbox overlap ratio, `trajectory_agreement_status`, and
+`map_agreement_status` for raw, optimized, and best maps when available.
+
+Classical truth flags:
+
+```text
+label_type: classical_sfm_proposal
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+physical_accuracy_claim: false
+scale_status: sfm_scale_unanchored
+metric_scale_source: colmap_sfm_unanchored or glomap_sfm_unanchored
+training_quality: false
+```
+
+Optional `world_map_classical_validated/` uses the fused-map schema only when
+classical agreement is available and anti-collapse checks pass. It remains an
+unanchored teacher-consensus map with a classical validation witness, not a
+measured reconstruction.

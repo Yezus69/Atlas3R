@@ -7,11 +7,12 @@ MP4/RGB video -> offline optimized 3D world -> inspectable mesh/occupancy -> tra
 ```
 
 The current repository has the first connected offline tracer, two real
-teacher-witness vertical slices (VGGT and Depth Pro), the first inspectable
-teacher-pseudo fused world-map artifact, the first diagnostic consistency
-optimizer, and an unanchored soft-metric room-walk `world_map_best/` export.
-It is not a working accurate mapper yet: anchored scale, object fusion, and
-final mesh reconstruction remain future work.
+teacher-witness vertical slices (VGGT and Depth Pro), a dependency-safe
+classical COLMAP/GLOMAP witness wrapper, the first inspectable teacher-pseudo
+fused world-map artifact, the first diagnostic consistency optimizer, and an
+unanchored soft-metric room-walk `world_map_best/` export. It is not a working
+accurate mapper yet: anchored scale, object fusion, and final mesh
+reconstruction remain future work.
 
 ## Boundaries
 
@@ -60,6 +61,8 @@ python -m atlas3r offline build-world --input <images> --output <run> --vggt-pro
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --map-write-occupancy --map-write-observed-mesh
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --export-world-map --optimize-map-consistency --export-optimized-world-map
 python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --scale-mode unanchored-soft-metric --export-world-map --optimize-map-consistency --export-optimized-world-map --export-best-world-map
+python -m atlas3r offline build-world --input <images> --output <run> --enable-vggt --enable-depth-pro --enable-colmap --export-world-map --export-best-world-map
+python -m atlas3r offline build-world --input <images> --output <run> --colmap-proposal-cache <classical-cache> --export-world-map --export-best-world-map
 python -m atlas3r teachers list
 python -m atlas3r smoke contracts
 ```
@@ -142,6 +145,20 @@ world_map_best/map_quality.json
 world_map_best/map_quality.md
 world_map_best/topdown_preview.svg
 world_map_best/inspection_instructions.md
+classical/classical_status.json
+classical/colmap_run_manifest.json
+classical/colmap_commands.jsonl
+classical/colmap_sparse_summary.json
+classical/colmap_cameras.jsonl
+classical/colmap_images.jsonl
+classical/colmap_points3d.npz
+classical/colmap_sparse_points.ply
+classical/trajectory_alignment.json
+classical/aligned_colmap_camera_trajectory.json
+classical/aligned_colmap_sparse_points.npz
+classical/aligned_colmap_sparse_points.ply
+diagnostics/classical_map_comparison.json
+diagnostics/classical_map_comparison.md
 quality_report.json
 quality_report.md
 room_walk_001_report.md
@@ -162,4 +179,9 @@ maps are teacher-pseudo, observed-only, unanchored, not physically accurate, and
 not training-quality. V1.0 adds `--scale-mode unanchored-soft-metric`,
 soft-metric scale ledgers, conservative `world_map_best/` selection, and a
 top-down preview. These outputs are inspectable teacher-consensus maps, not
-physical ground truth.
+physical ground truth. V1.1 adds a classical COLMAP/GLOMAP witness path that
+can run external executables or replay sparse text models, align classical SfM
+to VGGT by Sim3, compare sparse geometry against the fused maps, and optionally
+write `world_map_classical_validated/` only when agreement is strong and
+anti-collapse checks pass. Classical outputs are unanchored proposals, not
+measured geometry.

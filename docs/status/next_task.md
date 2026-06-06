@@ -1,1 +1,1 @@
-Offline V1.1: add a COLMAP/GLOMAP or VGGT-COLMAP bundle-adjustment witness for `C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames`, compare its trajectory and sparse geometry against `runs/room_walk_001_v10_soft_metric/world_map_best/`, and keep all outputs as unanchored proposals unless an explicit scale anchor is supplied.
+Offline V1.1b: fix room-capture pose failure using stronger neural tracks / CoTracker / VGGT track constraints before object work.

@@ -40,6 +40,9 @@ def write_quality_report(
     failure_points: list[FailurePoint],
     optimizer: MapConsistencyOptimizerResult | None = None,
     best_map: BestMapSelectionResult | None = None,
+    classical_result: object | None = None,
+    classical_alignment: object | None = None,
+    classical_comparison: object | None = None,
 ) -> QualityReportResult:
     teachers = [
         {
@@ -156,6 +159,9 @@ def write_quality_report(
             "physical_accuracy_claim": False,
             "training_quality_claim": False,
         },
+        "classical_geometry_witness": _classical_payload(
+            classical_result, classical_alignment, classical_comparison
+        ),
         "missing_blockers": [
             "scale_anchor",
             "render_repair_optimizer",
@@ -206,6 +212,7 @@ def _markdown_report(payload: dict[str, object]) -> str:
         f"- Best world map: {best_status}",
         f"- Map optimizer: {optimizer.get('status', 'disabled')}",
         f"- Optimizer improvement passed: {optimizer.get('improvement_passed', False)}",
+        f"- Classical geometry witness: {_classical_status(payload)}",
         f"- Teacher disagreement: {_disagreement_status(payload)}",
         f"- Consensus preview: {_consensus_status(payload)}",
         f"- Object tracking: {payload['object_tracking_status']}",
@@ -255,3 +262,79 @@ def _world_map_best_status(value: object) -> str:
     voxels = int(value.get("occupied_voxel_count", 0))
     triangles = int(value.get("observed_mesh_triangle_count", 0))
     return f"{status}, source={source}, points={points}, voxels={voxels}, triangles={triangles}"
+
+
+def _classical_payload(
+    classical_result: object | None,
+    classical_alignment: object | None,
+    classical_comparison: object | None,
+) -> dict[str, object]:
+    result = _object_to_dict(classical_result)
+    alignment = _object_to_dict(classical_alignment)
+    comparison = _object_to_dict(classical_comparison)
+    return {
+        "status": result.get("status", "disabled"),
+        "source": result.get("source", "none"),
+        "available": bool(result.get("available", False)),
+        "registered_image_count": _int_value(result.get("registered_image_count")),
+        "sparse_point_count": _int_value(result.get("sparse_point_count")),
+        "stage_failed": result.get("stage_failed"),
+        "likely_reason": result.get("likely_reason"),
+        "alignment": {
+            "status": alignment.get("status", "unavailable"),
+            "common_frame_count": _int_value(alignment.get("common_frame_count")),
+            "camera_center_rmse_m": alignment.get("camera_center_rmse_m"),
+            "camera_center_p95_m": alignment.get("camera_center_p95_m"),
+            "sim3_scale": alignment.get("sim3_scale"),
+        },
+        "comparison": {
+            "status": comparison.get("status", "unavailable"),
+            "trajectory_agreement_status": comparison.get(
+                "trajectory_agreement_status", "unavailable"
+            ),
+            "map_agreement_status": comparison.get("map_agreement_status", "unavailable"),
+            "world_map_best": _comparison_best_map(comparison),
+        },
+        "physical_accuracy_claim": False,
+        "training_quality_claim": False,
+    }
+
+
+def _object_to_dict(value: object | None) -> dict[str, object]:
+    if value is None:
+        return {}
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        result = to_dict()
+        return result if isinstance(result, dict) else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _comparison_best_map(comparison: dict[str, object]) -> dict[str, object]:
+    maps = comparison.get("maps", {})
+    if not isinstance(maps, dict):
+        return {}
+    best = maps.get("world_map_best", {})
+    return best if isinstance(best, dict) else {}
+
+
+def _classical_status(payload: dict[str, object]) -> str:
+    classical = payload.get("classical_geometry_witness", {})
+    if not isinstance(classical, dict):
+        return "disabled"
+    status = classical.get("status", "disabled")
+    registered = classical.get("registered_image_count", 0)
+    points = classical.get("sparse_point_count", 0)
+    alignment = classical.get("alignment", {})
+    common = alignment.get("common_frame_count", 0) if isinstance(alignment, dict) else 0
+    return f"{status}, registered={registered}, points={points}, common_frames={common}"
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str) and value.strip():
+        return int(value)
+    return 0

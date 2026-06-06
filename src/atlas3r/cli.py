@@ -75,6 +75,26 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--depth-pro-image-size", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-max-keyframes", type=int, default=None)
     build_world_parser.add_argument("--depth-pro-proposal-cache", default=None)
+    build_world_parser.add_argument("--enable-colmap", action="store_true")
+    build_world_parser.add_argument("--colmap-exe", default="colmap")
+    build_world_parser.add_argument(
+        "--colmap-camera-model",
+        choices=("SIMPLE_RADIAL", "PINHOLE", "OPENCV"),
+        default="SIMPLE_RADIAL",
+    )
+    build_world_parser.add_argument(
+        "--colmap-matcher", choices=("sequential", "exhaustive"), default="sequential"
+    )
+    build_world_parser.add_argument("--colmap-max-images", type=int, default=None)
+    build_world_parser.add_argument("--colmap-image-stride", type=int, default=1)
+    build_world_parser.add_argument("--colmap-use-gpu", type=int, choices=(0, 1), default=1)
+    build_world_parser.add_argument("--colmap-run-dense", action="store_true")
+    build_world_parser.add_argument("--colmap-run-poisson", action="store_true")
+    build_world_parser.add_argument("--colmap-timeout-s", type=int, default=7200)
+    build_world_parser.add_argument("--enable-glomap", action="store_true")
+    build_world_parser.add_argument("--glomap-exe", default="glomap")
+    build_world_parser.add_argument("--colmap-proposal-cache", default=None)
+    build_world_parser.add_argument("--glomap-proposal-cache", default=None)
     build_world_parser.add_argument(
         "--scale-mode",
         choices=("unanchored-soft-metric",),
@@ -178,6 +198,20 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             depth_pro_image_size=args.depth_pro_image_size,
             depth_pro_max_keyframes=args.depth_pro_max_keyframes,
             depth_pro_proposal_cache=args.depth_pro_proposal_cache,
+            enable_colmap=bool(args.enable_colmap),
+            colmap_exe=str(args.colmap_exe),
+            colmap_camera_model=args.colmap_camera_model,
+            colmap_matcher=args.colmap_matcher,
+            colmap_max_images=args.colmap_max_images,
+            colmap_image_stride=int(args.colmap_image_stride),
+            colmap_use_gpu=int(args.colmap_use_gpu),
+            colmap_run_dense=bool(args.colmap_run_dense),
+            colmap_run_poisson=bool(args.colmap_run_poisson),
+            colmap_timeout_s=int(args.colmap_timeout_s),
+            enable_glomap=bool(args.enable_glomap),
+            glomap_exe=str(args.glomap_exe),
+            colmap_proposal_cache=args.colmap_proposal_cache,
+            glomap_proposal_cache=args.glomap_proposal_cache,
             scale_mode=args.scale_mode,
             export_world_map=bool(args.export_world_map),
             map_point_stride=int(args.map_point_stride),
@@ -216,6 +250,11 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
     print(f"best occupied voxels: {result.best_occupied_voxel_count}")
     print(f"best observed mesh triangles: {result.best_mesh_triangle_count}")
     print(f"best camera trajectory poses: {result.best_camera_trajectory_count}")
+    print(f"COLMAP registered images: {result.colmap_registered_image_count}")
+    print(f"COLMAP sparse points: {result.colmap_sparse_point_count}")
+    print(f"classical common frames: {result.classical_common_frame_count}")
+    print(f"classical alignment RMSE m: {result.classical_alignment_rmse_m}")
+    print(f"classical alignment p95 m: {result.classical_alignment_p95_m}")
     print(f"failure points: {result.failure_count}")
     return result.exit_code
 

@@ -10,7 +10,12 @@ from pathlib import Path
 
 import numpy as np
 
-from tests.helpers import write_fake_depth_pro_cache, write_fake_vggt_cache, write_ppm_sequence
+from tests.helpers import (
+    write_fake_colmap_text_model,
+    write_fake_depth_pro_cache,
+    write_fake_vggt_cache,
+    write_ppm_sequence,
+)
 
 
 class OfflineBuildWorldTracerTest(unittest.TestCase):
@@ -361,6 +366,80 @@ class OfflineBuildWorldTracerTest(unittest.TestCase):
             self.assertFalse(quality["world_map"]["inspectable_map_available"])
             self.assertFalse((output / "geometry" / "geometry_preview.ply").is_file())
             self.assertFalse((output / "world_map" / "fused_points.ply").is_file())
+
+    def test_replayed_colmap_sparse_model_flows_through_build_world(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = root / "input"
+            output = root / "run"
+            vggt_cache = write_fake_vggt_cache(
+                root / "vggt_cache", frame_ids=(0, 1, 2, 3), width=4, height=3
+            )
+            depth_pro_cache = write_fake_depth_pro_cache(
+                root / "depth_pro_cache", frame_ids=(0, 1, 2, 3), width=4, height=3
+            )
+            colmap_cache = write_fake_colmap_text_model(root / "colmap_cache")
+            write_ppm_sequence(input_dir, count=4, width=4, height=3)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "atlas3r",
+                    "offline",
+                    "build-world",
+                    "--input",
+                    str(input_dir),
+                    "--output",
+                    str(output),
+                    "--max-frames",
+                    "4",
+                    "--keyframe-stride",
+                    "1",
+                    "--keyframe-max-count",
+                    "4",
+                    "--vggt-proposal-cache",
+                    str(vggt_cache),
+                    "--depth-pro-proposal-cache",
+                    str(depth_pro_cache),
+                    "--colmap-proposal-cache",
+                    str(colmap_cache),
+                    "--export-world-map",
+                    "--export-best-world-map",
+                    "--map-depth-source",
+                    "consensus",
+                    "--map-write-occupancy",
+                    "--map-write-observed-mesh",
+                    "--write-ply",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            classical = json.loads(
+                (output / "classical" / "classical_status.json").read_text(encoding="utf-8")
+            )
+            alignment = json.loads(
+                (output / "classical" / "trajectory_alignment.json").read_text(encoding="utf-8")
+            )
+            comparison = json.loads(
+                (output / "diagnostics" / "classical_map_comparison.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            quality = json.loads((output / "quality_report.json").read_text(encoding="utf-8"))
+
+            self.assertEqual(classical["status"], "available")
+            self.assertEqual(classical["registered_image_count"], 4)
+            self.assertEqual(classical["sparse_point_count"], 4)
+            self.assertEqual(alignment["status"], "available")
+            self.assertEqual(alignment["common_frame_count"], 4)
+            self.assertTrue((output / "classical" / "aligned_colmap_sparse_points.ply").is_file())
+            self.assertEqual(comparison["status"], "available")
+            self.assertEqual(quality["classical_geometry_witness"]["status"], "available")
+            self.assertTrue((output / "world_map_best" / "fused_points.ply").is_file())
 
 
 def _write_png(path: Path, rgb: np.ndarray) -> None:

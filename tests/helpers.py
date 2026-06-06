@@ -308,6 +308,30 @@ def write_fake_depth_pro_cache(
     return proposals
 
 
+def write_fake_colmap_text_model(
+    root: Path,
+    *,
+    frame_ids: tuple[int, ...] = (0, 1, 2, 3),
+) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "cameras.txt").write_text(
+        "1 SIMPLE_RADIAL 4 3 4 1.5 1 0\n",
+        encoding="utf-8",
+    )
+    image_lines = []
+    point_lines = []
+    for index, frame_id in enumerate(frame_ids):
+        center_x = float(index) * 0.1
+        image_lines.append(f"{index + 1} 1 0 0 0 {-center_x} 0 0 1 frame_{frame_id:06d}.ppm")
+        image_lines.append("0 0 1")
+        point_lines.append(
+            f"{index + 1} {center_x} 0 2 {50 + index} {80 + index} {120 + index} 0.1 {index + 1} 0"
+        )
+    (root / "images.txt").write_text("\n".join(image_lines) + "\n", encoding="utf-8")
+    (root / "points3D.txt").write_text("\n".join(point_lines) + "\n", encoding="utf-8")
+    return root
+
+
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8"

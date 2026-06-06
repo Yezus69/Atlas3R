@@ -137,3 +137,29 @@ V1.0 outputs use `label_type: unanchored_teacher_consensus_map` and
 `metric_scale_source: depth_pro_vggt_soft_metric_prior`. They are observed-only,
 not measured geometry, not hidden completion, not physically accurate, and not
 training-quality.
+
+## V1.1 Implementation Boundary
+
+Offline V1.1 adds COLMAP/GLOMAP as a classical geometry witness inside
+`offline build-world`. The wrapper is dependency-safe: CLI help and
+`import atlas3r` do not import COLMAP, pycolmap, GLOMAP, OpenCV, Torch, or other
+external reconstruction packages.
+
+When enabled, the builder copies selected keyframes to `classical/images/`,
+runs COLMAP feature extraction, matching, sparse mapper, and optional dense
+stages through external executables, or replays a previous sparse text model
+through `--colmap-proposal-cache`/`--glomap-proposal-cache`. Text sparse models
+are imported from `cameras.txt`, `images.txt`, and `points3D.txt`; COLMAP
+world-to-camera image poses are converted to Atlas3R `T_world_camera`.
+
+Successful classical sparse models write `classical/` status, command logs,
+camera/image JSONL streams, sparse NPZ/PLY, Sim3 alignment to VGGT camera
+centers, aligned sparse NPZ/PLY, and `diagnostics/classical_map_comparison.*`.
+If classical geometry is unavailable or fails, these artifacts still record the
+exact stage, executable/path hint, stderr tail when present, likely reason, and
+next debug action.
+
+Classical SfM is an unanchored proposal source, not measured geometry. It may
+validate or reject a map only when trajectory and sparse-point agreement are
+computed on common support and anti-collapse checks retain at least 50% of the
+previous best-map points with nonzero observed mesh triangles.

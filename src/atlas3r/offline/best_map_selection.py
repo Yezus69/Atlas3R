@@ -12,6 +12,7 @@ from typing import cast
 import numpy as np
 from numpy.typing import NDArray
 
+from atlas3r.offline.classical_validated_map import try_write_classical_validated_map
 from atlas3r.offline.disagreement import DisagreementResult
 from atlas3r.offline.frame_cache import FrameCacheResult
 from atlas3r.offline.fused_world_map import (
@@ -60,6 +61,8 @@ class BestMapSelectionResult:
     bbox_world_min_m: tuple[float, float, float] | None = None
     bbox_world_max_m: tuple[float, float, float] | None = None
     cleanup: dict[str, object] | None = None
+    classical_validation: dict[str, object] | None = None
+    classical_validated_artifact_paths: tuple[str, ...] = ()
     failure_reasons: tuple[str, ...] = ()
 
     @property
@@ -77,7 +80,10 @@ class BestMapSelectionResult:
             self.topdown_preview_path,
             self.inspection_instructions_path,
         )
-        return tuple(path for path in paths if path is not None)
+        return (
+            tuple(path for path in paths if path is not None)
+            + self.classical_validated_artifact_paths
+        )
 
 
 def write_best_world_map(
@@ -93,6 +99,7 @@ def write_best_world_map(
     map_options: FusedWorldMapOptions,
     export_best_world_map: bool,
     failure_points: list[FailurePoint],
+    classical_comparison: object | None = None,
 ) -> BestMapSelectionResult:
     if not export_best_world_map:
         return BestMapSelectionResult(status="disabled")
@@ -149,6 +156,22 @@ def write_best_world_map(
     if clean_cloud.points_world_m.shape[0] == 0 and cloud.points_world_m.shape[0] > 0:
         cleanup_reasons.append("cleanup would empty map; restored selected source cloud")
         clean_cloud = cloud
+    classical_validation = try_write_classical_validated_map(
+        root,
+        input_path=input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes,
+        proposal_cache=proposal_cache,
+        source_cloud=clean_cloud,
+        trajectory=trajectory,
+        rejected_pose_count=rejected_pose_count,
+        map_options=map_options,
+        selected_source=selected_source,
+        classical_comparison=classical_comparison,
+    )
+    if classical_validation.accepted and classical_validation.cloud is not None:
+        clean_cloud = classical_validation.cloud
+        selected_source = "classical_validated"
     occupancy = build_sparse_occupancy(
         clean_cloud.points_world_m,
         clean_cloud.colors_u8,
@@ -190,6 +213,7 @@ def write_best_world_map(
     cleanup_payload = cleanup | {
         "selected_best_map_source": selected_source,
         "failure_reasons": cleanup_reasons,
+        "classical_validation": classical_validation.to_dict(),
     }
     _patch_best_json(root / "world_map_best" / "world_map_manifest.json", cleanup_payload)
     _patch_best_json(root / "world_map_best" / "map_quality.json", cleanup_payload)
@@ -223,6 +247,8 @@ def write_best_world_map(
         bbox_world_min_m=_bbox_tuple(bbox_min),
         bbox_world_max_m=_bbox_tuple(bbox_max),
         cleanup=cleanup_payload,
+        classical_validation=classical_validation.to_dict(),
+        classical_validated_artifact_paths=classical_validation.artifact_paths,
         failure_reasons=tuple(cleanup_reasons),
     )
 

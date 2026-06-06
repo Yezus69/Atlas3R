@@ -11,6 +11,13 @@ from atlas3r.offline.camera_scale_ledger import (
     update_soft_metric_scale_ledgers,
     write_camera_scale_ledgers,
 )
+from atlas3r.offline.classical_map_comparison import write_classical_map_comparison
+from atlas3r.offline.colmap_process import (
+    ColmapCameraModel,
+    ColmapMatcher,
+    ColmapWitnessOptions,
+)
+from atlas3r.offline.colmap_witness import run_colmap_witness
 from atlas3r.offline.consensus_world import write_consensus_world_state
 from atlas3r.offline.depth_pro_witness import DepthProRuntimeOptions, run_depth_pro_witness
 from atlas3r.offline.disagreement import write_teacher_disagreement
@@ -41,6 +48,7 @@ from atlas3r.offline.run_manifest import (
 )
 from atlas3r.offline.teacher_witnesses import write_teacher_statuses
 from atlas3r.offline.training_cache import write_training_cache_manifest
+from atlas3r.offline.trajectory_alignment import write_trajectory_alignment
 from atlas3r.offline.vggt_witness import VggtRuntimeOptions, VggtStitchMode, run_vggt_witness
 
 
@@ -70,6 +78,20 @@ class BuildWorldOptions:
     depth_pro_image_size: int | None = None
     depth_pro_max_keyframes: int | None = None
     depth_pro_proposal_cache: str | None = None
+    enable_colmap: bool = False
+    colmap_exe: str = "colmap"
+    colmap_camera_model: ColmapCameraModel = "SIMPLE_RADIAL"
+    colmap_matcher: ColmapMatcher = "sequential"
+    colmap_max_images: int | None = None
+    colmap_image_stride: int = 1
+    colmap_use_gpu: int = 1
+    colmap_run_dense: bool = False
+    colmap_run_poisson: bool = False
+    colmap_timeout_s: int = 7200
+    enable_glomap: bool = False
+    glomap_exe: str = "glomap"
+    colmap_proposal_cache: str | None = None
+    glomap_proposal_cache: str | None = None
     scale_mode: ScaleMode = "unanchored-soft-metric"
     export_world_map: bool = False
     map_point_stride: int = 8
@@ -113,6 +135,11 @@ class BuildWorldResult:
     best_mesh_triangle_count: int = 0
     best_camera_trajectory_count: int = 0
     best_map_source: str = "none"
+    colmap_registered_image_count: int = 0
+    colmap_sparse_point_count: int = 0
+    classical_common_frame_count: int = 0
+    classical_alignment_rmse_m: float | None = None
+    classical_alignment_p95_m: float | None = None
 
 
 def build_world(options: BuildWorldOptions) -> BuildWorldResult:
@@ -166,8 +193,34 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         ),
         failure_points=failure_points,
     )
+    classical_result = run_colmap_witness(
+        run_dir,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        options=ColmapWitnessOptions(
+            enable_colmap=options.enable_colmap,
+            colmap_exe=options.colmap_exe,
+            colmap_camera_model=options.colmap_camera_model,
+            colmap_matcher=options.colmap_matcher,
+            colmap_max_images=options.colmap_max_images,
+            colmap_image_stride=options.colmap_image_stride,
+            colmap_use_gpu=options.colmap_use_gpu,
+            colmap_run_dense=options.colmap_run_dense,
+            colmap_run_poisson=options.colmap_run_poisson,
+            colmap_timeout_s=options.colmap_timeout_s,
+            enable_glomap=options.enable_glomap,
+            glomap_exe=options.glomap_exe,
+            colmap_proposal_cache=options.colmap_proposal_cache,
+            glomap_proposal_cache=options.glomap_proposal_cache,
+        ),
+        failure_points=failure_points,
+    )
     teacher_statuses = write_teacher_statuses(
-        run_dir, failure_points, vggt_result=vggt_result, depth_pro_result=depth_pro_result
+        run_dir,
+        failure_points,
+        vggt_result=vggt_result,
+        depth_pro_result=depth_pro_result,
+        classical_result=classical_result,
     )
     proposals = write_proposal_cache(
         run_dir,
@@ -259,6 +312,12 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         cross_view_metrics=optimizer.after_metrics or optimizer.before_metrics,
         scale_mode=options.scale_mode,
     )
+    classical_alignment = write_trajectory_alignment(
+        run_dir,
+        model=classical_result.sparse_model,
+        vggt_camera_records=proposals.vggt_camera_records,
+        min_common_frames=3,
+    )
     best_map = write_best_world_map(
         run_dir,
         input_path=options.input_path,
@@ -272,6 +331,29 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         export_best_world_map=options.export_best_world_map,
         failure_points=failure_points,
     )
+    classical_comparison = write_classical_map_comparison(
+        run_dir,
+        alignment=classical_alignment,
+        raw_world_map=world_map,
+        optimizer=optimizer,
+        best_map=best_map,
+        voxel_size_m=map_options.voxel_size_m,
+    )
+    if options.export_best_world_map and classical_comparison.status == "available":
+        best_map = write_best_world_map(
+            run_dir,
+            input_path=options.input_path,
+            frame_cache=frame_cache,
+            keyframes=keyframes.keyframes,
+            proposal_cache=proposals,
+            disagreement=disagreement,
+            raw_world_map=world_map,
+            optimizer=optimizer,
+            map_options=map_options,
+            export_best_world_map=options.export_best_world_map,
+            failure_points=failure_points,
+            classical_comparison=classical_comparison,
+        )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
         run_dir,
@@ -305,6 +387,9 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         world_map=world_map,
         optimizer=optimizer,
         best_map=best_map,
+        classical_result=classical_result,
+        classical_alignment=classical_alignment,
+        classical_comparison=classical_comparison,
         objects=objects,
         render=render,
         training=training,
@@ -321,12 +406,18 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         best_map=best_map,
         ledgers=ledgers,
         soft_metric_ledger=soft_metric_ledger,
+        classical_result=classical_result,
+        classical_alignment=classical_alignment,
+        classical_comparison=classical_comparison,
     )
     artifact_paths = _artifact_paths(
         geometry.geometry_ply_path,
         world_map,
         optimizer,
         best_map,
+        classical_result,
+        classical_alignment,
+        classical_comparison,
         room_diagnostics_json,
         room_report_md,
     )
@@ -361,6 +452,20 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "depth_pro_image_size": options.depth_pro_image_size,
             "depth_pro_max_keyframes": options.depth_pro_max_keyframes,
             "depth_pro_proposal_cache": options.depth_pro_proposal_cache,
+            "enable_colmap": options.enable_colmap,
+            "colmap_exe": options.colmap_exe,
+            "colmap_camera_model": options.colmap_camera_model,
+            "colmap_matcher": options.colmap_matcher,
+            "colmap_max_images": options.colmap_max_images,
+            "colmap_image_stride": options.colmap_image_stride,
+            "colmap_use_gpu": options.colmap_use_gpu,
+            "colmap_run_dense": options.colmap_run_dense,
+            "colmap_run_poisson": options.colmap_run_poisson,
+            "colmap_timeout_s": options.colmap_timeout_s,
+            "enable_glomap": options.enable_glomap,
+            "glomap_exe": options.glomap_exe,
+            "colmap_proposal_cache": options.colmap_proposal_cache,
+            "glomap_proposal_cache": options.glomap_proposal_cache,
             "scale_mode": options.scale_mode,
             "export_world_map": options.export_world_map,
             "map_point_stride": options.map_point_stride,
@@ -389,6 +494,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "frame_cache": frame_cache.status,
             "keyframes": keyframes.status,
             "teacher_witnesses": "partial",
+            "classical_geometry_witness": classical_result.status,
             "proposal_cache": proposals.status,
             "teacher_disagreement": disagreement.status,
             "camera_scale_ledger": "partial",
@@ -398,6 +504,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "map_consistency_optimizer": optimizer.status,
             "optimized_world_map": optimizer.optimized_world_map.status,
             "best_world_map": best_map.status,
+            "trajectory_alignment": classical_alignment.status,
+            "classical_map_comparison": classical_comparison.status,
             "object_ledger": objects.status,
             "render_repair": render.status,
             "training_cache": training.status,
@@ -429,6 +537,11 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         best_mesh_triangle_count=best_map.mesh_triangle_count,
         best_camera_trajectory_count=best_map.trajectory_count,
         best_map_source=best_map.selected_source,
+        colmap_registered_image_count=classical_result.registered_image_count,
+        colmap_sparse_point_count=classical_result.sparse_point_count,
+        classical_common_frame_count=classical_alignment.common_frame_count,
+        classical_alignment_rmse_m=classical_alignment.camera_center_rmse_m,
+        classical_alignment_p95_m=classical_alignment.camera_center_p95_m,
     )
 
 
@@ -437,6 +550,9 @@ def _artifact_paths(
     world_map: FusedWorldMapResult,
     optimizer: MapConsistencyOptimizerResult,
     best_map: BestMapSelectionResult,
+    classical_result: object,
+    classical_alignment: object,
+    classical_comparison: object,
     room_diagnostics_json: str,
     room_report_md: str,
 ) -> tuple[str, ...]:
@@ -470,4 +586,7 @@ def _artifact_paths(
     paths.extend(world_map.artifact_paths)
     paths.extend(optimizer.artifact_paths)
     paths.extend(best_map.artifact_paths)
+    paths.extend(getattr(classical_result, "artifact_paths", ()))
+    paths.extend(getattr(classical_alignment, "artifact_paths", ()))
+    paths.extend(getattr(classical_comparison, "artifact_paths", ()))
     return tuple(paths)

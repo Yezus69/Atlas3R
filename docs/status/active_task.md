@@ -1,19 +1,30 @@
-# Active Task - Offline V1.0 Room Walk Soft-Metric Map
+# Active Task - Offline V1.1 Classical Geometry Witness
 
 ## Goal
 
-Run the no-anchor room-walk pipeline on
-`C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames` and
-export an inspectable `world_map_best/` without physical accuracy claims.
+Add a dependency-safe COLMAP/GLOMAP witness for the real room frames, align
+classical sparse geometry to the current VGGT/Depth-Pro world, compare
+trajectory/map consistency, and keep all outputs unanchored proposals.
+
+## V1.0 Artifact Inspection
+
+- Room frames folder exists: `C:/Users/Asav/source/repos/homebrain/data/inbox/room_walk_001/frames`
+  with 350 files.
+- V1.0 artifacts exist: `world_map_manifest.json`, `map_quality.md`,
+  `camera_trajectory.json`, `topdown_preview.svg`, and `room_walk_001_report.md`.
+- Best map: 1,904,976 points, 2,559 occupied voxels, 5,600 observed triangles.
+- Best trajectory: 88 poses.
+- Best bbox size: about 1.72 m x 0.75 m x 0.96 m.
+- Suspicious sign: compact room-scale bbox; classical SfM should check collapse
+  or scale/trajectory disagreement.
 
 ## Checklist
 
-- [x] Confirm clean worktree and switch to V1.0 branch.
-- [x] Run V0.9 baseline on the actual room frames before code edits.
-- [x] Add dependency-safe JPG/EXIF metadata summary.
-- [x] Add `--scale-mode unanchored-soft-metric` and soft-metric ledgers.
-- [x] Add best-map selection, conservative cleanup, and top-down preview.
-- [x] Add room-specific diagnostics and inspection instructions.
-- [x] Add focused tests for metadata, scale ledger, best map, preview, CLI, and integration.
-- [x] Run final room evidence command and optional longer run if feasible.
-- [x] Run verification commands and update compact docs/status files.
+- [x] Start from V1.0 branch and create V1.1 branch.
+- [x] Read required docs, status files, and current builder/map modules.
+- [x] Add COLMAP/GLOMAP witness, sparse import, Sim3 alignment, and map comparison.
+- [x] Wire classical artifacts and optional validated map through `offline build-world`.
+- [x] Add focused tests that do not require COLMAP/GLOMAP.
+- [x] Run verification and real room evidence command with fallback attempts if needed.
+- [x] Update compact docs/status files and V1.1 report.
+- [x] Commit scoped code/docs changes without generated run artifacts.
