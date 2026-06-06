@@ -114,6 +114,9 @@ class CliTest(unittest.TestCase):
         self.assertIn("--optimizer-min-improvement-ratio", result.stdout)
         self.assertIn("--export-optimized-world-map", result.stdout)
         self.assertIn("--export-best-world-map", result.stdout)
+        self.assertIn("--optimize-roomgraph", result.stdout)
+        self.assertIn("--roomgraph-cotracker-checkpoint", result.stdout)
+        self.assertIn("--roomgraph-track-source", result.stdout)
 
 
 if __name__ == "__main__":

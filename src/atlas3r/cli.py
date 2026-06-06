@@ -126,6 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--optimizer-min-improvement-ratio", type=float, default=0.05)
     build_world_parser.add_argument("--export-optimized-world-map", action="store_true")
     build_world_parser.add_argument("--export-best-world-map", action="store_true")
+    build_world_parser.add_argument("--optimize-roomgraph", action="store_true")
+    build_world_parser.add_argument("--roomgraph-device", default="cuda:0")
+    build_world_parser.add_argument("--roomgraph-cotracker-checkpoint", default=None)
+    build_world_parser.add_argument("--roomgraph-max-keyframes", type=int, default=24)
+    build_world_parser.add_argument("--roomgraph-track-grid-size", type=int, default=16)
+    build_world_parser.add_argument("--roomgraph-max-tracks", type=int, default=48)
+    build_world_parser.add_argument("--roomgraph-max-iterations", type=int, default=25)
+    build_world_parser.add_argument(
+        "--roomgraph-track-source",
+        choices=("auto", "cotracker", "opencv-lk"),
+        default="auto",
+    )
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -235,6 +247,14 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             optimizer_min_improvement_ratio=float(args.optimizer_min_improvement_ratio),
             export_optimized_world_map=bool(args.export_optimized_world_map),
             export_best_world_map=bool(args.export_best_world_map),
+            optimize_roomgraph=bool(args.optimize_roomgraph),
+            roomgraph_device=str(args.roomgraph_device),
+            roomgraph_cotracker_checkpoint=args.roomgraph_cotracker_checkpoint,
+            roomgraph_max_keyframes=int(args.roomgraph_max_keyframes),
+            roomgraph_track_grid_size=int(args.roomgraph_track_grid_size),
+            roomgraph_max_tracks=int(args.roomgraph_max_tracks),
+            roomgraph_max_iterations=int(args.roomgraph_max_iterations),
+            roomgraph_track_source=str(args.roomgraph_track_source).replace("-", "_"),
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")
@@ -255,6 +275,10 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
     print(f"classical common frames: {result.classical_common_frame_count}")
     print(f"classical alignment RMSE m: {result.classical_alignment_rmse_m}")
     print(f"classical alignment p95 m: {result.classical_alignment_p95_m}")
+    print(f"roomgraph track source: {result.roomgraph_track_source}")
+    print(f"roomgraph selected variant: {result.roomgraph_selected_variant}")
+    print(f"roomgraph world map points: {result.roomgraph_point_count}")
+    print(f"roomgraph observed mesh triangles: {result.roomgraph_mesh_triangle_count}")
     print(f"failure points: {result.failure_count}")
     return result.exit_code
 

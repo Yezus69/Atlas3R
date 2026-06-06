@@ -382,3 +382,59 @@ Optional `world_map_classical_validated/` uses the fused-map schema only when
 classical agreement is available and anti-collapse checks pass. It remains an
 unanchored teacher-consensus map with a classical validation witness, not a
 measured reconstruction.
+
+## V1.2 RoomGraph Track/Depth/Pose Optimizer Artifacts
+
+`offline build-world --optimize-roomgraph` adds a RoomGraph optimizer that uses
+real 2D tracks plus VGGT/Depth Pro proposal depths. Track source is selected by
+`--roomgraph-track-source auto|cotracker|opencv-lk`; missing learned-tracker
+dependencies must fall back only when requested by `auto` and must record the
+chosen source.
+
+Track artifacts:
+
+- `roomgraph/tracks.npz`
+- `roomgraph/track_summary.json`
+
+`tracks.npz` contains observed 2D track samples with frame IDs, pixel
+coordinates, confidence, and track IDs. It is evidence for optimization, not
+ground truth.
+
+Map artifacts are written under `world_map_roomgraph/` and reuse the fused-map
+NPZ/PLY/occupancy/trajectory schemas:
+
+- `world_map_roomgraph/fused_points.npz`
+- `world_map_roomgraph/fused_points.ply`
+- `world_map_roomgraph/occupancy_grid.npz`
+- `world_map_roomgraph/occupancy_grid_metadata.json`
+- `world_map_roomgraph/observed_voxel_mesh.ply`
+- `world_map_roomgraph/camera_trajectory.json`
+- `world_map_roomgraph/roomgraph_metrics.json`
+- `world_map_roomgraph/roomgraph_report.md`
+
+`roomgraph_metrics.json` records `selected_variant`, `track_source`,
+`track_count`, `track_observation_count`, per-variant before/after metrics,
+the selected before/after metrics, improvement ratios, artifact paths, and the
+truth boundary. Required optimizer variants are `depth_only`, `pose_only`, and
+`joint`.
+
+Metrics include reprojection error, track inlier ratio, cross-view depth
+residual, mapped teacher disagreement, camera trajectory length, camera bbox,
+and camera collapse score. A run may be `improved` because one real metric
+improved while other metrics regressed; reports must show both.
+
+RoomGraph truth flags:
+
+```text
+label_type: unanchored_teacher_consensus_map
+measured_geometry: false
+observed_only: true
+predicted_completion: false
+hidden_geometry_measured: false
+metric_scale_source: depth_pro_vggt_roomgraph_soft_metric_prior
+scale_status: soft_metric_unanchored
+physical_accuracy_claim: false
+training_quality: false
+realtime_claim: false
+optimized_world_state: roomgraph_track_depth_pose_optimizer
+```

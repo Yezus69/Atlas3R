@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from atlas3r.offline.best_map_selection import BestMapSelectionResult, write_best_world_map
 from atlas3r.offline.camera_scale_ledger import (
@@ -40,6 +41,12 @@ from atlas3r.offline.proposal_cache import DebugGeometryMode, write_proposal_cac
 from atlas3r.offline.quality_report import write_quality_report
 from atlas3r.offline.render_repair import write_render_repair_diagnostics
 from atlas3r.offline.room_diagnostics import write_room_walk_diagnostics
+from atlas3r.offline.roomgraph_optimizer import (
+    RoomGraphOptimizerResult,
+    RoomGraphOptions,
+    write_roomgraph_optimizer,
+)
+from atlas3r.offline.roomgraph_tracks import RoomGraphTrackSource
 from atlas3r.offline.run_manifest import (
     FailurePoint,
     ensure_run_tree,
@@ -115,6 +122,14 @@ class BuildWorldOptions:
     optimizer_min_improvement_ratio: float = 0.05
     export_optimized_world_map: bool = False
     export_best_world_map: bool = False
+    optimize_roomgraph: bool = False
+    roomgraph_device: str = "cuda:0"
+    roomgraph_cotracker_checkpoint: str | None = None
+    roomgraph_max_keyframes: int = 24
+    roomgraph_track_grid_size: int = 16
+    roomgraph_max_tracks: int = 48
+    roomgraph_max_iterations: int = 25
+    roomgraph_track_source: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -140,6 +155,10 @@ class BuildWorldResult:
     classical_common_frame_count: int = 0
     classical_alignment_rmse_m: float | None = None
     classical_alignment_p95_m: float | None = None
+    roomgraph_point_count: int = 0
+    roomgraph_mesh_triangle_count: int = 0
+    roomgraph_track_source: str = "none"
+    roomgraph_selected_variant: str = "none"
 
 
 def build_world(options: BuildWorldOptions) -> BuildWorldResult:
@@ -354,6 +373,28 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             failure_points=failure_points,
             classical_comparison=classical_comparison,
         )
+    roomgraph = write_roomgraph_optimizer(
+        run_dir,
+        input_path=options.input_path,
+        frame_cache=frame_cache,
+        keyframes=keyframes.keyframes,
+        proposal_cache=proposals,
+        disagreement=optimizer.optimized_disagreement or disagreement,
+        best_map=best_map,
+        voxel_size_m=options.map_voxel_size_m,
+        options=RoomGraphOptions(
+            enabled=options.optimize_roomgraph,
+            device=options.roomgraph_device,
+            cotracker_checkpoint=options.roomgraph_cotracker_checkpoint,
+            max_keyframes=options.roomgraph_max_keyframes,
+            track_grid_size=options.roomgraph_track_grid_size,
+            max_tracks=options.roomgraph_max_tracks,
+            max_iterations=options.roomgraph_max_iterations,
+            export_world_map=True,
+            track_source=cast(RoomGraphTrackSource, options.roomgraph_track_source),
+        ),
+        failure_points=failure_points,
+    )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
         run_dir,
@@ -418,6 +459,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         classical_result,
         classical_alignment,
         classical_comparison,
+        roomgraph,
         room_diagnostics_json,
         room_report_md,
     )
@@ -489,6 +531,14 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "optimizer_min_improvement_ratio": options.optimizer_min_improvement_ratio,
             "export_optimized_world_map": options.export_optimized_world_map,
             "export_best_world_map": options.export_best_world_map,
+            "optimize_roomgraph": options.optimize_roomgraph,
+            "roomgraph_device": options.roomgraph_device,
+            "roomgraph_cotracker_checkpoint": options.roomgraph_cotracker_checkpoint,
+            "roomgraph_max_keyframes": options.roomgraph_max_keyframes,
+            "roomgraph_track_grid_size": options.roomgraph_track_grid_size,
+            "roomgraph_max_tracks": options.roomgraph_max_tracks,
+            "roomgraph_max_iterations": options.roomgraph_max_iterations,
+            "roomgraph_track_source": options.roomgraph_track_source,
         },
         "module_status": {
             "frame_cache": frame_cache.status,
@@ -506,6 +556,7 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "best_world_map": best_map.status,
             "trajectory_alignment": classical_alignment.status,
             "classical_map_comparison": classical_comparison.status,
+            "roomgraph_optimizer": roomgraph.status,
             "object_ledger": objects.status,
             "render_repair": render.status,
             "training_cache": training.status,
@@ -542,6 +593,10 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         classical_common_frame_count=classical_alignment.common_frame_count,
         classical_alignment_rmse_m=classical_alignment.camera_center_rmse_m,
         classical_alignment_p95_m=classical_alignment.camera_center_p95_m,
+        roomgraph_point_count=roomgraph.point_count,
+        roomgraph_mesh_triangle_count=roomgraph.mesh_triangle_count,
+        roomgraph_track_source=roomgraph.track_source,
+        roomgraph_selected_variant=roomgraph.selected_variant,
     )
 
 
@@ -553,6 +608,7 @@ def _artifact_paths(
     classical_result: object,
     classical_alignment: object,
     classical_comparison: object,
+    roomgraph: RoomGraphOptimizerResult,
     room_diagnostics_json: str,
     room_report_md: str,
 ) -> tuple[str, ...]:
@@ -589,4 +645,5 @@ def _artifact_paths(
     paths.extend(getattr(classical_result, "artifact_paths", ()))
     paths.extend(getattr(classical_alignment, "artifact_paths", ()))
     paths.extend(getattr(classical_comparison, "artifact_paths", ()))
+    paths.extend(roomgraph.artifact_paths)
     return tuple(paths)
