@@ -93,6 +93,242 @@ Depth alone is not the map. Pose alone is not the map. The core atom is:
 ray + radial depth + T_world_camera + confidence + scale state + static probability
 ```
 
+## Mathematical Objective
+
+Atlas3R optimizes for a static, scale-aware 3D world that explains the RGB video evidence while preserving uncertainty, separating dynamic content, and refusing unearned metric claims.
+
+The teacher is not optimizing for a pretty mesh. It is optimizing for a robot-useful world model:
+
+- static surfaces are geometrically consistent across views;
+- camera motion explains observed parallax;
+- free space observed by rays is not contradicted by static occupancy;
+- dynamic and movable objects do not contaminate the static map;
+- metric scale is accepted only when scale evidence and validation justify it.
+
+### Variables
+
+For keyframe `i` and pixel `u = (x, y)`:
+
+$$
+T_i = T_{\text{world}\leftarrow\text{camera},i} = (R_i, t_i) \in SE(3)
+$$
+
+$$
+r_i(u) \in S^2
+$$
+
+$$
+d_i(u) > 0
+$$
+
+$$
+q_i(u) \in [0,1]
+$$
+
+$$
+m_i(u) \in [0,1]
+$$
+
+$$
+s > 0
+$$
+
+Where:
+
+- `T_i` is the camera-to-world pose.
+- `r_i(u)` is the unit camera ray.
+- `d_i(u)` is radial depth along the ray.
+- `q_i(u)` is geometry confidence.
+- `m_i(u)` is static probability.
+- `s` is global metric scale.
+
+The lifted 3D point is:
+
+$$
+X_{c_i}(u) = d_i(u)\,r_i(u)
+$$
+
+$$
+X_w(u) = R_i X_{c_i}(u) + t_i
+$$
+
+$$
+X_m(u) = s\,X_w(u)
+$$
+
+Where:
+
+- `X_c_i` is in camera coordinates.
+- `X_w` is in reconstruction/world coordinates.
+- `X_m` is in metric coordinates after applying global scale.
+
+### Cross-View Projection
+
+To compare a point observed in frame `i` against frame `j`:
+
+$$
+X_{c_j}(u) = R_j^\top \left(X_w(u) - t_j\right)
+$$
+
+$$
+v = \pi_j\left(X_{c_j}(u)\right)
+$$
+
+$$
+\hat d_j(v) = \left\|X_{c_j}(u)\right\|
+$$
+
+Where:
+
+- `v` is the projected pixel in frame `j`.
+- `pi_j` is the frame-`j` camera projection function.
+- `hat d_j` is the predicted radial depth in frame `j`.
+
+This comparison happens in reconstruction units because monocular reprojection is invariant to global scale.
+
+### Depth Correction
+
+Backbone depth is evidence, not truth. The optimizer may correct it, but corrections must stay low-dimensional and smooth unless multi-view evidence justifies change.
+
+A refined depth field may be represented as:
+
+$$
+d_i(u) =
+\exp\left(
+\alpha_i \log d_i^0(u) + \beta_i + \delta_i(u)
+\right)
+$$
+
+Where:
+
+- `d_i^0(u)` is the backbone depth proposal.
+- `alpha_i` is a per-frame depth scale correction.
+- `beta_i` is a per-frame log-depth bias correction.
+- `delta_i(u)` is a smooth residual correction field.
+
+The system must not replace depth with unconstrained per-pixel hallucination.
+
+### Core Residuals
+
+Multi-view depth consistency:
+
+$$
+e_{\text{depth},ij}(u)
+=
+\log d_j(v) - \log \hat d_j(v)
+$$
+
+Image or feature consistency when reliable:
+
+$$
+e_{\text{image},ij}(u)
+=
+\phi_i(u) - \phi_j(v)
+$$
+
+Backbone depth prior:
+
+$$
+e_{\text{prior},i}(u)
+=
+\log d_i(u) - \log d_i^0(u)
+$$
+
+Scale evidence for a known or estimated metric length:
+
+$$
+e_{\text{scale},k}
+=
+\frac{s L^{\text{recon}}_k - L^{\text{evidence}}_k}{\sigma_k}
+$$
+
+Free-space consistency:
+
+$$
+0 < \lambda < d_i(u) - \epsilon
+\Rightarrow
+t_i + R_i(\lambda r_i(u))
+\text{ is observed free space}
+$$
+
+A trusted static occupied voxel must not lie in space that trusted rays observed as free.
+
+### Robust Objective
+
+Real videos contain blur, compression, exposure changes, reflections, rolling shutter, moving objects, bad masks, and bad depth. Atlas3R must not optimize plain L2 over all observations.
+
+The teacher minimizes a robust objective:
+
+$$
+\min_{\{T_i, d_i, r_i, m_i, s, V\}}
+E
+=
+\lambda_d E_{\text{depth}}
++
+\lambda_f E_{\text{image}}
++
+\lambda_p E_{\text{prior}}
++
+\lambda_{\text{free}} E_{\text{free-space}}
++
+\lambda_s E_{\text{scale}}
++
+\lambda_r E_{\text{room}}
++
+\lambda_{\text{smooth}} E_{\text{smooth}}
+$$
+
+Each residual family must use robust losses or explicit outlier rejection. Valid choices include Huber, Cauchy, Tukey, or another documented robust loss.
+
+Static fusion weight is:
+
+$$
+w_i(u) = q_i(u)\,m_i(u)
+$$
+
+Pixels with high dynamic probability contribute to dynamic evidence, not static occupancy.
+
+### Robot-Useful Accuracy
+
+For floor-cleaning robots, the teacher optimizes the map toward conservative traversability, not visual completeness.
+
+The map must preserve:
+
+- observed free space;
+- observed static occupancy;
+- movable-static occupancy;
+- dynamic occupancy;
+- unknown space;
+- scale uncertainty;
+- map confidence.
+
+Unknown space is not free.  
+Dynamic occupancy is not static occupancy.  
+Movable-static occupancy is not free space.  
+Hallucinated completion is not ground truth.
+
+### Acceptance Is Separate From Optimization
+
+A low objective value is not enough to claim metric ground truth.
+
+Metric acceptance requires:
+
+- `ScalePosterior`;
+- `ValidationReport`;
+- compatible scale evidence;
+- acceptable free-space contradiction rate;
+- acceptable held-out view consistency;
+- acceptable dynamic leakage score.
+
+The final status must be one of:
+
+- `measured_metric`;
+- `metric_pseudo_label`;
+- `non_metric_pseudo_label`;
+- `rejected`.
+
+A good-looking reconstruction without accepted scale evidence is not metric GT.
+
 ## API Contracts
 
 These contracts are binding once implemented. Code changes that alter a field, unit, status, or coordinate convention must update this section first.
