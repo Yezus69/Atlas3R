@@ -32,10 +32,11 @@ The README must stay small. Replace stale state; do not append history.
 ## Current State
 
 - `atlas3r` has an M0 runtime contract foundation from the previous Codex pass.
-- The previous milestone wording was too disconnected from the architecture and should be replaced by this data-grounded roadmap.
-- Reconstruction, real model execution, optimization, mapping, validation, dataset export, and robot training are not production behavior yet.
+- M1 is implemented as a manifest-backed runtime path: `python -m atlas3r.m1` reads `config/canonical_assets.json`, registers canonical tracks, inspects available RGB video/frame assets, proposes image-evidence keyframes, and writes reports under `runs/m1/`.
+- In the current local workspace, `phone_room` is available as decoded RGB frames and produces real inspection/keyframe reports. `reference_metric` is not present and reports `missing_asset`.
+- Reconstruction, metric reference loading, real model execution, optimization, mapping, validation, dataset export, and robot training are not production behavior yet.
 - Third-party models and weights remain external. The repo should adapt their artifacts, not vendor them.
-- The next valuable work must be grounded in two canonical videos, not toy scenes or synthetic fixtures.
+- The next valuable work is to attach measured metric evidence for the `reference_metric` track through a narrow adapter.
 
 ## Canonical Evidence Loop
 
@@ -89,4 +90,4 @@ Each milestone names the architecture section it implements. The milestone is co
 
 ## Current Priority
 
-The next priority is **M1 - Canonical Asset Registry And Video Inspection**. Build the smallest real-data vertical slice that registers the two canonical tracks, inspects actual video assets when present, proposes keyframes from decoded frames, and reports why a track is usable, missing, corrupt, or insufficient. Do not implement reconstruction or metric acceptance in M1.
+The next priority is **M2 - Metric Reference Adapter**. Load measured evidence for `reference_metric` into Atlas3R scale/depth/pose evidence without using it to bypass the monocular teacher path. Keep missing external artifacts explicit.

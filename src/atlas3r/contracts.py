@@ -65,6 +65,20 @@ class BackboneAvailability(str, Enum):
     UNAVAILABLE = "unavailable"
 
 
+class TrackType(str, Enum):
+    REFERENCE_METRIC = "reference_metric"
+    PHONE_ROOM = "phone_room"
+    EXTERNAL_CANDIDATE = "external_candidate"
+
+
+class VideoAssetStatus(str, Enum):
+    AVAILABLE = "available"
+    MISSING_ASSET = "missing_asset"
+    CORRUPT = "corrupt"
+    UNSUPPORTED = "unsupported"
+    UNCHECKED = "unchecked"
+
+
 _MEASURED_EVIDENCE_TYPES = frozenset(
     {
         ScaleEvidenceType.MEASURED_DEPTH,
@@ -273,6 +287,23 @@ def _validate_frame_ids(frame_ids: Sequence[int], field_name: str, *, non_empty:
     return ids
 
 
+def _validate_optional_positive_int(value: int | None, field_name: str) -> None:
+    if value is not None:
+        _validate_positive_int(value, field_name)
+
+
+def _validate_optional_non_negative_number(value: float | None, field_name: str) -> None:
+    if value is not None:
+        _validate_non_negative_number(value, field_name)
+
+
+def _validate_string_sequence(value: Sequence[str], field_name: str, *, non_empty: bool = False) -> tuple[str, ...]:
+    items = _validate_sequence(value, field_name, non_empty=non_empty)
+    for item in items:
+        _validate_non_empty_string(item, field_name)
+    return items
+
+
 def _validate_same_shape(fields: Mapping[str, Any]) -> tuple[int, ...]:
     iterator = iter(fields.items())
     first_name, first_value = next(iterator)
@@ -295,6 +326,131 @@ def _validate_probability_simplex(fields: Mapping[str, Any], tolerance: float = 
         if abs(total - 1.0) > tolerance:
             names = ", ".join(name for name, _ in values)
             raise ContractValidationError(f"{names} probabilities must sum to 1")
+
+
+@dataclass(frozen=True)
+class VideoAsset:
+    asset_id: str
+    track_type: TrackType
+    source_uri_or_path: str
+    expected_modalities: Sequence[str]
+    status: VideoAssetStatus = VideoAssetStatus.UNCHECKED
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.asset_id, "asset_id")
+        track_type = _as_enum(self.track_type, TrackType, "track_type")
+        object.__setattr__(self, "track_type", track_type)
+        _validate_non_empty_string(self.source_uri_or_path, "source_uri_or_path")
+        _validate_string_sequence(
+            self.expected_modalities, "expected_modalities", non_empty=True
+        )
+        status = _as_enum(self.status, VideoAssetStatus, "status")
+        object.__setattr__(self, "status", status)
+        _validate_mapping(self.metadata, "metadata")
+
+
+@dataclass(frozen=True)
+class VideoInspectionReport:
+    asset_id: str
+    frame_count: int
+    fps_or_frame_timestamps: Mapping[str, Any]
+    width_px: int | None
+    height_px: int | None
+    duration_s: float | None
+    codec_or_container_optional: str | None
+    sampled_frame_ids: Sequence[int]
+    blur_summary: Mapping[str, Any]
+    exposure_summary: Mapping[str, Any]
+    motion_summary: Mapping[str, Any]
+    scene_change_summary: Mapping[str, Any]
+    usable_frame_ratio: float
+    hard_rejection_reasons: Sequence[str]
+    soft_risk_flags: Sequence[str]
+    confidence: float
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.asset_id, "asset_id")
+        _validate_non_negative_int(self.frame_count, "frame_count")
+        _validate_mapping(self.fps_or_frame_timestamps, "fps_or_frame_timestamps")
+        _validate_optional_positive_int(self.width_px, "width_px")
+        _validate_optional_positive_int(self.height_px, "height_px")
+        _validate_optional_non_negative_number(self.duration_s, "duration_s")
+        if self.codec_or_container_optional is not None:
+            _validate_non_empty_string(
+                self.codec_or_container_optional, "codec_or_container_optional"
+            )
+        _validate_frame_ids(
+            self.sampled_frame_ids, "sampled_frame_ids", non_empty=False
+        )
+        for field_name in (
+            "blur_summary",
+            "exposure_summary",
+            "motion_summary",
+            "scene_change_summary",
+            "metadata",
+        ):
+            _validate_mapping(getattr(self, field_name), field_name)
+        _validate_probability(self.usable_frame_ratio, "usable_frame_ratio")
+        _validate_string_sequence(
+            self.hard_rejection_reasons, "hard_rejection_reasons"
+        )
+        _validate_string_sequence(self.soft_risk_flags, "soft_risk_flags")
+        _validate_probability(self.confidence, "confidence")
+        if self.frame_count == 0 and not self.hard_rejection_reasons:
+            raise ContractValidationError(
+                "empty inspection reports must explain why no frames were inspected"
+            )
+
+
+@dataclass(frozen=True)
+class KeyframeProposal:
+    asset_id: str
+    selected_frame_ids: Sequence[int]
+    timestamps_s: Sequence[float | None]
+    selection_reasons: Sequence[str]
+    sharpness_scores: Sequence[float]
+    scene_change_scores: Sequence[float]
+    motion_or_baseline_proxy_scores: Sequence[float]
+    coverage_or_overlap_proxy_scores: Sequence[float]
+    risk_flags: Sequence[str]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.asset_id, "asset_id")
+        frame_ids = _validate_frame_ids(
+            self.selected_frame_ids, "selected_frame_ids", non_empty=False
+        )
+        count = len(frame_ids)
+        sequence_fields = {
+            "timestamps_s": self.timestamps_s,
+            "selection_reasons": self.selection_reasons,
+            "sharpness_scores": self.sharpness_scores,
+            "scene_change_scores": self.scene_change_scores,
+            "motion_or_baseline_proxy_scores": self.motion_or_baseline_proxy_scores,
+            "coverage_or_overlap_proxy_scores": self.coverage_or_overlap_proxy_scores,
+        }
+        for field_name, value in sequence_fields.items():
+            sequence = _validate_sequence(value, field_name)
+            if len(sequence) != count:
+                raise ContractValidationError(
+                    f"{field_name} length must match selected_frame_ids"
+                )
+        for timestamp in self.timestamps_s:
+            if timestamp is not None:
+                _validate_non_negative_number(timestamp, "timestamps_s")
+        _validate_string_sequence(self.selection_reasons, "selection_reasons")
+        for field_name in (
+            "sharpness_scores",
+            "scene_change_scores",
+            "motion_or_baseline_proxy_scores",
+            "coverage_or_overlap_proxy_scores",
+        ):
+            for score in getattr(self, field_name):
+                _validate_probability(score, field_name)
+        _validate_string_sequence(self.risk_flags, "risk_flags")
+        _validate_mapping(self.metadata, "metadata")
 
 
 @dataclass(frozen=True)
