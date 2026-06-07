@@ -1299,8 +1299,7 @@ acceptance.
 ## API Contracts
 
 These contracts are intended interfaces. They become binding once implemented.
-Any coordinate, shape, unit, or schema change must update this section and its
-tests before code changes are declared done.
+Any coordinate, shape, unit, or schema change must update this section before code changes are declared done.
 
 ### Coordinate And Unit Rules
 

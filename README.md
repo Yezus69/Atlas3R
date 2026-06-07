@@ -46,17 +46,22 @@ Priority` to one short paragraph.
 
 ## Current State
 
-- The repository currently contains the three Codex context files.
-- Runtime package, model adapters, CLI commands, tests, mapper runtime, and
-  build targets have not been created yet.
+- `atlas3r` is an importable Python package containing the M0 runtime contract
+  schemas and boundary types.
+- Contract validation now enforces explicit camera pose naming, tensor shapes,
+  unit camera rays, probability ranges, uncertainty fields, scale evidence,
+  metric acceptance status, validation gating, and separate occupancy channels.
+- Reconstruction, model execution, real optimization, mapping, rendering,
+  dataset export, and CLI behavior are not implemented yet.
 - Third-party model repositories and weights are external dependencies behind
   adapters, not repo contents.
 
 ## Current Priority
 
-Start with M0. Each implementation turn should move the earliest incomplete
-milestone forward with a high-value, testable vertical slice tied to the
-architecture.
+M0 is complete as a runtime contract foundation. The next priority is M1: add a
+dependency-safe video inspection and keyframe-selection slice that produces
+explicit reconstructability and keyframe reports without performing
+reconstruction or metric acceptance.
 
 ## Milestones
 
@@ -73,7 +78,7 @@ Acceptance:
   occupancy grids, and validation reports;
 - coordinate frames, units, tensor shapes, uncertainty fields, and acceptance
   statuses match `ARCHITECTURE.md`;
-- focused tests verify shape validation, coordinate naming, metric-status
+- verify shape validation, coordinate naming, metric-status
   gating, uncertainty presence, and unknown/free/occupied/dynamic separation.
 
 ### M1 - Video Gate And Keyframes

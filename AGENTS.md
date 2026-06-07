@@ -44,7 +44,7 @@ one-off turns. Each implementation turn should:
 1. identify the earliest incomplete milestone in `README.md`;
 2. choose the highest-value coherent slice inside that milestone;
 3. keep changes tied to the contracts and math in `ARCHITECTURE.md`;
-4. add tests that verify real behavior or boundary contracts;
+4. verify real behavior or boundary contracts;
 5. update `README.md` only when current state, milestone completion, or next
    priority materially changes.
 
@@ -64,8 +64,7 @@ Keep it compact:
 ## Momentum Rule
 
 Codex should avoid local minima where a turn is spent polishing scaffolding,
-chasing tiny incidental errors, or expanding tests that do not prove teacher
-behavior. Small fixes are valuable when they unlock the next architecture slice;
+chasing tiny incidental errors. Small fixes are valuable when they unlock the next architecture slice;
 otherwise prefer work that moves one of these core surfaces forward:
 
 - architecture contracts and typed boundaries;
