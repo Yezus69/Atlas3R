@@ -1039,6 +1039,7 @@ Grid channels:
 ```text
 P_free(x,y)
 P_occupied_static(x,y)
+P_movable_static(x,y)
 P_dynamic(x,y)
 P_unknown(x,y)
 height_min(x,y)
