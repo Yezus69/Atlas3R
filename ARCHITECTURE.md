@@ -1311,6 +1311,46 @@ tests before code changes are declared done.
   distinct.
 - Metric output requires `ScalePosterior` and `ValidationReport`.
 
+### Camera Projection Contract
+
+Every `FrameRayPacket.camera_model` must support:
+
+```text
+unproject(pixel_uv, radial_depth_m) -> X_camera[3]
+project(X_camera[3]) -> pixel_uv, radial_depth_m, valid
+```
+
+Rules:
+
+- `unproject` uses unit camera rays and radial depth:
+  `X_camera = radial_depth_m * ray_camera`.
+- `project` maps a camera-space 3D point back to pixel coordinates.
+- Pinhole and fisheye models should use analytic projection.
+- Dense ray-map-only models may use approximate inverse projection, such as nearest-ray angular lookup.
+- Geometry packets without projection support cannot participate in visibility graph, reprojection factors, or cross-view depth factors.
+
+### Depth Convention Conversion
+
+Internal `radial_depth_m` is always distance along the unit camera ray.
+
+Backbone adapters must convert source depth conventions:
+
+```text
+if source gives radial/range depth:
+  radial_depth_m = source_depth_m
+
+if source gives optical-axis z-depth:
+  radial_depth_m = z_depth_m / max(ray_camera_z, epsilon)
+```
+
+Required metadata:
+
+```text
+source_depth_convention: radial_range | optical_z | inverse_depth | disparity | unknown
+```
+
+`unknown` depth convention is not allowed for accepted geometry packets.
+
 ### VideoInput
 
 Purpose: identify a source RGB video or decoded frame sequence.
@@ -1474,6 +1514,54 @@ Edge measurements should include depth consistency, reprojection/image
 consistency, feature/color consistency when available, and free-space
 consistency.
 
+### ScaleEvidence
+
+Purpose: represent one source of metric scale information.
+
+Required fields:
+
+```text
+evidence_id
+evidence_type
+measured
+source
+frame_ids[]
+confidence
+provenance
+```
+
+Optional fields:
+
+```text
+object_or_region_id
+length_mean_m
+length_std_m
+scale_mean
+scale_std
+residual_after_optimization
+```
+
+Suggested `evidence_type` values:
+
+```text
+measured_depth
+measured_pose
+manual_distance
+known_marker
+benchmark_gt
+object_size_prior
+architecture_prior
+learned_metric_depth_prior
+scene_layout_prior
+```
+
+Rules:
+
+- `measured=true` only for real metric measurements: LiDAR, RGB-D, ARKit/ARCore depth or pose, measured markers, benchmark GT, known measured trajectory, or manually supplied measured distances.
+- Learned metric priors, object-size priors, and architecture priors are scale evidence, not measured truth.
+- `metric_acceptance_status=measured_metric` requires at least one compatible measured evidence source.
+- Learned and prior-based evidence can support `metric_pseudo_label`, not `measured_metric`.
+
 ### ScalePosterior
 
 Purpose: make metric scale explicit.
@@ -1563,6 +1651,7 @@ resolution_m
 origin_world
 P_free[x,y]
 P_occupied_static[x,y]
+P_movable_static[x,y]
 P_dynamic[x,y]
 P_unknown[x,y]
 height_min_m[x,y]
@@ -1571,8 +1660,17 @@ scale_uncertainty
 map_confidence
 ```
 
-Keep this multichannel until the export format explicitly requires a derived
-binary product.
+Rules:
+
+- `P_free` means observed free space, not merely absence of observed obstacles.
+- `P_occupied_static` means structural or stable static occupancy.
+- `P_movable_static` means objects that appear static during the video but are likely non-structural movable obstacles, such as chairs, bins, shoes, or small furniture.
+- `P_dynamic` means moving or temporally inconsistent occupancy.
+- `P_unknown` means insufficient ray evidence.
+- Unknown is not free.
+- Dynamic is not static.
+- Movable-static is not free.
+- Keep this multichannel until an explicit downstream export requires a derived binary product.
 
 ### ValidationReport
 
