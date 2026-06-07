@@ -12,6 +12,7 @@
       "metadata": {
         "recommended_source": "TUM RGB-D freiburg1_room or another public indoor RGB sequence with measured metric evidence",
         "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
         "metric_evidence_required_later": true
       }
     },

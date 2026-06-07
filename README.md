@@ -31,14 +31,13 @@ The README must stay small. Replace stale state; do not append history.
 
 ## Current State
 
-- `atlas3r` has an M0 runtime contract foundation from the previous Codex/Claude pass.
-- M1 is implemented as a manifest-backed runtime path: `python -m atlas3r.m1` reads `config/canonical_assets.json`, registers canonical tracks, inspects available RGB video/frame assets, proposes image-evidence keyframes, and writes reports under `runs/m1/`.
-- M2 is implemented as a narrow measured-reference runtime path: `python -m atlas3r.m2` reads the canonical manifest, recognizes a local TUM-style RGB-D `reference_metric` directory, requires local sidecar/manifest metadata for scale-critical fields, and writes measured-reference reports under `runs/m2/`.
-- In the current local workspace, `phone_room` is available as decoded RGB frames and produces real M1 inspection/keyframe reports. `reference_metric` is not present, so M1 and M2 report `missing_asset`; M2 also reports `phone_room` as `no_measured_evidence_supplied`.
-- M2 `FrameRayPacket` sidecar creation is implemented for complete local measured RGB-D/depth/pose associations, but is currently blocked by the missing local `reference_metric` asset and required metadata.
-- Reconstruction, real model execution, optimization, mapping, validation, dataset export, and robot training are not production behavior yet.
-- Third-party models and weights remain external. The repo should adapt their artifacts, not vendor them.
-- The next valuable work is to attach measured metric evidence for the `reference_metric` track through a narrow adapter.
+- The end-to-end teacher spine now runs over both canonical tracks: `python -m atlas3r.teacher` chains M1 availability, M2 measured reference, M3 geometry adapter, M4 visibility/residuals, M5 scale posterior, M7 ray-fused map/occupancy, and M8 validation, writing per-track `runs/teacher/<asset>_teacher_report.json` plus `runs/teacher/teacher_summary.json`.
+- M1 (`python -m atlas3r.m1`) registers canonical tracks, inspects RGB assets, and proposes image-evidence keyframes under `runs/m1/`.
+- M2 (`python -m atlas3r.m2`) ingests the local TUM-style RGB-D `reference_metric` directory and emits measured `FrameRayPacket` sidecars plus measured `ScaleEvidence` under `runs/m2/`.
+- M3 (`atlas3r.geometry_adapter`) normalizes external monocular-backbone artifacts under `external/teacher_artifacts/<asset>/` into canonical `FrameRayPacket` objects, and rebuilds measured packets in-memory from the M2 sidecar/report. Missing artifacts return `missing_external_artifact` with the exact regeneration command; nothing is fabricated.
+- Honest categories are produced per track: `reference_metric` resolves to `measured_metric` (measured TUM depth+pose, accepted for metric training); `phone_room` resolves to `non_metric_pseudo_label` (real unanchored monocular SfM, never claiming measured metric ground truth, not accepted for metric training, with an explicit reason).
+- The voxel map and floor-aligned occupancy grid keep `free`, `occupied_static`, `movable_static`, `dynamic`, and `unknown` distinct; unknown is never exported as free. Without static/dynamic input, `P_dynamic` and `P_movable_static` are honestly zero.
+- Third-party models, weights, datasets, and generated artifacts remain external and gitignored. The repo adapts their artifacts, not vendors them.
 
 ## Canonical Evidence Loop
 
@@ -92,4 +91,4 @@ Each milestone names the architecture section it implements. The milestone is co
 
 ## Current Priority
 
-The next priority is to stage a local TUM-style `reference_metric` asset plus sidecar/manifest metadata for intrinsics, depth scale, timestamp tolerance, depth convention, pose convention, and pose units, then rerun M2 to produce measured packet sidecars and measured scale-evidence records.
+The teacher spine runs end-to-end over both tracks with honest categories. The next priority is M6 static/dynamic mask evidence (SAM2/Grounded-SAM2 artifact ingestion) so that `P_dynamic` and `P_movable_static` become measured rather than honestly-zero, and tightening the M4 depth-residual and M8 held-out render-error metrics from robust proxies into dense per-pixel comparisons where overlapping observations exist.

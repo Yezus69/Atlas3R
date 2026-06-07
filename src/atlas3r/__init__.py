@@ -1,4 +1,9 @@
-"""Runtime contracts for Atlas3R."""
+"""Runtime contracts and teacher spine for Atlas3R.
+
+The contract dataclasses keep the package import dependency-free. The teacher
+spine functions (M3 -> M8) lazy-import numpy/cv2/PIL inside their own bodies, so
+importing :mod:`atlas3r` never pulls heavy ML dependencies.
+"""
 
 from .contracts import (
     BackboneAvailability,
@@ -37,6 +42,15 @@ from .contracts import (
     VisibilityGraph,
     VoxelMapState,
 )
+from .geometry_adapter import (
+    load_geometry_artifacts,
+    load_measured_packets_from_m2,
+)
+from .mapping import fuse_static_map
+from .scale import estimate_scale_posterior
+from .teacher import run_teacher
+from .validation import validate_and_accept
+from .visibility import build_visibility_graph
 
 __all__ = [
     "BackboneAvailability",
@@ -74,4 +88,12 @@ __all__ = [
     "VisibilityEdge",
     "VisibilityGraph",
     "VoxelMapState",
+    # Teacher spine (M3 -> M8) public entrypoints
+    "load_geometry_artifacts",
+    "load_measured_packets_from_m2",
+    "build_visibility_graph",
+    "estimate_scale_posterior",
+    "fuse_static_map",
+    "validate_and_accept",
+    "run_teacher",
 ]
