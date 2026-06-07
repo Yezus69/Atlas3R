@@ -42,10 +42,44 @@ Codex should work continuously from the architecture roadmap, not as isolated
 one-off turns. Each implementation turn should:
 
 1. identify the earliest incomplete milestone in `README.md`;
-2. build the smallest coherent slice that advances that milestone;
+2. choose the highest-value coherent slice inside that milestone;
 3. keep changes tied to the contracts and math in `ARCHITECTURE.md`;
 4. add tests that verify real behavior or boundary contracts;
-5. update `README.md` only when current state or next priority changes.
+5. update `README.md` only when current state, milestone completion, or next
+   priority materially changes.
+
+## README Budget
+
+`README.md` is a bounded state snapshot, not a session log. Edits should replace
+stale state instead of appending history.
+
+Keep it compact:
+
+- `Current State`: at most 5 bullets.
+- `Current Priority`: one short paragraph.
+- `Milestones`: stable roadmap; update acceptance only when the architecture or
+  implementation plan actually changes.
+- No per-turn logs, command transcripts, chat summaries, or minor fix notes.
+
+## Momentum Rule
+
+Codex should avoid local minima where a turn is spent polishing scaffolding,
+chasing tiny incidental errors, or expanding tests that do not prove teacher
+behavior. Small fixes are valuable when they unlock the next architecture slice;
+otherwise prefer work that moves one of these core surfaces forward:
+
+- architecture contracts and typed boundaries;
+- reconstructability and keyframe selection;
+- ViPE/DA3 adapter boundary;
+- SAM2 mask-track boundary;
+- visibility graph and optimizer variables;
+- ray-fused TSDF/occupancy mapping;
+- held-out validation and metric gate;
+- accepted dataset export.
+
+If the same class of issue repeats, step back to the milestone objective,
+identify the root dependency or missing abstraction, and implement the smallest
+slice that restores forward progress.
 
 ## Architecture Invariants
 

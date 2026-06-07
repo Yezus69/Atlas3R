@@ -40,8 +40,9 @@ ARCHITECTURE.md  architecture, math, contracts, and acceptance rules
 AGENTS.md        Codex operating rules
 ```
 
-This file is a compact state and roadmap file. Keep it current when the real
-state of the repo changes.
+This file is a compact state and roadmap file. Replace stale state rather than
+appending history. Keep `Current State` under 5 bullets and keep `Current
+Priority` to one short paragraph.
 
 ## Current State
 
@@ -54,7 +55,8 @@ state of the repo changes.
 ## Current Priority
 
 Start with M0. Each implementation turn should move the earliest incomplete
-milestone forward with a testable vertical slice tied to the architecture.
+milestone forward with a high-value, testable vertical slice tied to the
+architecture.
 
 ## Milestones
 
