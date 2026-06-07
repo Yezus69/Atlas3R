@@ -33,8 +33,10 @@ The README must stay small. Replace stale state; do not append history.
 
 - `atlas3r` has an M0 runtime contract foundation from the previous Codex pass.
 - M1 is implemented as a manifest-backed runtime path: `python -m atlas3r.m1` reads `config/canonical_assets.json`, registers canonical tracks, inspects available RGB video/frame assets, proposes image-evidence keyframes, and writes reports under `runs/m1/`.
-- In the current local workspace, `phone_room` is available as decoded RGB frames and produces real inspection/keyframe reports. `reference_metric` is not present and reports `missing_asset`.
-- Reconstruction, metric reference loading, real model execution, optimization, mapping, validation, dataset export, and robot training are not production behavior yet.
+- M2 is implemented as a narrow measured-reference runtime path: `python -m atlas3r.m2` reads the canonical manifest, recognizes a local TUM-style RGB-D `reference_metric` directory, requires local sidecar/manifest metadata for scale-critical fields, and writes measured-reference reports under `runs/m2/`.
+- In the current local workspace, `phone_room` is available as decoded RGB frames and produces real M1 inspection/keyframe reports. `reference_metric` is not present, so M1 and M2 report `missing_asset`; M2 also reports `phone_room` as `no_measured_evidence_supplied`.
+- M2 `FrameRayPacket` sidecar creation is implemented for complete local measured RGB-D/depth/pose associations, but is currently blocked by the missing local `reference_metric` asset and required metadata.
+- Reconstruction, real model execution, optimization, mapping, validation, dataset export, and robot training are not production behavior yet.
 - Third-party models and weights remain external. The repo should adapt their artifacts, not vendor them.
 - The next valuable work is to attach measured metric evidence for the `reference_metric` track through a narrow adapter.
 
@@ -90,4 +92,4 @@ Each milestone names the architecture section it implements. The milestone is co
 
 ## Current Priority
 
-The next priority is **M2 - Metric Reference Adapter**. Load measured evidence for `reference_metric` into Atlas3R scale/depth/pose evidence without using it to bypass the monocular teacher path. Keep missing external artifacts explicit.
+The next priority is to stage a local TUM-style `reference_metric` asset plus sidecar/manifest metadata for intrinsics, depth scale, timestamp tolerance, depth convention, pose convention, and pose units, then rerun M2 to produce measured packet sidecars and measured scale-evidence records.

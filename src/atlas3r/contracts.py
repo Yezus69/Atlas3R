@@ -553,6 +553,7 @@ class KeyframeSet:
 
 @dataclass(frozen=True)
 class FrameRayPacket:
+    asset_id: str
     frame_id: int
     T_world_camera: Sequence[Sequence[float]]
     rays_camera: Any
@@ -561,12 +562,15 @@ class FrameRayPacket:
     camera_model: CameraModel
     source: str
     uncertainty: Mapping[str, Any]
+    provenance: Mapping[str, Any]
     source_depth_convention: DepthConvention
     intrinsics: Mapping[str, Any] | None = None
     rolling_shutter_model: Mapping[str, Any] | None = None
     depth_residual_field: Any | None = None
+    camera_confidence: float | None = None
 
     def __post_init__(self) -> None:
+        _validate_non_empty_string(self.asset_id, "asset_id")
         _validate_non_negative_int(self.frame_id, "frame_id")
         _validate_shape(self.T_world_camera, (4, 4), "T_world_camera")
         _validate_all_finite(self.T_world_camera, "T_world_camera")
@@ -588,6 +592,7 @@ class FrameRayPacket:
             )
         _validate_non_empty_string(self.source, "source")
         _validate_mapping(self.uncertainty, "uncertainty", non_empty=True)
+        _validate_mapping(self.provenance, "provenance", non_empty=True)
         convention = _as_enum(
             self.source_depth_convention,
             DepthConvention,
@@ -602,6 +607,8 @@ class FrameRayPacket:
             _validate_mapping(self.intrinsics, "intrinsics")
         if self.rolling_shutter_model is not None:
             _validate_mapping(self.rolling_shutter_model, "rolling_shutter_model")
+        if self.camera_confidence is not None:
+            _validate_probability(self.camera_confidence, "camera_confidence")
 
 
 @dataclass(frozen=True)
