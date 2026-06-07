@@ -1,6 +1,6 @@
-# AGENTS.md - Atlas3R Codex Operating Rules
+# AGENTS.md - Atlas3R Codex/Claude Operating Rules
 
-Codex reads this file as durable repository guidance. Keep it short. Put system spec in `ARCHITECTURE.md`; put current state and milestone order in `README.md`.
+Codex/Claude reads this file as durable repository guidance. Keep it short. Put system spec in `ARCHITECTURE.md`; put current state and milestone order in `README.md`.
 
 ## Context Load Order
 

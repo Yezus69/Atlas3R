@@ -19,7 +19,7 @@ Use the repository docs in this order:
 
 1. `ARCHITECTURE.md` defines the system spec, math, data contracts, module responsibilities, and acceptance rules.
 2. `README.md` states the current implementation state and the next milestone to execute.
-3. `AGENTS.md` defines how Codex should work without bloating the architecture or roadmap.
+3. `AGENTS.md` defines how Codex/Claude should work without bloating the architecture or roadmap.
 
 If these files conflict, resolve the conflict this way:
 
@@ -31,7 +31,7 @@ The README must stay small. Replace stale state; do not append history.
 
 ## Current State
 
-- `atlas3r` has an M0 runtime contract foundation from the previous Codex pass.
+- `atlas3r` has an M0 runtime contract foundation from the previous Codex/Claude pass.
 - M1 is implemented as a manifest-backed runtime path: `python -m atlas3r.m1` reads `config/canonical_assets.json`, registers canonical tracks, inspects available RGB video/frame assets, proposes image-evidence keyframes, and writes reports under `runs/m1/`.
 - M2 is implemented as a narrow measured-reference runtime path: `python -m atlas3r.m2` reads the canonical manifest, recognizes a local TUM-style RGB-D `reference_metric` directory, requires local sidecar/manifest metadata for scale-critical fields, and writes measured-reference reports under `runs/m2/`.
 - In the current local workspace, `phone_room` is available as decoded RGB frames and produces real M1 inspection/keyframe reports. `reference_metric` is not present, so M1 and M2 report `missing_asset`; M2 also reports `phone_room` as `no_measured_evidence_supplied`.
