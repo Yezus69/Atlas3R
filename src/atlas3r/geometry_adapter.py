@@ -306,6 +306,41 @@ def load_geometry_artifacts(
             }
         )
 
+    # Soft (learned) metric scale evidence. A learned metric-depth backbone
+    # (e.g. DA3METRIC) supplies a metric *prior*, not a measurement: it is
+    # honest soft evidence (evidence_type=learned_metric_depth_prior,
+    # measured=False) that can back at most a metric_pseudo_label -- never
+    # measured_metric. We emit it only when the manifest explicitly declares a
+    # learned metric prior AND the depth units are meters; otherwise the
+    # reconstruction stays unanchored (non_metric_pseudo_label). Nothing is
+    # fabricated: measured stays False and the source names the model.
+    scale_evidence_objects: list[Any] = []
+    learned_metric_prior = bool(manifest.get("learned_metric_depth_prior", False))
+    if packets and learned_metric_prior and str(units) == "meters":
+        from .contracts import ScaleEvidence, ScaleEvidenceType
+
+        soft_conf = _clamp01(float(manifest.get("scale_evidence_confidence", 0.5)))
+        try:
+            scale_evidence_objects.append(
+                ScaleEvidence(
+                    evidence_id=f"{asset_id}_learned_metric_depth_prior",
+                    evidence_type=ScaleEvidenceType.LEARNED_METRIC_DEPTH_PRIOR,
+                    measured=False,
+                    source=f"learned_metric_depth:{backbone_name}",
+                    frame_ids=tuple(p.frame_id for p in packets),
+                    confidence=soft_conf,
+                    provenance={
+                        "backbone_name": backbone_name,
+                        "method": method,
+                        "model_name": str(manifest.get("model_name") or backbone_name),
+                        "units": "meters",
+                        "evidence_class": "soft_learned_metric_prior_not_measured",
+                    },
+                )
+            )
+        except ContractValidationError:
+            scale_evidence_objects = []
+
     status = "loaded" if packets else "no_valid_packets_from_artifact"
     report = {
         **base_report,
@@ -313,6 +348,8 @@ def load_geometry_artifacts(
         "backbone_name": backbone_name,
         "method": method,
         "metric_evidence": metric_evidence,
+        "learned_metric_depth_prior": learned_metric_prior,
+        "soft_scale_evidence_count": len(scale_evidence_objects),
         "depth_units": str(units) if units is not None else None,
         "depth_scale_to_meters": scale_to_meters,
         "source_depth_convention": convention.value,
@@ -324,6 +361,7 @@ def load_geometry_artifacts(
         "skipped_frames": tuple(skipped),
         "next_command": next_command,
         "blockers": () if packets else ("external_artifact_present_but_no_valid_packets",),
+        "_scale_evidence": scale_evidence_objects,
     }
     return packets, report
 

@@ -149,7 +149,8 @@ def _run_track(
         lambda: _load_geometry(asset_id, root, artifacts_dir),
     )
     monocular_packets = geometry_status.get("_packets", []) if isinstance(geometry_status, Mapping) else []
-    geometry_report = {k: v for k, v in geometry_status.items() if k != "_packets"} if isinstance(geometry_status, Mapping) else geometry_status
+    geometry_soft_evidence = geometry_status.get("_scale_evidence", []) if isinstance(geometry_status, Mapping) else []
+    geometry_report = {k: v for k, v in geometry_status.items() if not str(k).startswith("_")} if isinstance(geometry_status, Mapping) else geometry_status
 
     report["geometry_source_status"] = {
         "measured_reference": measured_report,
@@ -195,8 +196,15 @@ def _run_track(
     )
     report["visibility_residual_status"] = _strip_private(visibility_report)
 
-    # (f) scale evidence + posterior
-    scale_evidence = _collect_scale_evidence(measured_status, is_reference)
+    # (f) scale evidence + posterior. The scale evidence must match the working
+    # packet set: measured evidence anchors the measured reference packets;
+    # a learned metric-depth prior (soft, measured=False) anchors the monocular
+    # packets and can back at most a metric_pseudo_label. A monocular set with no
+    # such prior stays unanchored (non_metric_pseudo_label).
+    if packet_source == "monocular_artifact":
+        scale_evidence = list(geometry_soft_evidence)
+    else:
+        scale_evidence = _collect_scale_evidence(measured_status, is_reference)
     scale_result = _stage(
         blockers, "scale_posterior",
         lambda: _scale(working_packets, scale_evidence),
