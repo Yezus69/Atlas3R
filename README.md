@@ -26,9 +26,10 @@ code forward.
 - This is a docs-only pivot baseline.
 - No model adapters, CLI commands, package code, tests, or mapper runtime exist
   on this branch yet.
-- Remote-tracking branches were not deleted by this cleanup.
-- Local ignored `data/` and `runs/` directories were left in place to avoid
-  deleting captures or generated evidence outside tracked git state.
+- Branch refs are limited to the local pivot branch and the matching
+  `origin/pivot/scale-aware-reconstruction-teacher` tracking ref.
+- Local ignored `data/` and `runs/` directories were deleted to prevent old
+  captures or generated outputs from contaminating the pivot.
 
 ## Pivot Boundary
 

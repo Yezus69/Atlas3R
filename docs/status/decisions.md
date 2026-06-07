@@ -14,4 +14,4 @@ This is a compact ADR index for the pivot baseline.
 | D-0008 | Acceptance | Metric pseudo-label output requires validation plus a tight scale posterior; otherwise reject or mark non-metric. | Yes |
 | D-0009 | Dependencies | Third-party model repos and weights stay outside this repo behind adapters and external paths. | Yes |
 | D-0010 | Cleanup | This branch is docs-only after the cleanse; old code and tests were intentionally removed. | Yes |
-| D-0011 | Branches | Local branches and local remote-tracking refs were pruned to one pivot branch; hosted remote branches were left untouched. | Yes |
+| D-0011 | Branches | Local branches and non-pivot remote-tracking refs were pruned; only the local pivot branch and matching origin pivot tracking ref remain visible. | Yes |
