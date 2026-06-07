@@ -1,95 +1,97 @@
-# AGENTS.md - Codex Operating Rules for Atlas3R
+# AGENTS.md - Atlas3R Codex Operating Rules
 
-This file defines how Codex should work in Atlas3R.
+Codex reads this file as durable repository guidance. Keep it short. Put system spec in `ARCHITECTURE.md`; put current state and milestone order in `README.md`.
 
 ## Context Load Order
 
-Before non-trivial coding or architecture changes, load:
+Before non-trivial work:
 
-1. `README.md`
-2. `ARCHITECTURE.md`
-3. `AGENTS.md`
+1. Read `ARCHITECTURE.md` first to load the full system spec and contracts.
+2. Read `README.md` second to find the current state and earliest incomplete milestone.
+3. Re-read this file only for operating rules.
+4. Inspect the relevant implementation files before editing.
 
-On resumed work or compacted context, reload the same files and continue from
-the earliest incomplete milestone in `README.md`.
-
-## Mission
-
-Atlas3R builds a Scale-Aware Monocular Reconstruction Teacher for RGB videos.
-The teacher filters videos, reconstructs static geometry from strong evidence,
-fuses rays into TSDF/occupancy maps, and emits metric pseudo-labels only through
-a scale posterior and validation gate.
-
-Core pipeline:
+If docs conflict:
 
 ```text
-RGB video
-  -> reconstructability gate
-  -> keyframe selector
-  -> ViPE/DA3 geometry backbone
-  -> ray/depth/pose representation
-  -> visibility graph
-  -> SAM2 mask grouping
-  -> scale-aware robust optimizer
-  -> static/dynamic inference
-  -> ray-based TSDF and occupancy fusion
-  -> validation and metric acceptance gate
+ARCHITECTURE.md API/contracts win over README wording.
+README current state/milestone order wins over stale code comments.
+AGENTS.md only controls work style.
 ```
 
-## Operating Model
+## Work Selection
 
-Codex should work continuously from the architecture roadmap, not as isolated
-one-off turns. Each implementation turn should:
+Each turn should choose the highest-value coherent slice inside the earliest incomplete README milestone.
 
-1. identify the earliest incomplete milestone in `README.md`;
-2. choose the highest-value coherent slice inside that milestone;
-3. keep changes tied to the contracts and math in `ARCHITECTURE.md`;
-4. verify real behavior or boundary contracts;
-5. update `README.md` only when current state, milestone completion, or next
-   priority materially changes.
+Do not jump ahead to reconstruction, optimization, mapping, validation, or export until earlier data/evidence contracts exist.
 
-## README Budget
+A good slice produces one of:
 
-`README.md` is a bounded state snapshot, not a session log. Edits should replace
-stale state instead of appending history.
+```text
+clear runtime behavior
+clear data-grounded report
+clear adapter boundary
+clear rejection/missing-artifact status
+```
 
-Keep it compact:
+A bad slice adds broad scaffolding, fake outputs, toy examples, or code that cannot be evaluated on the canonical videos.
 
-- `Current State`: at most 5 bullets.
-- `Current Priority`: one short paragraph.
-- `Milestones`: stable roadmap; update acceptance only when the architecture or
-  implementation plan actually changes.
-- No per-turn logs, command transcripts, chat summaries, or minor fix notes.
+## Data Grounding
 
-## Momentum Rule
+The project is grounded in two canonical tracks:
 
-Codex should avoid local minima where a turn is spent polishing scaffolding,
-chasing tiny incidental errors. Small fixes are valuable when they unlock the next architecture slice;
-otherwise prefer work that moves one of these core surfaces forward:
+```text
+reference_metric: public indoor RGB sequence with measured metric evidence
+phone_room: user phone RGB room video
+```
 
-- architecture contracts and typed boundaries;
-- reconstructability and keyframe selection;
-- ViPE/DA3 adapter boundary;
-- SAM2 mask-track boundary;
-- visibility graph and optimizer variables;
-- ray-fused TSDF/occupancy mapping;
-- held-out validation and metric gate;
-- accepted dataset export.
+If an asset or external artifact is missing, report `missing_asset` or `missing_external_artifact`. Do not fabricate replacement data. Do not use synthetic toy scenes as the main evidence path.
 
-If the same class of issue repeats, step back to the milestone objective,
-identify the root dependency or missing abstraction, and implement the smallest
-slice that restores forward progress.
+## Testing And Verification
 
-## Architecture Invariants
+Do not add broad unit-test bulk or synthetic scene pipelines unless explicitly requested.
 
-- Internal camera geometry is ray-map first: `r_i(u,v)`, radial depth, camera
-  pose, confidence, global scale, and static probability are the core atom.
-- Units are meters unless a field explicitly says otherwise.
-- Use explicit coordinate frame names such as `T_world_camera`.
-- Global scale `s` is a state variable with posterior uncertainty and source
-  metadata.
-- Unknown, free, occupied, dynamic, predicted, and measured states remain
-  separate through mapping and export.
-- Dynamic pixels are excluded before TSDF/occupancy fusion.
-- Metric output requires `ScalePosterior` and `ValidationReport`.
-- Third-party model repositories and weights remain external to the repo.
+Prefer data-grounded verification reports on the canonical tracks. Small invariant checks are acceptable when they prevent dangerous mistakes such as wrong coordinate frames, invalid shapes, non-unit rays, invalid probabilities, or silent metric promotion.
+
+## Model Boundaries
+
+Third-party model repositories and weights remain external.
+
+Allowed:
+
+```text
+artifact adapters
+manifest readers
+clear unavailable/missing-artifact errors
+lazy optional imports inside adapter execution paths
+```
+
+Not allowed:
+
+```text
+vendoring model repos or weights
+heavy ML imports at package import time
+fake model predictions
+parallel model zoo behavior without explicit diagnosis purpose
+```
+
+## Truth Invariants
+
+Never collapse these distinctions:
+
+```text
+measured_metric vs metric_pseudo_label vs non_metric_pseudo_label vs rejected
+unknown vs free vs occupied_static vs movable_static vs dynamic
+radial depth vs optical z-depth
+T_world_camera vs T_camera_world
+mask grouping vs dynamic classification
+mesh quality vs robot occupancy quality
+```
+
+Metric output requires both scale evidence and validation. A nice visualization is not ground truth.
+
+## README Discipline
+
+`README.md` is a bounded state file, not a session log.
+
+When implementation state changes, replace stale bullets. Do not append transcripts, chat summaries, command logs, or minor fix notes.
