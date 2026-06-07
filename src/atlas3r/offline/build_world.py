@@ -8,6 +8,7 @@ from pathlib import Path
 from atlas3r.offline.best_map_selection import BestMapSelectionResult, write_best_world_map
 from atlas3r.offline.camera_scale_ledger import (
     ScaleMode,
+    update_near_metric_scale_ledgers,
     update_soft_metric_scale_ledgers,
     write_camera_scale_ledgers,
 )
@@ -115,6 +116,8 @@ class BuildWorldOptions:
     optimizer_min_improvement_ratio: float = 0.05
     export_optimized_world_map: bool = False
     export_best_world_map: bool = False
+    enable_ground_plane_scale: bool = False
+    export_best_world_map_viewer: bool = False
 
 
 @dataclass(frozen=True)
@@ -330,6 +333,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
         map_options=map_options,
         export_best_world_map=options.export_best_world_map,
         failure_points=failure_points,
+        enable_ground_plane_scale=options.enable_ground_plane_scale,
+        export_viewer_html=options.export_best_world_map_viewer,
     )
     classical_comparison = write_classical_map_comparison(
         run_dir,
@@ -352,8 +357,15 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             map_options=map_options,
             export_best_world_map=options.export_best_world_map,
             failure_points=failure_points,
+            enable_ground_plane_scale=options.enable_ground_plane_scale,
+            export_viewer_html=options.export_best_world_map_viewer,
             classical_comparison=classical_comparison,
         )
+    ledgers, soft_metric_ledger = update_near_metric_scale_ledgers(
+        run_dir,
+        ledgers=ledgers,
+        ground_plane_scale=best_map.ground_plane_scale,
+    )
     objects = write_object_ledger(run_dir, proposal_cache=proposals, failure_points=failure_points)
     render = write_render_repair_diagnostics(
         run_dir,
@@ -489,6 +501,8 @@ def build_world(options: BuildWorldOptions) -> BuildWorldResult:
             "optimizer_min_improvement_ratio": options.optimizer_min_improvement_ratio,
             "export_optimized_world_map": options.export_optimized_world_map,
             "export_best_world_map": options.export_best_world_map,
+            "enable_ground_plane_scale": options.enable_ground_plane_scale,
+            "export_best_world_map_viewer": options.export_best_world_map_viewer,
         },
         "module_status": {
             "frame_cache": frame_cache.status,

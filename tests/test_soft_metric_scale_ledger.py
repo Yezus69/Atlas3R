@@ -4,10 +4,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from atlas3r.offline.camera_scale_ledger import update_soft_metric_scale_ledgers
+from atlas3r.offline.camera_scale_ledger import (
+    update_near_metric_scale_ledgers,
+    update_soft_metric_scale_ledgers,
+    write_camera_scale_ledgers,
+)
 from atlas3r.offline.depth_pro_witness import load_depth_pro_proposal_cache
 from atlas3r.offline.disagreement import write_teacher_disagreement
 from atlas3r.offline.frame_cache import build_frame_cache
+from atlas3r.offline.ground_plane_scale import GROUND_PLANE_METRIC_SCALE_SOURCE
 from atlas3r.offline.keyframes import select_keyframes
 from atlas3r.offline.proposal_cache import write_proposal_cache
 from atlas3r.offline.run_manifest import ensure_run_tree
@@ -53,6 +58,44 @@ class SoftMetricScaleLedgerTest(unittest.TestCase):
             self.assertEqual(ledger["scale_confidence"], "low")
             self.assertTrue(ledger["depth_pro_metric_prior_available"])
             self.assertTrue(ledger["vggt_metric_prior_available"])
+            self.assertFalse(ledger["physical_accuracy_claim"])
+
+    def test_ground_plane_scale_updates_near_metric_without_accuracy_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _proposal_run(Path(tmp), vggt_depth=2.0, depth_pro_depth=2.0)
+            ledgers = write_camera_scale_ledgers(
+                run["run_dir"],
+                camera=None,
+                frame_count=2,
+                debug_geometry_mode="none",
+                proposal_cache=run["proposals"],
+                disagreement=run["disagreement"],
+            )
+            update_soft_metric_scale_ledgers(
+                run["run_dir"],
+                frame_metadata_summary={},
+                proposal_cache=run["proposals"],
+                disagreement=run["disagreement"],
+                cross_view_metrics=None,
+            )
+
+            updated, ledger = update_near_metric_scale_ledgers(
+                run["run_dir"],
+                ledgers=ledgers,
+                ground_plane_scale={
+                    "available": True,
+                    "scale_factor": 2.0,
+                    "confidence": "low",
+                    "cue_sources": ["ground_plane_percentile", "phone_camera_height_prior"],
+                    "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+                    "scale_status": "near_metric_unanchored",
+                },
+            )
+
+            self.assertEqual(updated.scale_source, GROUND_PLANE_METRIC_SCALE_SOURCE)
+            self.assertEqual(ledger["scale_status"], "near_metric_unanchored")
+            self.assertEqual(ledger["scale_confidence"], "low")
+            self.assertGreaterEqual(ledger["independent_scale_cue_count"], 2)
             self.assertFalse(ledger["physical_accuracy_claim"])
 
 

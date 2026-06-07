@@ -141,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
     build_world_parser.add_argument("--optimizer-min-improvement-ratio", type=float, default=0.05)
     build_world_parser.add_argument("--export-optimized-world-map", action="store_true")
     build_world_parser.add_argument("--export-best-world-map", action="store_true")
+    build_world_parser.add_argument("--enable-ground-plane-scale", action="store_true")
+    build_world_parser.add_argument("--export-best-world-map-viewer", action="store_true")
     build_world_parser.set_defaults(func=_run_offline_build_world)
 
     teachers_parser = subparsers.add_parser("teachers", help="Teacher witness registry.")
@@ -277,6 +279,8 @@ def _run_offline_build_world(args: argparse.Namespace) -> int:
             optimizer_min_improvement_ratio=float(args.optimizer_min_improvement_ratio),
             export_optimized_world_map=bool(args.export_optimized_world_map),
             export_best_world_map=bool(args.export_best_world_map),
+            enable_ground_plane_scale=bool(args.enable_ground_plane_scale),
+            export_best_world_map_viewer=bool(args.export_best_world_map_viewer),
         )
     )
     print(f"wrote {Path(result.run_dir) / 'run_manifest.json'}")

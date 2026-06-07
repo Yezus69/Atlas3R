@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
 from atlas3r.contracts.frames import CameraModel
 from atlas3r.offline.disagreement import DisagreementResult
+from atlas3r.offline.ground_plane_scale import (
+    GROUND_PLANE_METRIC_SCALE_SOURCE,
+    GROUND_PLANE_SCALE_STATUS,
+)
 from atlas3r.offline.proposal_cache import DebugGeometryMode, ProposalCacheResult
 from atlas3r.offline.run_manifest import write_json
 
@@ -192,6 +196,105 @@ def update_soft_metric_scale_ledgers(
         )
         write_json(scale_ledger_path, scale_payload)
     return payload
+
+
+def update_near_metric_scale_ledgers(
+    run_dir: str | Path,
+    *,
+    ledgers: CameraScaleLedgerResult,
+    ground_plane_scale: dict[str, object] | None,
+) -> tuple[CameraScaleLedgerResult, dict[str, object]]:
+    root = Path(run_dir)
+    soft_path = root / "world" / "soft_metric_scale_ledger.json"
+    hypotheses_path = root / "world" / "scale_hypotheses.json"
+    scale_path = root / "world" / "scale_ledger.json"
+    soft_payload = _read_json_object(soft_path)
+    if not ground_plane_scale or not bool(ground_plane_scale.get("available", False)):
+        return ledgers, soft_payload
+
+    confidence = str(ground_plane_scale.get("confidence", "low"))
+    cue_sources = _combined_cue_sources(soft_payload, ground_plane_scale)
+    near_payload = {
+        **ground_plane_scale,
+        "cue_sources": cue_sources,
+        "independent_scale_cue_count": 2,
+        "teacher_prior_scale_factor": 1.0,
+        "physical_accuracy_claim": False,
+        "measured_geometry": False,
+    }
+    reasons_value = soft_payload.get("reasons", [])
+    reasons = list(reasons_value) if isinstance(reasons_value, list) else []
+    reasons.append("ground-plane plus phone camera-height prior available")
+    reasons.append("cross-cue disagreement lowers confidence when scale factor departs from 1.0")
+    soft_payload.update(
+        {
+            "selected_scale_mode": "near_metric_ground_plane",
+            "scale_status": GROUND_PLANE_SCALE_STATUS,
+            "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+            "scale_confidence": confidence,
+            "ground_plane_camera_height_scale": near_payload,
+            "cue_sources": cue_sources,
+            "independent_scale_cue_count": 2,
+            "reasons": reasons,
+            "physical_accuracy_claim": False,
+            "measured_geometry": False,
+            "training_quality": False,
+        }
+    )
+    hypotheses = _read_json_object(hypotheses_path)
+    hypotheses.update(
+        {
+            "selected_scale_mode": "near_metric_ground_plane",
+            "scale_status": GROUND_PLANE_SCALE_STATUS,
+            "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+            "scale_confidence": confidence,
+            "cue_sources": cue_sources,
+            "independent_scale_cue_count": 2,
+            "ground_plane_camera_height_scale": near_payload,
+            "physical_accuracy_claim": False,
+        }
+    )
+    existing = hypotheses.get("scale_hypotheses")
+    if isinstance(existing, list):
+        existing.append(
+            {
+                "name": "ground_plane_camera_height_prior",
+                "available": True,
+                "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+                "scale_factor": ground_plane_scale.get("scale_factor"),
+                "confidence": confidence,
+                "truth_status": "near_metric_prior_not_physical_truth",
+            }
+        )
+    soft_payload["scale_hypotheses"] = hypotheses
+    scale_payload = _read_json_object(scale_path)
+    scale_payload.update(
+        {
+            "selected_scale_mode": "near_metric_ground_plane",
+            "scale_status": GROUND_PLANE_SCALE_STATUS,
+            "scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+            "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+            "scale_confidence": confidence,
+            "ground_plane_camera_height_scale": near_payload,
+            "cue_sources": cue_sources,
+            "independent_scale_cue_count": 2,
+            "physical_accuracy_allowed": False,
+            "physical_accuracy_claim": False,
+            "measured_geometry": False,
+        }
+    )
+    write_json(soft_path, soft_payload)
+    write_json(hypotheses_path, hypotheses)
+    write_json(scale_path, scale_payload)
+    return (
+        replace(
+            ledgers,
+            scale_source=GROUND_PLANE_METRIC_SCALE_SOURCE,
+            selected_scale_mode="near_metric_ground_plane",
+            scale_confidence=confidence,
+        ),
+        soft_payload,
+    )
 
 
 def _scale_source(
@@ -399,3 +502,26 @@ def _float_or_none(value: object) -> float | None:
         return None if value is None else float(str(value))
     except (TypeError, ValueError):
         return None
+
+
+def _combined_cue_sources(
+    soft_payload: dict[str, object], ground_plane_scale: dict[str, object]
+) -> list[str]:
+    sources: list[str] = []
+    ground_sources = ground_plane_scale.get("cue_sources", [])
+    if isinstance(ground_sources, list):
+        for source in ground_sources:
+            if isinstance(source, str) and source not in sources:
+                sources.append(source)
+    if bool(soft_payload.get("depth_pro_metric_prior_available")):
+        sources.append("depth_pro_metric_prior")
+    if bool(soft_payload.get("vggt_metric_prior_available")):
+        sources.append("vggt_multi_view_prior")
+    return list(dict.fromkeys(sources))
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, dict) else {}

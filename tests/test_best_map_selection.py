@@ -54,6 +54,7 @@ class BestMapSelectionTest(unittest.TestCase):
                 optimizer=MapConsistencyOptimizerResult(status="disabled"),
                 map_options=options,
                 export_best_world_map=True,
+                export_viewer_html=True,
                 failure_points=run["failures"],
             )
 
@@ -67,6 +68,8 @@ class BestMapSelectionTest(unittest.TestCase):
             self.assertEqual(manifest["selected_best_map_source"], "raw_consensus")
             self.assertFalse(manifest["truth_boundary"]["physical_accuracy_claim"])
             self.assertFalse(manifest["truth_boundary"]["training_quality"])
+            self.assertEqual(manifest["artifacts"]["viewer_html"], "world_map_best/viewer.html")
+            self.assertTrue((run["run_dir"] / "world_map_best" / "viewer.html").is_file())
             self.assertTrue((run["run_dir"] / "world_map_best" / "topdown_preview.svg").is_file())
 
 

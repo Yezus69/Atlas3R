@@ -28,6 +28,13 @@ from atlas3r.offline.fused_world_map_artifacts import (
     build_sparse_occupancy,
     write_map_artifacts,
     write_quality_and_manifest,
+    write_world_map_viewer_html,
+)
+from atlas3r.offline.ground_plane_scale import (
+    GROUND_PLANE_METRIC_SCALE_SOURCE,
+    GROUND_PLANE_SCALE_STATUS,
+    estimate_ground_plane_camera_height_scale,
+    scale_trajectory,
 )
 from atlas3r.offline.keyframes import KeyframeRecord
 from atlas3r.offline.map_consistency_optimizer import MapConsistencyOptimizerResult
@@ -52,6 +59,7 @@ class BestMapSelectionResult:
     camera_trajectory_path: str | None = None
     map_quality_json_path: str | None = None
     map_quality_markdown_path: str | None = None
+    viewer_html_path: str | None = None
     topdown_preview_path: str | None = None
     inspection_instructions_path: str | None = None
     point_count: int = 0
@@ -61,6 +69,7 @@ class BestMapSelectionResult:
     bbox_world_min_m: tuple[float, float, float] | None = None
     bbox_world_max_m: tuple[float, float, float] | None = None
     cleanup: dict[str, object] | None = None
+    ground_plane_scale: dict[str, object] | None = None
     classical_validation: dict[str, object] | None = None
     classical_validated_artifact_paths: tuple[str, ...] = ()
     failure_reasons: tuple[str, ...] = ()
@@ -77,6 +86,7 @@ class BestMapSelectionResult:
             self.camera_trajectory_path,
             self.map_quality_json_path,
             self.map_quality_markdown_path,
+            self.viewer_html_path,
             self.topdown_preview_path,
             self.inspection_instructions_path,
         )
@@ -99,6 +109,8 @@ def write_best_world_map(
     map_options: FusedWorldMapOptions,
     export_best_world_map: bool,
     failure_points: list[FailurePoint],
+    enable_ground_plane_scale: bool = False,
+    export_viewer_html: bool = False,
     classical_comparison: object | None = None,
 ) -> BestMapSelectionResult:
     if not export_best_world_map:
@@ -172,6 +184,30 @@ def write_best_world_map(
     if classical_validation.accepted and classical_validation.cloud is not None:
         clean_cloud = classical_validation.cloud
         selected_source = "classical_validated"
+    ground_plane_scale: dict[str, object] | None = None
+    truth_boundary = dict(OPTIMIZED_TRUTH_BOUNDARY)
+    if enable_ground_plane_scale:
+        estimate = estimate_ground_plane_camera_height_scale(clean_cloud.points_world_m, trajectory)
+        ground_plane_scale = estimate.to_dict()
+        if estimate.available:
+            clean_cloud = _scale_cloud(
+                clean_cloud,
+                scale_factor=estimate.scale_factor,
+                anchor_world_m=estimate.anchor_world_m,
+                metric_scale_source=estimate.metric_scale_source,
+            )
+            trajectory = scale_trajectory(
+                trajectory,
+                scale_factor=estimate.scale_factor,
+                anchor_world_m=estimate.anchor_world_m,
+                metric_scale_source=estimate.metric_scale_source,
+            )
+            truth_boundary.update(
+                {
+                    "metric_scale_source": GROUND_PLANE_METRIC_SCALE_SOURCE,
+                    "scale_status": GROUND_PLANE_SCALE_STATUS,
+                }
+            )
     occupancy = build_sparse_occupancy(
         clean_cloud.points_world_m,
         clean_cloud.colors_u8,
@@ -188,8 +224,13 @@ def write_best_world_map(
         write_observed_mesh=True,
         rejected_pose_count=rejected_pose_count,
         map_dir_name="world_map_best",
-        truth_boundary=OPTIMIZED_TRUTH_BOUNDARY,
+        truth_boundary=truth_boundary,
     )
+    viewer_html_path = None
+    if export_viewer_html:
+        write_world_map_viewer_html(root / "world_map_best")
+        paths["viewer_html"] = "world_map_best/viewer.html"
+        viewer_html_path = "world_map_best/viewer.html"
     quality = write_quality_and_manifest(
         root,
         input_path=input_path,
@@ -208,11 +249,16 @@ def write_best_world_map(
         failure_reasons=cleanup_reasons,
         rejected_pose_count=rejected_pose_count,
         map_dir_name="world_map_best",
-        truth_boundary=OPTIMIZED_TRUTH_BOUNDARY,
+        truth_boundary=truth_boundary,
     )
     cleanup_payload = cleanup | {
         "selected_best_map_source": selected_source,
         "failure_reasons": cleanup_reasons,
+        "scale_status": truth_boundary["scale_status"],
+        "scale_confidence": None
+        if ground_plane_scale is None
+        else ground_plane_scale.get("confidence"),
+        "ground_plane_camera_height_scale": ground_plane_scale,
         "classical_validation": classical_validation.to_dict(),
     }
     _patch_best_json(root / "world_map_best" / "world_map_manifest.json", cleanup_payload)
@@ -238,6 +284,7 @@ def write_best_world_map(
         camera_trajectory_path="world_map_best/camera_trajectory.json",
         map_quality_json_path="world_map_best/map_quality.json",
         map_quality_markdown_path="world_map_best/map_quality.md",
+        viewer_html_path=viewer_html_path,
         topdown_preview_path="world_map_best/topdown_preview.svg",
         inspection_instructions_path="world_map_best/inspection_instructions.md",
         point_count=int(clean_cloud.points_world_m.shape[0]),
@@ -247,6 +294,7 @@ def write_best_world_map(
         bbox_world_min_m=_bbox_tuple(bbox_min),
         bbox_world_max_m=_bbox_tuple(bbox_max),
         cleanup=cleanup_payload,
+        ground_plane_scale=ground_plane_scale,
         classical_validation=classical_validation.to_dict(),
         classical_validated_artifact_paths=classical_validation.artifact_paths,
         failure_reasons=tuple(cleanup_reasons),
@@ -357,6 +405,35 @@ def _filter_cloud(cloud: FusedPointCloud, mask: NDArray[np.bool_]) -> FusedPoint
         point_sigma_m=cloud.point_sigma_m[mask],
         depth_source=cloud.depth_source,
         metric_scale_source=cloud.metric_scale_source,
+        valid_depth_ratio=cloud.valid_depth_ratio,
+        rejected_low_confidence_ratio=cloud.rejected_low_confidence_ratio,
+        rejected_high_disagreement_ratio=cloud.rejected_high_disagreement_ratio,
+        mapped_disagreement_mean=cloud.mapped_disagreement_mean,
+        mapped_disagreement_p50=cloud.mapped_disagreement_p50,
+        mapped_disagreement_p95=cloud.mapped_disagreement_p95,
+        per_frame_point_counts=cloud.per_frame_point_counts,
+    )
+
+
+def _scale_cloud(
+    cloud: FusedPointCloud,
+    *,
+    scale_factor: float,
+    anchor_world_m: tuple[float, float, float] | None,
+    metric_scale_source: str,
+) -> FusedPointCloud:
+    anchor = np.asarray(anchor_world_m or (0.0, 0.0, 0.0), dtype=np.float32)
+    return FusedPointCloud(
+        points_world_m=(anchor + scale_factor * (cloud.points_world_m - anchor)).astype(np.float32),
+        colors_u8=cloud.colors_u8,
+        confidence=cloud.confidence,
+        source_frame_ids=cloud.source_frame_ids,
+        source_keyframe_ids=cloud.source_keyframe_ids,
+        depth_source_id=cloud.depth_source_id,
+        disagreement_rel=cloud.disagreement_rel,
+        point_sigma_m=(cloud.point_sigma_m * scale_factor).astype(np.float32),
+        depth_source=cloud.depth_source,
+        metric_scale_source=metric_scale_source,
         valid_depth_ratio=cloud.valid_depth_ratio,
         rejected_low_confidence_ratio=cloud.rejected_low_confidence_ratio,
         rejected_high_disagreement_ratio=cloud.rejected_high_disagreement_ratio,

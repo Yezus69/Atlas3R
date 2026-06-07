@@ -292,6 +292,11 @@ def write_map_artifacts(
     return paths
 
 
+def write_world_map_viewer_html(map_dir: Path) -> None:
+    map_dir.mkdir(parents=True, exist_ok=True)
+    (map_dir / "viewer.html").write_text(_viewer_html(), encoding="utf-8")
+
+
 def write_quality_and_manifest(
     run_dir: Path,
     *,
@@ -605,6 +610,202 @@ def _write_mesh_ply(path: Path, mesh: ObservedVoxelMesh, truth_boundary: dict[st
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _viewer_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas3R World Map Viewer</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+        BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #151617;
+      color: #f3f4f4;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-width: 320px; min-height: 100%; background: #151617; }
+    body { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 18px; border-bottom: 1px solid #303439; background: #1d2023;
+    }
+    h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: 0; }
+    #status { color: #b8c6cf; font-size: 12px; text-align: right; }
+    main {
+      display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+      min-height: 0;
+    }
+    aside {
+      padding: 16px; border-right: 1px solid #303439; background: #202326; overflow: auto;
+    }
+    section + section { margin-top: 18px; }
+    h2 {
+      margin: 0 0 9px; color: #f3f4f4; font-size: 12px; font-weight: 700;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    dl { margin: 0; display: grid; grid-template-columns: minmax(98px, auto) 1fr; gap: 7px 12px; }
+    dt { color: #9aa6ad; font-size: 12px; }
+    dd { margin: 0; color: #f3f4f4; font-size: 12px; overflow-wrap: anywhere; }
+    a { color: #9ed5ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .asset-list {
+      margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; font-size: 12px;
+    }
+    .stage {
+      min-width: 0; min-height: 0; display: grid; place-items: center; padding: 18px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(255,255,255,0.035) 1px, transparent 1px),
+        #111315;
+      background-size: 36px 36px;
+    }
+    .preview-shell {
+      width: min(100%, 1160px); height: min(100%, 760px); min-height: 420px;
+      display: grid; place-items: center; border: 1px solid #384048; border-radius: 6px;
+      background: #0f1112; overflow: hidden;
+    }
+    #preview {
+      max-width: 100%; max-height: 100%; width: 100%; height: 100%;
+      object-fit: contain; image-rendering: auto;
+    }
+    #preview-fallback { display: none; color: #b8c6cf; padding: 16px; text-align: center; }
+    @media (max-width: 820px) {
+      body { min-height: 100dvh; }
+      header { align-items: flex-start; flex-direction: column; }
+      #status { text-align: left; }
+      main { grid-template-columns: 1fr; }
+      aside { border-right: 0; border-bottom: 1px solid #303439; }
+      .preview-shell { min-height: 360px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Atlas3R World Map Viewer</h1>
+    <div id="status">Loading local artifacts...</div>
+  </header>
+  <main>
+    <aside>
+      <section>
+        <h2>Map</h2>
+        <dl id="map-stats">
+          <dt>Points</dt><dd id="point-count">-</dd>
+          <dt>Voxels</dt><dd id="voxel-count">-</dd>
+          <dt>Triangles</dt><dd id="triangle-count">-</dd>
+          <dt>Camera poses</dt><dd id="pose-count">-</dd>
+          <dt>BBox m</dt><dd id="bbox-size">-</dd>
+          <dt>Source</dt><dd id="source">-</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Truth Boundary</h2>
+        <dl>
+          <dt>Scale</dt><dd id="scale-status">-</dd>
+          <dt>Confidence</dt><dd id="scale-confidence">-</dd>
+          <dt>Observed only</dt><dd id="observed-only">-</dd>
+          <dt>Accuracy claim</dt><dd id="accuracy-claim">-</dd>
+          <dt>Completion</dt><dd id="completion">-</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Artifacts</h2>
+        <ul class="asset-list">
+          <li><a href="topdown_preview.svg">topdown_preview.svg</a></li>
+          <li><a href="fused_points.ply">fused_points.ply</a></li>
+          <li><a href="observed_voxel_mesh.ply">observed_voxel_mesh.ply</a></li>
+          <li><a href="camera_trajectory.json">camera_trajectory.json</a></li>
+          <li><a href="map_quality.json">map_quality.json</a></li>
+          <li><a href="world_map_manifest.json">world_map_manifest.json</a></li>
+        </ul>
+      </section>
+    </aside>
+    <div class="stage">
+      <div class="preview-shell">
+        <img id="preview" src="topdown_preview.svg" alt="Atlas3R top-down observed map preview">
+        <div id="preview-fallback">topdown_preview.svg unavailable</div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const status = document.getElementById("status");
+    const preview = document.getElementById("preview");
+    const fallback = document.getElementById("preview-fallback");
+
+    preview.addEventListener("error", () => {
+      preview.style.display = "none";
+      fallback.style.display = "block";
+    });
+
+    function setText(id, value) {
+      document.getElementById(id).textContent = value == null ? "-" : String(value);
+    }
+
+    function fmtCount(value) {
+      return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "-";
+    }
+
+    function fmtBool(value) {
+      if (value === true) return "true";
+      if (value === false) return "false";
+      return "-";
+    }
+
+    function fmtBBox(value) {
+      if (!Array.isArray(value) || value.length !== 3) return "-";
+      return value.map((item) => Number(item).toFixed(2)).join(" x ");
+    }
+
+    async function loadJson(path) {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) throw new Error(`${path}: ${response.status}`);
+      return await response.json();
+    }
+
+    async function loadMetadata() {
+      try {
+        const [quality, manifest, trajectory] = await Promise.all([
+          loadJson("map_quality.json"),
+          loadJson("world_map_manifest.json"),
+          loadJson("camera_trajectory.json"),
+        ]);
+        const poses = Array.isArray(trajectory.poses) ? trajectory.poses.length : null;
+        setText("point-count", fmtCount(quality.fused_point_count ?? manifest.point_count));
+        setText(
+          "voxel-count",
+          fmtCount(quality.occupied_voxel_count ?? manifest.occupied_voxel_count)
+        );
+        setText("triangle-count", fmtCount(
+          quality.observed_mesh_triangle_count ?? manifest.observed_mesh_triangle_count
+        ));
+        setText("pose-count", fmtCount(poses ?? quality.camera_trajectory_count));
+        setText("bbox-size", fmtBBox(quality.bbox_size_m));
+        setText("source", quality.selected_best_map_source ?? manifest.selected_best_map_source);
+        setText("scale-status", quality.scale_status ?? manifest.scale_status);
+        setText("scale-confidence", quality.scale_confidence ?? manifest.scale_confidence);
+        setText("observed-only", fmtBool(quality.observed_only ?? manifest.observed_only));
+        setText("accuracy-claim", fmtBool(
+          quality.physical_accuracy_claim ?? manifest.physical_accuracy_claim
+        ));
+        setText(
+          "completion",
+          fmtBool(quality.predicted_completion ?? manifest.predicted_completion)
+        );
+        status.textContent = `Loaded ${fmtCount(poses)} camera poses and local map metadata.`;
+      } catch (error) {
+        status.textContent = `Metadata unavailable: ${error.message}`;
+      }
+    }
+
+    loadMetadata();
+  </script>
+</body>
+</html>
+"""
+
+
 def _face_definitions() -> tuple[
     tuple[tuple[int, int, int], tuple[tuple[int, int, int], ...]], ...
 ]:
@@ -616,3 +817,21 @@ def _face_definitions() -> tuple[
         ((0, 0, 1), ((0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1))),
         ((0, 0, -1), ((0, 0, 0), (0, 1, 0), (1, 1, 0), (1, 0, 0))),
     )
+
+
+__all__ = [
+    "FusedPointCloud",
+    "ObservedVoxelMesh",
+    "PointChunks",
+    "SparseOccupancyGrid",
+    "TRUTH_BOUNDARY",
+    "OPTIMIZED_TRUTH_BOUNDARY",
+    "bbox",
+    "build_observed_voxel_mesh",
+    "build_sparse_occupancy",
+    "empty_cloud",
+    "empty_mesh",
+    "write_map_artifacts",
+    "write_quality_and_manifest",
+    "write_world_map_viewer_html",
+]
