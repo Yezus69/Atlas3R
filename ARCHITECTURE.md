@@ -193,10 +193,12 @@ Backbone depth is evidence, not truth. The optimizer may correct it, but correct
 A refined depth field may be represented as:
 
 $$
-d_i(u) =
+\begin{aligned}
+d_i(u) &=
 \exp\left(
 \alpha_i \log d_i^0(u) + \beta_i + \delta_i(u)
 \right)
+\end{aligned}
 $$
 
 Where:
@@ -213,42 +215,52 @@ The system must not replace depth with unconstrained per-pixel hallucination.
 Multi-view depth consistency:
 
 $$
+\begin{aligned}
 e_{\text{depth},ij}(u)
-=
+&=
 \log d_j(v) - \log \hat d_j(v)
+\end{aligned}
 $$
 
 Image or feature consistency when reliable:
 
 $$
+\begin{aligned}
 e_{\text{image},ij}(u)
-=
+&=
 \phi_i(u) - \phi_j(v)
+\end{aligned}
 $$
 
 Backbone depth prior:
 
 $$
+\begin{aligned}
 e_{\text{prior},i}(u)
-=
+&=
 \log d_i(u) - \log d_i^0(u)
+\end{aligned}
 $$
 
 Scale evidence for a known or estimated metric length:
 
 $$
+\begin{aligned}
 e_{\text{scale},k}
-=
+&=
 \frac{s L^{\text{recon}}_k - L^{\text{evidence}}_k}{\sigma_k}
+\end{aligned}
 $$
 
 Free-space consistency:
 
 $$
+\begin{aligned}
 0 < \lambda < d_i(u) - \epsilon
-\Rightarrow
-t_i + R_i(\lambda r_i(u))
+&\Rightarrow \\
+&t_i + R_i(\lambda r_i(u))
 \text{ is observed free space}
+\end{aligned}
 $$
 
 A trusted static occupied voxel must not lie in space that trusted rays observed as free.
@@ -260,22 +272,24 @@ Real videos contain blur, compression, exposure changes, reflections, rolling sh
 The teacher minimizes a robust objective:
 
 $$
+\begin{aligned}
 \min_{\{T_i, d_i, r_i, m_i, s, V\}}
 E
-=
-\lambda_d E_{\text{depth}}
-+
-\lambda_f E_{\text{image}}
-+
-\lambda_p E_{\text{prior}}
-+
-\lambda_{\text{free}} E_{\text{free-space}}
-+
-\lambda_s E_{\text{scale}}
-+
-\lambda_r E_{\text{room}}
-+
+&=
+\lambda_d E_{\text{depth}} \\
+&\quad+
+\lambda_f E_{\text{image}} \\
+&\quad+
+\lambda_p E_{\text{prior}} \\
+&\quad+
+\lambda_{\text{free}} E_{\text{free-space}} \\
+&\quad+
+\lambda_s E_{\text{scale}} \\
+&\quad+
+\lambda_r E_{\text{room}} \\
+&\quad+
 \lambda_{\text{smooth}} E_{\text{smooth}}
+\end{aligned}
 $$
 
 Each residual family must use robust losses or explicit outlier rejection. Valid choices include Huber, Cauchy, Tukey, or another documented robust loss.
