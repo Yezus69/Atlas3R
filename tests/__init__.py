@@ -1,1 +1,0 @@
-"""Atlas3R tests."""
