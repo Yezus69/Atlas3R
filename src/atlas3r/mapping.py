@@ -25,10 +25,17 @@ from .contracts import (
     FrameRayPacket,
     OccupancyGrid2D,
     ScalePosterior,
+    StaticDynamicState,
     VoxelMapState,
 )
 
 DEFAULT_VOXEL_SIZE_M = 0.05
+# A per-pixel sample is excluded from STATIC fusion when its dynamic probability
+# dominates and exceeds this threshold. Dynamic is NEVER fused into static
+# occupancy (ARCHITECTURE.md). movable_static and unknown stay distinct: a
+# movable surface is still real static geometry and is kept; only dynamic is
+# carved out here.
+DYNAMIC_EXCLUSION_PROB_THRESHOLD = 0.5
 # Bound the grid so a pathological monocular reconstruction cannot allocate an
 # enormous dense array. If the scene exceeds this, the voxel size is grown.
 MAX_VOXELS_PER_AXIS = 256
@@ -45,11 +52,21 @@ def fuse_static_map(
     scale_posterior: ScalePosterior,
     *,
     voxel_size_m: float = DEFAULT_VOXEL_SIZE_M,
+    static_dynamic_states: Sequence[StaticDynamicState] | None = None,
 ) -> tuple[VoxelMapState | None, OccupancyGrid2D | None, dict[str, Any]]:
     """Return ``(VoxelMapState, OccupancyGrid2D, map_report)``.
 
     On too-few packets or empty surface, returns ``(None, None, report)`` with
     an explicit blocked status -- never a fabricated map.
+
+    When ``static_dynamic_states`` is supplied, per-pixel samples whose dynamic
+    probability dominates (and exceeds ``DYNAMIC_EXCLUSION_PROB_THRESHOLD``) are
+    EXCLUDED from the static surface lift, so dynamic geometry is never fused
+    into static occupancy. A state is only applied to a packet when its per-pixel
+    array length matches the packet's ray count exactly (no fabricated
+    alignment); otherwise that frame is fused unfiltered and the mismatch is
+    recorded honestly in the report. movable_static and unknown are NOT carved
+    out -- only dynamic.
     """
     base_report: dict[str, Any] = {
         "module": "M7 - Ray-Fused Static Map",
@@ -73,11 +90,14 @@ def fuse_static_map(
         else "reconstruction_world"
     )
 
-    surfaces, origins, ray_dirs = _collect_world_points(packets, np)
+    surfaces, origins, ray_dirs, dynamic_filter_report = _collect_world_points(
+        packets, np, static_dynamic_states
+    )
     if surfaces.shape[0] == 0:
         return None, None, {
             **base_report,
             "status": "blocked_no_surface_points",
+            "dynamic_exclusion": dynamic_filter_report,
             "blockers": ("no_surface_points_after_lifting",),
         }
 
@@ -186,7 +206,12 @@ def fuse_static_map(
         "surface_point_count": int(surfaces.shape[0]),
         "floor": floor_info["report"],
         "occupancy_grid": grid_report,
-        "dynamic_inference": "not_inferred_no_static_dynamic_input",
+        "dynamic_inference": (
+            "dynamic_pixels_excluded_from_static_fusion"
+            if dynamic_filter_report.get("applied")
+            else "not_inferred_no_static_dynamic_input"
+        ),
+        "dynamic_exclusion": dynamic_filter_report,
         "blockers": tuple(floor_info.get("blockers", ())),
     }
     return voxel_map, grid, report
@@ -197,29 +222,91 @@ def fuse_static_map(
 # ---------------------------------------------------------------------------
 
 
-def _collect_world_points(packets: Sequence[FrameRayPacket], np: Any) -> tuple[Any, Any, Any]:
+def _collect_world_points(
+    packets: Sequence[FrameRayPacket],
+    np: Any,
+    static_dynamic_states: Sequence[StaticDynamicState] | None = None,
+) -> tuple[Any, Any, Any, dict[str, Any]]:
+    """Lift packet samples to world, optionally dropping dynamic-dominant pixels.
+
+    Returns ``(surfaces, origins, ray_dirs, dynamic_filter_report)``. The filter
+    report records, honestly, how many frames had a usable (shape-matched) state,
+    how many pixels were excluded as dynamic, and which frames were left
+    unfiltered because their state did not align pixel-for-pixel.
+    """
+    state_by_frame: dict[int, StaticDynamicState] = {}
+    for state in static_dynamic_states or ():
+        state_by_frame[int(state.frame_id)] = state
+
     surf_list = []
     origin_list = []
     dir_list = []
+    frames_filtered = 0
+    frames_state_shape_mismatch = 0
+    dynamic_pixels_excluded = 0
+    total_pixels_with_state = 0
     for packet in packets:
         rays = np.asarray(packet.rays_camera, dtype=np.float64).reshape((-1, 3))
         depth = np.asarray(packet.radial_depth_m, dtype=np.float64).reshape((-1,))
         T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
         R = T[:3, :3]
         t = T[:3, 3]
-        X_cam = rays * depth[:, None]
+
+        n = rays.shape[0]
+        keep = np.ones(n, dtype=bool)
+        state = state_by_frame.get(int(packet.frame_id))
+        if state is not None:
+            stat = np.asarray(state.static_probability, dtype=np.float64).reshape((-1,))
+            dyn = np.asarray(state.dynamic_probability, dtype=np.float64).reshape((-1,))
+            if stat.shape[0] == n and dyn.shape[0] == n:
+                # Dynamic is NEVER fused into static occupancy: drop pixels whose
+                # dynamic probability dominates and clears the threshold. movable/
+                # unknown surfaces are kept (still real static geometry).
+                is_dynamic = (dyn >= stat) & (dyn > DYNAMIC_EXCLUSION_PROB_THRESHOLD)
+                keep = ~is_dynamic
+                frames_filtered += 1
+                dynamic_pixels_excluded += int(np.count_nonzero(is_dynamic))
+                total_pixels_with_state += n
+            else:
+                # No fabricated alignment: a state whose sampling differs from the
+                # packet's rays cannot be applied pixel-for-pixel; fuse unfiltered
+                # and record the mismatch honestly.
+                frames_state_shape_mismatch += 1
+
+        if not bool(np.any(keep)):
+            continue
+        rays_k = rays[keep]
+        depth_k = depth[keep]
+        X_cam = rays_k * depth_k[:, None]
         X_world = X_cam @ R.T + t[None, :]
-        dirs_world = rays @ R.T
+        dirs_world = rays_k @ R.T
         surf_list.append(X_world)
         origin_list.append(np.repeat(t[None, :], X_world.shape[0], axis=0))
         dir_list.append(dirs_world)
+
+    dynamic_filter_report = {
+        "applied": frames_filtered > 0,
+        "state_count": len(state_by_frame),
+        "frames_filtered": frames_filtered,
+        "frames_state_shape_mismatch": frames_state_shape_mismatch,
+        "dynamic_pixels_excluded": dynamic_pixels_excluded,
+        "pixels_considered_with_state": total_pixels_with_state,
+        "exclusion_threshold": DYNAMIC_EXCLUSION_PROB_THRESHOLD,
+        "note": (
+            "dynamic_dominant_pixels_excluded_from_static_fusion_movable_and_unknown_kept"
+            if frames_filtered
+            else "no_shape_matched_static_dynamic_state_fused_unfiltered"
+        ),
+    }
+
     if not surf_list:
         empty = np.zeros((0, 3), dtype=np.float64)
-        return empty, empty, empty
+        return empty, empty, empty, dynamic_filter_report
     return (
         np.concatenate(surf_list, axis=0),
         np.concatenate(origin_list, axis=0),
         np.concatenate(dir_list, axis=0),
+        dynamic_filter_report,
     )
 
 

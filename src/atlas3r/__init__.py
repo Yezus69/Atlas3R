@@ -42,15 +42,19 @@ from .contracts import (
     VisibilityGraph,
     VoxelMapState,
 )
+from .export import export_teacher_artifacts
 from .geometry_adapter import (
     load_geometry_artifacts,
     load_measured_packets_from_m2,
 )
 from .mapping import fuse_static_map
+from .refine import refine_scene
 from .scale import estimate_scale_posterior
+from .static_dynamic import infer_static_dynamic
 from .teacher import run_teacher
 from .validation import validate_and_accept
 from .visibility import build_visibility_graph
+from .visualize import write_visual_proof
 
 __all__ = [
     "BackboneAvailability",
@@ -93,7 +97,11 @@ __all__ = [
     "load_measured_packets_from_m2",
     "build_visibility_graph",
     "estimate_scale_posterior",
+    "infer_static_dynamic",
     "fuse_static_map",
+    "refine_scene",
     "validate_and_accept",
     "run_teacher",
+    "write_visual_proof",
+    "export_teacher_artifacts",
 ]

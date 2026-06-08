@@ -33,6 +33,10 @@ from .contracts import (
 MAX_CONTRADICTION_RATE_FOR_ACCEPT = 0.25
 MAX_HELD_OUT_ERROR_FOR_ACCEPT = 0.50  # log-depth units
 HIGH_HELD_OUT_ERROR_DEFAULT = 1.0  # used when not computable
+# Fraction of inferred dynamic mass allowed to leak into the fused static surface
+# before the metric gate rejects: dynamic is NEVER fused into static occupancy, so
+# material residual leakage must block metric-training acceptance.
+MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT = 0.10
 
 
 def validate_and_accept(
@@ -42,6 +46,7 @@ def validate_and_accept(
     visibility_residual_report: Mapping[str, Any],
     map_report: Mapping[str, Any],
     measured_reference: Sequence[FrameRayPacket] | None = None,
+    static_dynamic_states: Sequence[Any] | None = None,
 ) -> tuple[ValidationReport, str, dict[str, Any]]:
     """Return ``(ValidationReport, final_category, validation_report_dict)``."""
     status = scale_posterior.metric_acceptance_status
@@ -57,12 +62,14 @@ def validate_and_accept(
     held_out_error, held_out_note = _held_out_render_error(packets, measured_reference)
     contradiction_rate = _free_space_contradiction_rate(map_report)
     floor_wall = _floor_wall_consistency(map_report)
-    dynamic_leakage = 0.0  # no dynamic inference -> no measured leakage
-    dynamic_note = "no_dynamic_inference_dynamic_leakage_zero_by_construction"
+    dynamic_leakage, dynamic_note = _dynamic_leakage_score(
+        map_report, static_dynamic_states
+    )
 
     validation_passes = (
         held_out_error <= MAX_HELD_OUT_ERROR_FOR_ACCEPT
         and contradiction_rate <= MAX_CONTRADICTION_RATE_FOR_ACCEPT
+        and dynamic_leakage <= MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT
     )
 
     rejection_reasons: list[str] = []
@@ -97,6 +104,10 @@ def validate_and_accept(
             if held_out_error > MAX_HELD_OUT_ERROR_FOR_ACCEPT:
                 rejection_reasons.append(
                     f"held_out_render_error_too_high:{held_out_error:.3f}"
+                )
+            if dynamic_leakage > MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT:
+                rejection_reasons.append(
+                    f"dynamic_leakage_into_static_too_high:{dynamic_leakage:.3f}"
                 )
             accepted = False
             final_category = (
@@ -297,6 +308,108 @@ def _free_space_contradiction_rate(map_report: Mapping[str, Any]) -> float:
         # Map fused but no measured contradiction rate -> do not silently pass.
         return 0.5
     return float(max(0.0, min(1.0, float(rate))))
+
+
+def _dynamic_leakage_score(
+    map_report: Mapping[str, Any],
+    static_dynamic_states: Sequence[Any] | None,
+) -> tuple[float, str]:
+    """Real measure of dynamic geometry leaking into the fused static surface.
+
+    Dynamic is NEVER fused into static occupancy (ARCHITECTURE.md). M5 inference
+    produces a per-pixel dynamic probability; M7 fusion EXCLUDES dynamic-dominant
+    pixels via ``static_dynamic_states`` -- but only for frames whose state aligns
+    pixel-for-pixel with the packet rays. Frames whose state shape does not match
+    are fused UNFILTERED, so any dynamic pixels in those frames leak into static.
+
+    The leakage score is the fraction of inferred dynamic-dominant samples that
+    were NOT excluded from static fusion:
+
+        leakage = dynamic_in_unfiltered_frames / total_dynamic_dominant_samples
+
+    Sources, in order of fidelity:
+    1. The fuser's own ``dynamic_exclusion`` block in ``map_report`` (the ground
+       truth of what fusion actually carved out): if it reports any frames fused
+       unfiltered while dynamic samples exist, that is real residual leakage.
+    2. The M5 ``static_dynamic_states`` totals, used to size the dynamic mass and
+       confirm dynamic inference ran.
+
+    Returns ``(score, note)``. The note never claims "no dynamic inference" when
+    inference actually ran; it reports what was excluded vs what leaked.
+    """
+    dyn_excl = map_report.get("dynamic_exclusion") if isinstance(map_report, Mapping) else None
+
+    # Count inferred dynamic-dominant samples from the M5 states (if provided).
+    total_dynamic_samples = 0
+    total_samples = 0
+    states_present = False
+    for state in static_dynamic_states or ():
+        states_present = True
+        summary = getattr(state, "residual_summary", None)
+        if isinstance(summary, Mapping):
+            total_dynamic_samples += int(summary.get("dynamic_count", 0) or 0)
+            total_samples += int(summary.get("sample_count", 0) or 0)
+
+    if not isinstance(dyn_excl, Mapping):
+        # Map was not fused with a dynamic-exclusion pass at all.
+        if states_present and total_dynamic_samples > 0:
+            # Dynamic WAS inferred but the fuser carried no exclusion record; we
+            # cannot prove exclusion happened -> treat the inferred dynamic mass
+            # as potentially leaked (conservative, never an optimistic zero).
+            score = min(1.0, total_dynamic_samples / max(total_samples, 1))
+            return score, (
+                "dynamic_inferred_but_no_fusion_exclusion_record"
+                f"_dynamic_samples_{total_dynamic_samples}_of_{total_samples}"
+                "_treated_as_potential_leakage"
+            )
+        return 0.0, "no_dynamic_exclusion_record_and_no_dynamic_inference"
+
+    applied = bool(dyn_excl.get("applied", False))
+    frames_filtered = int(dyn_excl.get("frames_filtered", 0) or 0)
+    frames_mismatch = int(dyn_excl.get("frames_state_shape_mismatch", 0) or 0)
+    excluded = int(dyn_excl.get("dynamic_pixels_excluded", 0) or 0)
+
+    if not applied and frames_mismatch == 0:
+        # No static/dynamic state reached the fuser at all.
+        if states_present and total_dynamic_samples > 0:
+            score = min(1.0, total_dynamic_samples / max(total_samples, 1))
+            return score, (
+                "dynamic_inferred_but_no_state_applied_in_fusion"
+                f"_dynamic_samples_{total_dynamic_samples}_of_{total_samples}"
+                "_treated_as_potential_leakage"
+            )
+        return 0.0, "no_static_dynamic_state_reached_fusion_no_dynamic_inferred"
+
+    # Dynamic inference ran and fusion saw the states. Excluded pixels are carved
+    # out (no leakage). Residual leakage comes from frames fused UNFILTERED while
+    # a state existed but did not align pixel-for-pixel: their dynamic-dominant
+    # samples survived into the static surface.
+    if frames_mismatch == 0:
+        # Every state-bearing frame was filtered: dynamic-dominant pixels carved
+        # out. No structural leakage path remains.
+        return 0.0, (
+            "dynamic_inferred_and_excluded_from_static_fusion"
+            f"_excluded_{excluded}_pixels_over_{frames_filtered}_frames"
+            "_zero_unfiltered_frames_no_leakage"
+        )
+
+    # Some frames were fused unfiltered. Estimate the leaked dynamic mass as the
+    # mean per-frame dynamic rate (from inferred states) times the unfiltered
+    # frame count, over the total inferred dynamic mass. When no per-state mass is
+    # available, fall back to the unfiltered-frame fraction as a conservative
+    # upper bound on leakage.
+    total_state_frames = frames_filtered + frames_mismatch
+    if total_dynamic_samples > 0 and total_samples > 0 and total_state_frames > 0:
+        mean_dynamic_per_frame = total_dynamic_samples / total_state_frames
+        leaked = mean_dynamic_per_frame * frames_mismatch
+        score = min(1.0, leaked / total_dynamic_samples) if total_dynamic_samples else 0.0
+    else:
+        score = min(1.0, frames_mismatch / max(total_state_frames, 1))
+    return float(max(0.0, min(1.0, score))), (
+        "dynamic_inferred_but_"
+        f"{frames_mismatch}_of_{total_state_frames}_frames_fused_unfiltered"
+        f"_shape_mismatch_excluded_{excluded}_pixels_residual_dynamic_may_leak"
+    )
 
 
 def _floor_wall_consistency(map_report: Mapping[str, Any]) -> float:

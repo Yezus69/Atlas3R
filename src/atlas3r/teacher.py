@@ -28,17 +28,25 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import TrackType, VideoAsset
+from .export import export_teacher_artifacts
 from .geometry_adapter import load_geometry_artifacts, load_measured_packets_from_m2
 from .m1 import DEFAULT_MANIFEST_PATH, _jsonable, _resolve_path, _write_json, load_canonical_assets
 from .mapping import fuse_static_map
+from .refine import refine_scene
 from .scale import estimate_scale_posterior
+from .static_dynamic import infer_static_dynamic
 from .validation import validate_and_accept
 from .visibility import build_visibility_graph
+from .visualize import write_visual_proof
 
 DEFAULT_OUTPUT_DIR = Path("runs/teacher")
 DEFAULT_ARTIFACTS_DIR = "external/teacher_artifacts"
 DEFAULT_M1_DIR = "runs/m1"
 DEFAULT_M2_DIR = "runs/m2"
+# Score static/dynamic with at least this many samples per frame so the per-pixel
+# state arrays align 1:1 with the packet rays (packets hold <=2048 rays), which
+# lets fuse_static_map exclude dynamic pixels without fabricated alignment.
+STATIC_DYNAMIC_SAMPLES_PER_FRAME = 4096
 
 
 def run_teacher(
@@ -75,6 +83,7 @@ def run_teacher(
             artifacts_dir=artifacts_dir,
             m1_dir=m1_dir,
             m2_dir=m2_dir,
+            output_dir=output_path,
         )
         report_path = output_path / f"{asset.asset_id}_teacher_report.json"
         _write_json(report_path, track_report)
@@ -90,6 +99,16 @@ def run_teacher(
                 "asset_id": tr["asset_id"],
                 "track_type": tr["track_type"],
                 "final_category": tr["final_category"],
+                "monocular_candidate_category": (
+                    tr.get("reference_metric_subresults", {})
+                    .get("monocular_candidate", {})
+                    .get("final_category")
+                ),
+                "measured_baseline_category": (
+                    tr.get("reference_metric_subresults", {})
+                    .get("measured_baseline", {})
+                    .get("final_category")
+                ),
                 "exact_blockers": tr["exact_blockers"],
             }
             for tr in per_track
@@ -107,10 +126,13 @@ def _run_track(
     artifacts_dir: str | Path,
     m1_dir: str | Path,
     m2_dir: str | Path,
+    output_dir: Path,
 ) -> dict[str, Any]:
     asset_id = asset.asset_id
     is_reference = asset.track_type is TrackType.REFERENCE_METRIC
     blockers: list[str] = []
+    asset_out_dir = output_dir / asset_id
+    report_path = output_dir / f"{asset_id}_teacher_report.json"
 
     report: dict[str, Any] = {
         "module": "Atlas3R Teacher",
@@ -119,10 +141,15 @@ def _run_track(
         "asset_availability": {},
         "geometry_source_status": {},
         "packet_creation_status": {},
+        "refined_pose_depth_map_status": {},
+        "static_dynamic_movable_status": {},
         "visibility_residual_status": {},
         "scale_evidence": {},
         "map_occupancy_status": {},
+        "map_mesh_occupancy_artifacts": {},
+        "visual_proof_artifacts": {},
         "validation_status": {},
+        "reference_metric_subresults": {},
         "final_category": "rejected",
         "exact_blockers": [],
     }
@@ -134,126 +161,286 @@ def _run_track(
     )
     report["asset_availability"] = availability
 
-    # (b) measured reference (M2) + (c) geometry source (M3)
-    measured_packets = []
+    # (b) measured reference (M2) -- BASELINE / EVALUATION only.
+    measured_packets: list[Any] = []
     measured_status = _stage(
         blockers, "measured_reference",
         lambda: _load_measured(asset_id, root, m2_dir) if is_reference else _not_applicable("not_reference_metric_track"),
     )
     if isinstance(measured_status, Mapping) and measured_status.get("status") == "loaded":
-        measured_packets = measured_status.get("_packets", [])
+        measured_packets = list(measured_status.get("_packets", []))
     measured_report = {k: v for k, v in measured_status.items() if k != "_packets"} if isinstance(measured_status, Mapping) else measured_status
 
+    # (c) monocular DA3 candidate (BOTH tracks).
     geometry_status = _stage(
         blockers, "geometry_source",
         lambda: _load_geometry(asset_id, root, artifacts_dir),
     )
-    monocular_packets = geometry_status.get("_packets", []) if isinstance(geometry_status, Mapping) else []
+    monocular_packets = list(geometry_status.get("_packets", [])) if isinstance(geometry_status, Mapping) else []
     geometry_soft_evidence = geometry_status.get("_scale_evidence", []) if isinstance(geometry_status, Mapping) else []
     geometry_report = {k: v for k, v in geometry_status.items() if not str(k).startswith("_")} if isinstance(geometry_status, Mapping) else geometry_status
 
     report["geometry_source_status"] = {
-        "measured_reference": measured_report,
-        "monocular_artifact": geometry_report,
+        "measured_reference": _provenance_labeled(measured_report, measured_packets, "measured_reference"),
+        "monocular_artifact": _provenance_labeled(geometry_report, monocular_packets, "monocular_DA3"),
     }
 
-    # Choose the working packet set: for reference_metric prefer measured
-    # packets; for phone_room use monocular artifacts. Record the comparison.
-    if is_reference and measured_packets:
-        working_packets = measured_packets
-        packet_source = "measured_reference"
-    elif monocular_packets:
-        working_packets = monocular_packets
-        packet_source = "monocular_artifact"
-    else:
-        working_packets = []
-        packet_source = "none"
+    # (d) REFINE the MONOCULAR candidate ONLY. Measured depth/pose is NEVER fed
+    # into monocular refinement (architecture: candidate must be proven
+    # separately). phone_room is metric (learned prior) so scale is fixed; the
+    # measured-reference track's monocular candidate has a free gauge unless its
+    # own learned prior anchors it -- refine with fixed scale when a soft metric
+    # prior is present, free otherwise.
+    monocular_has_metric_prior = bool(geometry_soft_evidence)
+    refined_monocular = monocular_packets
+    refine_report: dict[str, Any] = {"status": "skipped_no_monocular_packets"}
+    if monocular_packets:
+        refine_result = _stage(
+            blockers, "refine_monocular",
+            lambda: _refine(monocular_packets, fix_global_scale=monocular_has_metric_prior),
+        )
+        if isinstance(refine_result, Mapping):
+            refined_monocular = refine_result.get("_packets", monocular_packets)
+            refine_report = {k: v for k, v in refine_result.items() if not str(k).startswith("_")}
+    report["refined_pose_depth_map_status"] = _refine_summary(refine_report)
 
-    monocular_vs_measured = None
-    if is_reference and measured_packets and monocular_packets:
-        monocular_vs_measured = {
-            "measured_packet_count": len(measured_packets),
-            "monocular_packet_count": len(monocular_packets),
-            "comparison": "monocular_artifact_available_alongside_measured_reference",
-            "note": "monocular is non-metric (free gauge); measured reference is metric GT",
-        }
+    # (e) STATIC / DYNAMIC / MOVABLE / UNKNOWN on the REFINED monocular candidate.
+    static_dynamic_states: list[Any] = []
+    sd_report: dict[str, Any] = {"status": "skipped_no_monocular_packets"}
+    if refined_monocular:
+        sd_result = _stage(
+            blockers, "static_dynamic",
+            lambda: _static_dynamic(refined_monocular, asset_id, root, artifacts_dir),
+        )
+        if isinstance(sd_result, Mapping):
+            static_dynamic_states = sd_result.get("_states", [])
+            sd_report = {k: v for k, v in sd_result.items() if not str(k).startswith("_")}
+    report["static_dynamic_movable_status"] = _static_dynamic_summary(sd_report)
 
-    report["packet_creation_status"] = {
-        "packet_source": packet_source,
-        "working_packet_count": len(working_packets),
-        "measured_packet_count": len(measured_packets),
-        "monocular_packet_count": len(monocular_packets),
-        "monocular_vs_measured": monocular_vs_measured,
-        "status": "ready" if working_packets else "no_packets_available",
-    }
-    if not working_packets:
-        blockers.append(f"no_packets_for_{asset_id}")
-
-    # (e) visibility / residual
+    # Visibility on the refined monocular candidate (the working candidate set).
+    candidate_packets = refined_monocular
     visibility_report = _stage(
         blockers, "visibility_residual",
-        lambda: _visibility(working_packets),
+        lambda: _visibility(candidate_packets) if candidate_packets else {"status": "blocked_no_packets", "blockers": ("no_candidate_packets_for_visibility",)},
     )
     report["visibility_residual_status"] = _strip_private(visibility_report)
 
-    # (f) scale evidence + posterior. The scale evidence must match the working
-    # packet set: measured evidence anchors the measured reference packets;
-    # a learned metric-depth prior (soft, measured=False) anchors the monocular
-    # packets and can back at most a metric_pseudo_label. A monocular set with no
-    # such prior stays unanchored (non_metric_pseudo_label).
-    if packet_source == "monocular_artifact":
-        scale_evidence = list(geometry_soft_evidence)
-    else:
-        scale_evidence = _collect_scale_evidence(measured_status, is_reference)
-    scale_result = _stage(
-        blockers, "scale_posterior",
-        lambda: _scale(working_packets, scale_evidence),
+    # ------------------------------------------------------------------
+    # MONOCULAR CANDIDATE pipeline (scale -> map(+dynamic exclusion) ->
+    # export -> visual proof -> validation). Run for BOTH tracks.
+    # ------------------------------------------------------------------
+    candidate_result = _run_pipeline(
+        asset_id=asset_id,
+        track_type=asset.track_type.value,
+        packets=candidate_packets,
+        scale_evidence=list(geometry_soft_evidence),
+        static_dynamic_states=static_dynamic_states,
+        measured_reference=None,  # NEVER feed measured into the candidate
+        packet_source="monocular_artifact",
+        out_dir=asset_out_dir,
+        report_path=report_path,
+        visibility_report=_strip_private(visibility_report),
+        blockers=blockers,
+        label="monocular_candidate",
     )
-    scale_posterior = scale_result.get("_posterior") if isinstance(scale_result, Mapping) else None
-    report["scale_evidence"] = {
-        "scale_evidence_count": len(scale_evidence),
-        "measured_evidence_present": any(getattr(e, "measured", False) for e in scale_evidence),
-        "scale_evidence_records": [_jsonable(e) for e in scale_evidence],
-        "classification": _strip_private(scale_result),
+
+    # ------------------------------------------------------------------
+    # MEASURED BASELINE pipeline (reference_metric only): the measured RGB-D/pose
+    # packets, evaluated for the metric category. This is the ONLY path that may
+    # reach measured_metric.
+    # ------------------------------------------------------------------
+    baseline_result = None
+    if is_reference and measured_packets:
+        baseline_scale_evidence = _collect_scale_evidence(measured_status, is_reference)
+        baseline_result = _run_pipeline(
+            asset_id=asset_id,
+            track_type=asset.track_type.value,
+            packets=measured_packets,
+            scale_evidence=baseline_scale_evidence,
+            static_dynamic_states=None,  # baseline is measured GT; no SD inference
+            measured_reference=measured_packets,
+            packet_source="measured_reference",
+            out_dir=asset_out_dir / "measured_baseline",
+            report_path=report_path,
+            visibility_report=_strip_private(visibility_report),
+            blockers=blockers,
+            label="measured_baseline",
+        )
+
+    # Honest comparison of the monocular candidate against the measured baseline.
+    monocular_vs_measured = None
+    if is_reference and measured_packets and candidate_packets:
+        monocular_vs_measured = _compare_candidate_to_measured(
+            candidate_packets, measured_packets
+        )
+
+    report["packet_creation_status"] = {
+        "measured_packet_count": len(measured_packets),
+        "monocular_packet_count": len(monocular_packets),
+        "refined_monocular_packet_count": len(refined_monocular),
+        "candidate_packet_source": "monocular_artifact",
+        "monocular_vs_measured": monocular_vs_measured,
+        "status": "ready" if candidate_packets or measured_packets else "no_packets_available",
+    }
+    if not candidate_packets and not measured_packets:
+        blockers.append(f"no_packets_for_{asset_id}")
+
+    # Surface the candidate pipeline fields at top level (back-compat keys) and
+    # record both sub-results explicitly.
+    report["scale_evidence"] = candidate_result["scale_evidence_block"]
+    report["map_occupancy_status"] = candidate_result["map_status"]
+    report["map_mesh_occupancy_artifacts"] = candidate_result["export_artifacts"]
+    report["visual_proof_artifacts"] = candidate_result["visual_proof"]
+    report["validation_status"] = candidate_result["validation_status"]
+
+    report["reference_metric_subresults"] = {
+        "monocular_candidate": _subresult_summary(candidate_result),
+        "measured_baseline": _subresult_summary(baseline_result) if baseline_result else {
+            "status": "not_applicable" if not is_reference else "no_measured_packets",
+            "note": (
+                "phone_room has no measured reference; strongest monocular path only"
+                if not is_reference
+                else "reference_metric track had no measured packets to baseline"
+            ),
+        },
+        "comparison_monocular_vs_measured": monocular_vs_measured,
+        "truth": (
+            "measured_metric is reached ONLY via measured_baseline; the monocular "
+            "candidate carries its own honest category + error-vs-measured"
+        ),
     }
 
-    if scale_posterior is None:
-        report["map_occupancy_status"] = {"status": "blocked_no_scale_posterior"}
-        report["validation_status"] = {"status": "blocked_no_scale_posterior"}
-        report["final_category"] = "rejected"
-        blockers.append(f"no_scale_posterior_for_{asset_id}")
-        report["exact_blockers"] = _dedupe(blockers)
-        return report
-
-    # (g) map / occupancy
-    map_result = _stage(
-        blockers, "map_occupancy",
-        lambda: _map(working_packets, scale_posterior),
-    )
-    map_report = map_result.get("_map_report", map_result) if isinstance(map_result, Mapping) else map_result
-    report["map_occupancy_status"] = _strip_private(map_result)
-
-    # (h) validation + final category
-    validation_result = _stage(
-        blockers, "validation",
-        lambda: _validate(
-            asset_id, working_packets, scale_posterior,
-            _strip_private(visibility_report),
-            map_report if isinstance(map_report, Mapping) else {},
-            measured_packets if is_reference else None,
-        ),
-    )
-    final_category = validation_result.get("final_category", "rejected") if isinstance(validation_result, Mapping) else "rejected"
-    report["validation_status"] = _strip_private(validation_result)
+    # ------------------------------------------------------------------
+    # FINAL CATEGORY. reference_metric: measured baseline decides the headline
+    # metric category (measured_metric when it passes); phone_room: the monocular
+    # candidate's own honest category (metric_pseudo_label / non_metric / rejected).
+    # ------------------------------------------------------------------
+    if is_reference and baseline_result is not None:
+        final_category = baseline_result["final_category"]
+    else:
+        final_category = candidate_result["final_category"]
     report["final_category"] = final_category
 
-    # Collect blockers reported by validation itself.
-    if isinstance(validation_result, Mapping):
-        for b in validation_result.get("blockers", ()):  # type: ignore[union-attr]
-            blockers.append(str(b))
+    report["geometry_source_status"]["per_result_provenance"] = {
+        "measured_reference": "measured_reference" if measured_packets else "unavailable",
+        "monocular_candidate": candidate_result["provenance_label"],
+        "headline_final_category_source": (
+            "measured_baseline" if (is_reference and baseline_result is not None) else "monocular_candidate"
+        ),
+    }
 
     report["exact_blockers"] = _dedupe(blockers)
     return report
+
+
+def _run_pipeline(
+    *,
+    asset_id: str,
+    track_type: str,
+    packets: Sequence[Any],
+    scale_evidence: Sequence[Any],
+    static_dynamic_states: Sequence[Any] | None,
+    measured_reference: Sequence[Any] | None,
+    packet_source: str,
+    out_dir: Path,
+    report_path: Path,
+    visibility_report: Mapping[str, Any],
+    blockers: list[str],
+    label: str,
+) -> dict[str, Any]:
+    """Run scale -> map(+dynamic exclusion) -> export -> visual proof -> validation.
+
+    Returns a dict of the per-stage sub-reports plus ``final_category`` /
+    ``provenance_label``. Each stage is wrapped; a missing input is a blocked
+    status with an exact blocker, never a fabricated result.
+    """
+    local_blockers: list[str] = []
+    result: dict[str, Any] = {
+        "label": label,
+        "packet_source": packet_source,
+        "packet_count": len(packets),
+        "final_category": "rejected",
+    }
+
+    measured_evidence_present = any(getattr(e, "measured", False) for e in scale_evidence)
+    scale_result = _stage(
+        local_blockers, f"{label}_scale_posterior",
+        lambda: _scale(packets, scale_evidence) if packets else {"status": "blocked_no_packets", "blockers": ("no_packets_for_scale",)},
+    )
+    scale_posterior = scale_result.get("_posterior") if isinstance(scale_result, Mapping) else None
+    provenance_label = _provenance_from_packets(packets, scale_posterior)
+
+    result["scale_evidence_block"] = {
+        "scale_evidence_count": len(scale_evidence),
+        "measured_evidence_present": measured_evidence_present,
+        "scale_evidence_records": [_jsonable(e) for e in scale_evidence],
+        "classification": _strip_private(scale_result),
+        "provenance_label": provenance_label,
+    }
+    result["provenance_label"] = provenance_label
+
+    if scale_posterior is None:
+        result["map_status"] = {"status": "blocked_no_scale_posterior"}
+        result["export_artifacts"] = {"status": "blocked_no_scale_posterior"}
+        result["visual_proof"] = {"status": "blocked_no_scale_posterior"}
+        result["validation_status"] = {"status": "blocked_no_scale_posterior"}
+        result["final_category"] = "rejected"
+        local_blockers.append(f"no_scale_posterior_for_{label}")
+        blockers.extend(local_blockers)
+        return result
+
+    # MAP + occupancy (dynamic pixels excluded from static fusion).
+    map_result = _stage(
+        local_blockers, f"{label}_map_occupancy",
+        lambda: _map(packets, scale_posterior, static_dynamic_states),
+    )
+    voxel_map = map_result.get("_voxel_map") if isinstance(map_result, Mapping) else None
+    occupancy_grid = map_result.get("_grid") if isinstance(map_result, Mapping) else None
+    map_report = map_result.get("_map_report", {}) if isinstance(map_result, Mapping) else {}
+    result["map_status"] = _strip_private(map_result)
+
+    # EXPORT artifacts (point cloud / mesh / trajectory / occupancy npz).
+    export_result = _stage(
+        local_blockers, f"{label}_export",
+        lambda: _export(
+            asset_id, packets, voxel_map, occupancy_grid,
+            static_dynamic_states, scale_posterior, out_dir, map_report,
+        ),
+    )
+    result["export_artifacts"] = _strip_private(export_result) if isinstance(export_result, Mapping) else export_result
+
+    # VISUAL PROOF (top-down + per-channel PNG + index.md).
+    visual_result = _stage(
+        local_blockers, f"{label}_visual_proof",
+        lambda: _visual_proof(
+            asset_id, track_type, packets, occupancy_grid, map_report,
+            scale_posterior, packet_source, provenance_label, out_dir,
+            report_path, export_result if isinstance(export_result, Mapping) else {},
+        ),
+    )
+    result["visual_proof"] = visual_result
+
+    # VALIDATION + final honest category.
+    validation_result = _stage(
+        local_blockers, f"{label}_validation",
+        lambda: _validate(
+            asset_id, packets, scale_posterior,
+            visibility_report,
+            map_report if isinstance(map_report, Mapping) else {},
+            measured_reference,
+            static_dynamic_states,
+        ),
+    )
+    final_category = validation_result.get("final_category", "rejected") if isinstance(validation_result, Mapping) else "rejected"
+    result["validation_status"] = _strip_private(validation_result)
+    result["final_category"] = final_category
+
+    if isinstance(validation_result, Mapping):
+        for b in validation_result.get("blockers", ()):  # type: ignore[union-attr]
+            local_blockers.append(f"{label}:{b}")
+
+    blockers.extend(local_blockers)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -320,14 +507,101 @@ def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, A
     return {**report, "_posterior": posterior}
 
 
-def _map(packets: Sequence[Any], scale_posterior: Any) -> dict[str, Any]:
-    voxel_map, grid, report = fuse_static_map(packets, scale_posterior)
+def _map(
+    packets: Sequence[Any],
+    scale_posterior: Any,
+    static_dynamic_states: Sequence[Any] | None = None,
+) -> dict[str, Any]:
+    voxel_map, grid, report = fuse_static_map(
+        packets, scale_posterior, static_dynamic_states=static_dynamic_states
+    )
     return {
         **report,
         "_map_report": report,
+        "_voxel_map": voxel_map,
+        "_grid": grid,
         "voxel_map_produced": voxel_map is not None,
         "occupancy_grid_produced": grid is not None,
     }
+
+
+def _refine(packets: Sequence[Any], *, fix_global_scale: bool) -> dict[str, Any]:
+    refined, report = refine_scene(packets, fix_global_scale=fix_global_scale)
+    return {**report, "_packets": refined}
+
+
+def _static_dynamic(
+    packets: Sequence[Any], asset_id: str, root: Path, artifacts_dir: str | Path
+) -> dict[str, Any]:
+    masks_dir = _resolve_path(Path(artifacts_dir), root) / asset_id / "masks"
+    states, report = infer_static_dynamic(
+        packets,
+        masks_dir=masks_dir,
+        max_samples_per_frame=STATIC_DYNAMIC_SAMPLES_PER_FRAME,
+    )
+    return {**report, "_states": states}
+
+
+def _export(
+    asset_id: str,
+    packets: Sequence[Any],
+    voxel_map: Any,
+    occupancy_grid: Any,
+    static_dynamic_states: Sequence[Any] | None,
+    scale_posterior: Any,
+    out_dir: Path,
+    map_report: Mapping[str, Any],
+) -> dict[str, Any]:
+    return export_teacher_artifacts(
+        asset_id, packets, voxel_map, occupancy_grid,
+        static_dynamic_states, scale_posterior, out_dir,
+        map_report=map_report,
+    )
+
+
+def _visual_proof(
+    asset_id: str,
+    track_type: str,
+    packets: Sequence[Any],
+    occupancy_grid: Any,
+    map_report: Mapping[str, Any],
+    scale_posterior: Any,
+    packet_source: str,
+    provenance_label: str,
+    out_dir: Path,
+    report_path: Path,
+    export_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    import numpy as np  # lazy; trajectory stacking only
+
+    trajectory = None
+    if packets:
+        centers = []
+        for packet in sorted(packets, key=lambda p: int(p.frame_id)):
+            T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
+            centers.append(T[:3, 3])
+        trajectory = np.asarray(centers, dtype=np.float64)
+
+    grid_sub = map_report.get("occupancy_grid", {}) if isinstance(map_report, Mapping) else {}
+    plane_axes = grid_sub.get("plane_axes") if isinstance(grid_sub, Mapping) else None
+    floor_axis = grid_sub.get("floor_axis") if isinstance(grid_sub, Mapping) else None
+    status_label = scale_posterior.metric_acceptance_status.value if scale_posterior is not None else "unknown"
+
+    provenance = {
+        "provenance_label": provenance_label,
+        "packet_source": packet_source,
+        "track_type": track_type,
+        "plane_axes": plane_axes,
+        "floor_axis": floor_axis,
+        "exports": export_result.get("artifacts") if isinstance(export_result, Mapping) else None,
+        "teacher_report": str(report_path),
+        "map_status": map_report.get("status") if isinstance(map_report, Mapping) else None,
+        "missing_command": "python -m atlas3r.teacher",
+        "blockers": map_report.get("blockers") if isinstance(map_report, Mapping) else None,
+    }
+    return write_visual_proof(
+        asset_id, occupancy_grid, trajectory, out_dir, status_label, provenance
+    )
 
 
 def _validate(
@@ -337,9 +611,11 @@ def _validate(
     visibility_report: Mapping[str, Any],
     map_report: Mapping[str, Any],
     measured_reference: Sequence[Any] | None,
+    static_dynamic_states: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
     _report, final_category, validation_dict = validate_and_accept(
-        asset_id, packets, scale_posterior, visibility_report, map_report, measured_reference
+        asset_id, packets, scale_posterior, visibility_report, map_report,
+        measured_reference, static_dynamic_states,
     )
     return {**validation_dict, "final_category": final_category}
 
@@ -390,6 +666,194 @@ def _read_m2_scale_evidence(measured_status: Mapping[str, Any]) -> list[Any]:
         except (KeyError, ValueError, TypeError):
             continue
     return out
+
+
+# ---------------------------------------------------------------------------
+# provenance labels + report summaries + candidate-vs-measured comparison
+# ---------------------------------------------------------------------------
+
+
+def _provenance_from_packets(packets: Sequence[Any], scale_posterior: Any) -> str:
+    """Architecture per-result provenance label from packet source + evidence.
+
+    measured_reference | monocular_DA3 | learned_metric_prior | manual_anchor |
+    unavailable. A learned metric-depth prior is detected on the scale posterior's
+    soft evidence; never a fabricated upgrade.
+    """
+    if not packets:
+        return "unavailable"
+    has_learned_prior = False
+    if scale_posterior is not None:
+        for ev in getattr(scale_posterior, "scale_sources", ()) or ():
+            etype = getattr(getattr(ev, "evidence_type", None), "value", None)
+            if etype == "learned_metric_depth_prior":
+                has_learned_prior = True
+    first = packets[0]
+    source = str(getattr(first, "source", ""))
+    if source.startswith("measured_reference"):
+        return "measured_reference"
+    if source.startswith("external_artifact"):
+        return "learned_metric_prior" if has_learned_prior else "monocular_DA3"
+    return "unavailable"
+
+
+def _provenance_labeled(
+    report: Any, packets: Sequence[Any], default_label: str
+) -> Any:
+    """Attach a per-result provenance label to a geometry-source sub-report."""
+    if not isinstance(report, Mapping):
+        return report
+    label = "unavailable"
+    if packets:
+        first = packets[0]
+        source = str(getattr(first, "source", ""))
+        if source.startswith("measured_reference"):
+            label = "measured_reference"
+        elif source.startswith("external_artifact"):
+            label = "learned_metric_prior" if report.get("learned_metric_depth_prior") else "monocular_DA3"
+    elif isinstance(report, Mapping) and report.get("status") in {"loaded"}:
+        label = default_label
+    return {**report, "per_result_provenance": label}
+
+
+def _refine_summary(refine_report: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact, honest summary of the refinement (cost before/after = proof)."""
+    if not isinstance(refine_report, Mapping):
+        return {"status": "unknown"}
+    keys = (
+        "status", "method", "frames_used", "edges_used", "samples_used", "nfev",
+        "cost_before", "cost_after", "cost_reduction_fraction", "global_scale",
+        "fix_global_scale", "residual_summary_before", "residual_summary_after",
+        "provenance", "blockers",
+    )
+    out = {k: refine_report[k] for k in keys if k in refine_report}
+    out["refinement_is_real"] = bool(
+        refine_report.get("status") == "refined"
+        and float(refine_report.get("cost_after", 1.0)) < float(refine_report.get("cost_before", 0.0))
+    )
+    return out
+
+
+def _static_dynamic_summary(sd_report: Mapping[str, Any]) -> dict[str, Any]:
+    if not isinstance(sd_report, Mapping):
+        return {"status": "unknown"}
+    keys = (
+        "status", "packet_count", "evidence_families_used", "mask_evidence",
+        "provenance", "totals", "dynamic_excluded_from_static_fusion",
+        "movable_distinct_from_dynamic", "blockers",
+    )
+    return {k: sd_report[k] for k in keys if k in sd_report}
+
+
+def _subresult_summary(result: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(result, Mapping):
+        return {"status": "absent"}
+    map_status = result.get("map_status", {})
+    val = result.get("validation_status", {})
+    export = result.get("export_artifacts", {})
+    visual = result.get("visual_proof", {})
+    return {
+        "label": result.get("label"),
+        "packet_source": result.get("packet_source"),
+        "packet_count": result.get("packet_count"),
+        "provenance_label": result.get("provenance_label"),
+        "final_category": result.get("final_category"),
+        "scale_status": (result.get("scale_evidence_block", {}) or {}).get("classification", {}).get("status"),
+        "map_status": map_status.get("status") if isinstance(map_status, Mapping) else map_status,
+        "accepted_for_metric_training": val.get("accepted_for_metric_training") if isinstance(val, Mapping) else None,
+        "held_out_render_error": val.get("held_out_render_error") if isinstance(val, Mapping) else None,
+        "free_space_contradiction_rate": val.get("free_space_contradiction_rate") if isinstance(val, Mapping) else None,
+        "export_status": export.get("status") if isinstance(export, Mapping) else export,
+        "visual_proof_status": visual.get("status") if isinstance(visual, Mapping) else visual,
+    }
+
+
+def _compare_candidate_to_measured(
+    candidate_packets: Sequence[Any],
+    measured_packets: Sequence[Any],
+) -> dict[str, Any]:
+    """Honest comparison of the monocular candidate against the measured baseline.
+
+    Camera centres (``T_world_camera[:3,3]``) of frames present in BOTH sets are
+    aligned with a Sim(3) Umeyama fit (scale+rotation+translation; the monocular
+    gauge is free so scale is part of the alignment), and the residual trajectory
+    error is reported. When too few frames overlap for a Sim(3) fit, the
+    nearest-frame translation discrepancy is reported instead with an explicit
+    note -- never a fabricated metric.
+    """
+    import numpy as np  # lazy
+
+    cand_by_frame = {int(p.frame_id): p for p in candidate_packets}
+    meas_by_frame = {int(p.frame_id): p for p in measured_packets}
+    common = sorted(set(cand_by_frame) & set(meas_by_frame))
+
+    def _center(p):
+        T = np.asarray(p.T_world_camera, dtype=np.float64).reshape((4, 4))
+        return T[:3, 3]
+
+    if len(common) >= 3:
+        src = np.asarray([_center(cand_by_frame[f]) for f in common], dtype=np.float64)
+        dst = np.asarray([_center(meas_by_frame[f]) for f in common], dtype=np.float64)
+        s, R, t, aligned, rmse = _umeyama_align(src, dst, np)
+        per_frame = np.linalg.norm(aligned - dst, axis=1)
+        return {
+            "method": "umeyama_sim3_camera_center_alignment",
+            "common_frame_ids": common,
+            "common_frame_count": len(common),
+            "estimated_scale_monocular_to_measured": float(s),
+            "trajectory_rmse_m_after_alignment": float(rmse),
+            "trajectory_median_error_m_after_alignment": float(np.median(per_frame)),
+            "trajectory_max_error_m_after_alignment": float(np.max(per_frame)),
+            "note": (
+                "monocular gauge is free; Sim(3) scale folded into alignment. "
+                "Error is the residual camera-center discrepancy vs measured GT."
+            ),
+        }
+
+    # Too few overlapping frames for a Sim(3) fit: nearest-frame translation gap.
+    if cand_by_frame and meas_by_frame:
+        meas_frames = sorted(meas_by_frame)
+        gaps = []
+        for f, p in cand_by_frame.items():
+            nearest = min(meas_frames, key=lambda mf: abs(mf - f))
+            gaps.append(float(np.linalg.norm(_center(p) - _center(meas_by_frame[nearest]))))
+        return {
+            "method": "nearest_frame_translation_discrepancy",
+            "common_frame_count": len(common),
+            "candidate_frame_count": len(cand_by_frame),
+            "measured_frame_count": len(meas_by_frame),
+            "nearest_frame_translation_median_m": float(np.median(gaps)),
+            "note": (
+                "fewer than 3 shared frame_ids for a Sim(3) Umeyama fit; reporting "
+                "nearest-frame camera-center gap. This is NOT scale-aligned -- the "
+                "monocular gauge is free -- so treat as a coarse upper bound only."
+            ),
+        }
+    return {
+        "method": "no_comparison_possible",
+        "note": "no overlapping or comparable frames between candidate and measured",
+    }
+
+
+def _umeyama_align(src, dst, np):
+    """Sim(3) Umeyama: return ``(scale, R, t, aligned_src, rmse)``."""
+    n = src.shape[0]
+    mu_src = src.mean(axis=0)
+    mu_dst = dst.mean(axis=0)
+    src_c = src - mu_src
+    dst_c = dst - mu_dst
+    cov = (dst_c.T @ src_c) / n
+    U, D, Vt = np.linalg.svd(cov)
+    S = np.eye(3)
+    if np.linalg.det(U) * np.linalg.det(Vt) < 0:
+        S[2, 2] = -1.0
+    R = U @ S @ Vt
+    var_src = (src_c ** 2).sum() / n
+    scale = float((D * np.diag(S)).sum() / var_src) if var_src > 1e-12 else 1.0
+    t = mu_dst - scale * (R @ mu_src)
+    aligned = (scale * (R @ src.T)).T + t
+    rmse = float(np.sqrt(((aligned - dst) ** 2).sum(axis=1).mean()))
+    return scale, R, t, aligned, rmse
 
 
 def _not_applicable(reason: str) -> dict[str, Any]:
