@@ -588,6 +588,14 @@ def _build_state(
     dynamic_prob = stacked[:, 1]
     unknown_prob = stacked[:, 2]
 
+    # Per-sample movable_static probability: the static-channel mass of samples
+    # geometry flagged movable (a real surface, repeatedly carved free by other
+    # views). It is kept DISTINCT from dynamic and is 0 where the sample is not
+    # movable. The contract's StaticDynamicState simplex only has
+    # static/dynamic/unknown, so this rides in ``residual_summary`` (the
+    # export/fusion layers look for exactly this key) -- never folded into dynamic.
+    movable_probability = np.where(is_movable, static_prob, 0.0)
+
     counts = {
         "static": int(np.count_nonzero(is_static)),
         "dynamic": int(np.count_nonzero(is_dynamic)),
@@ -615,6 +623,10 @@ def _build_state(
         "movable_static_distinct_from_dynamic": True,
         "dynamic_excluded_from_static_fusion": True,
         "mask_grouping_applied": bool(mask_present),
+        # Per-sample movable_static probability array (aligned 1:1 with the
+        # static/dynamic/unknown simplex arrays). Painted into the movable channel
+        # of the 3D field; 0 where not movable. Distinct from dynamic.
+        "movable_probability": movable_probability,
     }
 
     # movable_static is a per-sample boolean carried in the report (so M7 can

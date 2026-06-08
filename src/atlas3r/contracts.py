@@ -1026,6 +1026,16 @@ class MeshChunkMetadata:
 
 @dataclass(frozen=True)
 class OccupancyGrid2D:
+    """Floor-aligned robot grid.
+
+    As of the 3D occupancy work this is the PURE top-down projection of
+    :class:`VoxelOccupancyGrid3D` (the single source of truth). The projection
+    collapses the collision band along the floor axis, so it drops the *height
+    within the band* at which an obstacle occurs (that height is preserved in
+    ``height_min_m`` / ``height_max_m``). It must never be fused independently of
+    the 3D field.
+    """
+
     grid_frame: str
     resolution_m: float
     origin_world: Sequence[float]
@@ -1090,6 +1100,101 @@ class OccupancyGrid2D:
 
 
 @dataclass(frozen=True)
+class VoxelOccupancyGrid3D:
+    """Primary robot-facing output: a per-voxel multichannel occupancy field
+    bounded to the robot's vertical collision envelope.
+
+    The field lives in the floor-aligned metric (or reconstruction) frame. It is
+    cropped along ``floor_axis`` to the band ``[band_min_m, band_max_m]`` =
+    ``[floor, floor + collision_height + margin]`` -- resolution is spent only
+    inside the collision envelope; the ceiling / full room volume is never
+    modelled.
+
+    Probability convention mirrors :class:`OccupancyGrid2D`: each channel is a
+    probability in ``[0, 1]`` with PAIRWISE non-collapse (NOT a strict sum-to-one
+    simplex). The honest per-voxel invariants are non-negotiable:
+
+    - unknown is never free (``P_free + P_unknown <= 1``);
+    - dynamic is never static (``P_dynamic + P_occupied_static <= 1``);
+    - movable_static is never free (``P_movable_static + P_free <= 1``);
+    - free space comes from RAY TRAVERSAL only; space behind a surface along a ray
+      stays unknown (enforced by the fuser, not here).
+
+    All channel volumes plus ``map_confidence`` share one 3D shape ``(A0, A1, B)``
+    where ``B`` is the number of band slices along ``floor_axis``. ``origin_world``
+    is the world coordinate of the ``(0, 0, 0)`` voxel corner (the cropped band
+    ``grid_min``); voxel center ``(i, j, k)`` is
+    ``origin_world + (index + 0.5) * voxel_size_m`` along the three world axes.
+    """
+
+    grid_frame: str
+    voxel_size_m: float
+    origin_world: Sequence[float]
+    floor_axis: int
+    band_min_m: float
+    band_max_m: float
+    P_free: Any
+    P_occupied_static: Any
+    P_movable_static: Any
+    P_dynamic: Any
+    P_unknown: Any
+    map_confidence: Any
+    scale_uncertainty: float
+    acceptance_category: MetricAcceptanceStatus
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_string(self.grid_frame, "grid_frame")
+        _validate_positive_number(self.voxel_size_m, "voxel_size_m")
+        _validate_shape(self.origin_world, (3,), "origin_world")
+        _validate_all_finite(self.origin_world, "origin_world")
+        if not isinstance(self.floor_axis, int) or self.floor_axis not in (0, 1, 2):
+            raise ContractValidationError("floor_axis must be one of 0, 1, 2")
+        # band_min_m / band_max_m are world coordinates along the floor axis and
+        # may be negative (the floor can sit below the world origin) -- require
+        # finite, not non-negative.
+        for field_name in ("band_min_m", "band_max_m"):
+            value = getattr(self, field_name)
+            if not isinstance(value, (int, float)) or not isfinite(value):
+                raise ContractValidationError(f"{field_name} must be a finite number")
+        if float(self.band_max_m) < float(self.band_min_m):
+            raise ContractValidationError("band_max_m must be >= band_min_m")
+        channel_fields = {
+            "P_free": self.P_free,
+            "P_occupied_static": self.P_occupied_static,
+            "P_movable_static": self.P_movable_static,
+            "P_dynamic": self.P_dynamic,
+            "P_unknown": self.P_unknown,
+            "map_confidence": self.map_confidence,
+        }
+        shape = _validate_same_shape(channel_fields)
+        if len(shape) != 3:
+            raise ContractValidationError("voxel occupancy channels must be 3D")
+        for field_name in channel_fields:
+            _validate_all_probability(getattr(self, field_name), field_name)
+        self._validate_voxel_channels_are_not_collapsed()
+        _validate_non_negative_number(self.scale_uncertainty, "scale_uncertainty")
+        status = _as_enum(
+            self.acceptance_category, MetricAcceptanceStatus, "acceptance_category"
+        )
+        object.__setattr__(self, "acceptance_category", status)
+
+    def _validate_voxel_channels_are_not_collapsed(self) -> None:
+        for free, unknown in _iter_pairs(self.P_free, self.P_unknown):
+            if float(free) + float(unknown) > 1.0 + 1e-6:
+                raise ContractValidationError("P_unknown must remain distinct from P_free")
+        for dynamic, occupied in _iter_pairs(self.P_dynamic, self.P_occupied_static):
+            if float(dynamic) + float(occupied) > 1.0 + 1e-6:
+                raise ContractValidationError(
+                    "P_dynamic must remain distinct from P_occupied_static"
+                )
+        for movable, free in _iter_pairs(self.P_movable_static, self.P_free):
+            if float(movable) + float(free) > 1.0 + 1e-6:
+                raise ContractValidationError(
+                    "P_movable_static must remain distinct from P_free"
+                )
+
+
+@dataclass(frozen=True)
 class ValidationReport:
     held_out_render_error: float
     free_space_contradiction_rate: float
@@ -1098,6 +1203,11 @@ class ValidationReport:
     dynamic_leakage_score: float
     accepted_for_metric_training: bool
     rejection_reasons: Sequence[str]
+    # Optional per-voxel agreement of the monocular 3D field vs the measured 3D
+    # field, computed inside the collision band. Reportage only -- it never gates
+    # ``accepted_for_metric_training`` (the category is driven by the scale
+    # posterior). ``None`` when no measured 3D reference exists (e.g. phone_room).
+    band3d_agreement: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         _validate_non_negative_number(
@@ -1133,3 +1243,5 @@ class ValidationReport:
             raise ContractValidationError(
                 "rejected validation reports must carry rejection reasons"
             )
+        if self.band3d_agreement is not None:
+            _validate_mapping(self.band3d_agreement, "band3d_agreement", non_empty=True)

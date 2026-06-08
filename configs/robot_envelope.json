@@ -1,0 +1,6 @@
+{
+  "_comment": "Robot vertical collision envelope for the Atlas3R 3D occupancy field. The VoxelOccupancyGrid3D is bounded to [floor, floor + collision_height_m + margin_m] along the floor axis; resolution is spent only inside this envelope (the robot never collides with the ceiling). Units are meters. Defaults model a standard floor-cleaning robot.",
+  "collision_height_m": 0.20,
+  "margin_m": 0.05,
+  "voxel_size_m": 0.05
+}

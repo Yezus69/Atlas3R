@@ -42,6 +42,7 @@ from .contracts import (
     ScalePosterior,
     StaticDynamicState,
     VoxelMapState,
+    VoxelOccupancyGrid3D,
 )
 
 # Per-channel RGB used when colouring the surface point cloud. Dynamic is never
@@ -63,6 +64,8 @@ def export_teacher_artifacts(
     out_dir: str | Path,
     *,
     map_report: Mapping[str, Any] | None = None,
+    voxel_occupancy_3d: VoxelOccupancyGrid3D | None = None,
+    floor_align_rotation: Any = None,
 ) -> dict[str, Any]:
     """Write inspectable geometry artifacts for one teacher result.
 
@@ -97,7 +100,7 @@ def export_teacher_artifacts(
     # --- 1. surface point cloud (occupied_static, optional movable_static) -----
     pc_entry = _write_surface_point_cloud(
         asset_id, packets, voxel_map, static_dynamic_states,
-        map_report, provenance, out_path, np,
+        map_report, provenance, out_path, np, floor_align_rotation,
     )
     result["artifacts"]["surface_point_cloud"] = pc_entry
     if pc_entry.get("status") != "written":
@@ -107,7 +110,7 @@ def export_teacher_artifacts(
     surface_normals = pc_entry.get("_normals")
 
     # --- 2. camera trajectory (.ply + .tum.txt + .json) ----------------------
-    traj_entry = _write_camera_trajectory(asset_id, packets, out_path, np)
+    traj_entry = _write_camera_trajectory(asset_id, packets, out_path, np, floor_align_rotation)
     result["artifacts"]["camera_trajectory"] = traj_entry
     if traj_entry.get("status") != "written":
         _record_block(result, "camera_trajectory", traj_entry)
@@ -127,6 +130,14 @@ def export_teacher_artifacts(
     result["artifacts"]["mesh"] = mesh_entry
     if mesh_entry.get("status") not in {"written", "skipped"}:
         _record_block(result, "mesh", mesh_entry)
+
+    # --- 5. primary output: 3D collision-band occupancy field (.npz) ----------
+    occ3d_entry = _write_voxel_occupancy_3d(asset_id, voxel_occupancy_3d, out_path, np)
+    result["artifacts"]["voxel_occupancy_3d"] = occ3d_entry
+    if occ3d_entry.get("status") == "written":
+        result["voxel_occupancy_3d_summary"] = occ3d_entry.get("field_summary", {})
+    else:
+        _record_block(result, "voxel_occupancy_3d", occ3d_entry)
 
     # Strip the in-memory point arrays out of the returned/serialized entry.
     for key in ("_points", "_normals", "_colors"):
@@ -245,6 +256,7 @@ def _write_surface_point_cloud(
     provenance: Mapping[str, Any],
     out_path: Path,
     np: Any,
+    floor_align_rotation: Any = None,
 ) -> dict[str, Any]:
     path = out_path / "surface_point_cloud.ply"
 
@@ -263,9 +275,9 @@ def _write_surface_point_cloud(
 
     if points is None or points.shape[0] == 0:
         points, colors, dropped = _surface_points_from_packets(
-            packets, static_dynamic_states, np
+            packets, static_dynamic_states, np, floor_align_rotation
         )
-        method = "packet_lift_static_pixels"
+        method = "packet_lift_static_pixels_floor_aligned"
         if points.shape[0] == 0:
             return {
                 "status": "blocked",
@@ -342,6 +354,7 @@ def _surface_points_from_packets(
     packets: Sequence[FrameRayPacket],
     static_dynamic_states: Sequence[StaticDynamicState] | None,
     np: Any,
+    floor_align_rotation: Any = None,
 ):
     """Lift static surface points from packets, EXCLUDING dynamic pixels.
 
@@ -395,7 +408,11 @@ def _surface_points_from_packets(
 
     if not pts_list:
         return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.float64), dropped
-    return np.concatenate(pts_list, axis=0), np.concatenate(col_list, axis=0), dropped
+    pts = np.concatenate(pts_list, axis=0)
+    if floor_align_rotation is not None:
+        # Match the floor-aligned voxel frame the rest of the export uses.
+        pts = pts @ np.asarray(floor_align_rotation, dtype=np.float64).T
+    return pts, np.concatenate(col_list, axis=0), dropped
 
 
 def _movable_from_state(state: StaticDynamicState, n: int, np: Any):
@@ -438,6 +455,7 @@ def _write_camera_trajectory(
     packets: Sequence[FrameRayPacket],
     out_path: Path,
     np: Any,
+    floor_align_rotation: Any = None,
 ) -> dict[str, Any]:
     ply_path = out_path / "camera_trajectory.ply"
     tum_path = out_path / "camera_trajectory.tum.txt"
@@ -453,6 +471,11 @@ def _write_camera_trajectory(
 
     # Sort by frame_id for a coherent polyline.
     ordered = sorted(packets, key=lambda p: int(p.frame_id))
+    # Transform poses into the floor-aligned frame so the trajectory matches the
+    # floor-aligned occupancy/point-cloud (rigid: R -> R_align R, t -> R_align t).
+    r_align = None
+    if floor_align_rotation is not None:
+        r_align = np.asarray(floor_align_rotation, dtype=np.float64)
     centers = []
     tum_lines = []
     json_frames = []
@@ -460,6 +483,12 @@ def _write_camera_trajectory(
         T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
         R = T[:3, :3]
         t = T[:3, 3]
+        if r_align is not None:
+            R = r_align @ R
+            t = r_align @ t
+            T = np.eye(4)
+            T[:3, :3] = R
+            T[:3, 3] = t
         centers.append(t)
         qx, qy, qz, qw = _rotation_to_quaternion(R, np)
         ts = float(int(packet.frame_id))  # no real timestamps -> use frame index
@@ -643,6 +672,87 @@ def _write_occupancy_channels(
         "path": str(path),
         "size_bytes": _size(path),
         "channel_summary": channel_summary,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 3D collision-band occupancy field
+# ---------------------------------------------------------------------------
+
+
+def _write_voxel_occupancy_3d(
+    asset_id: str,
+    grid3d: VoxelOccupancyGrid3D | None,
+    out_path: Path,
+    np: Any,
+) -> dict[str, Any]:
+    """Write the primary robot output -- the band-bounded ``VoxelOccupancyGrid3D``
+    -- as a compressed ``.npz`` of per-channel probability volumes + band metadata.
+
+    Nothing is fabricated: a missing field is an explicit blocked entry naming the
+    absent object.
+    """
+    path = out_path / "voxel_occupancy_3d.npz"
+    if grid3d is None:
+        return {
+            "status": "blocked",
+            "missing_object": "voxel_occupancy_3d",
+            "reason": "no_3d_occupancy_field_to_export",
+            "path": str(path),
+        }
+
+    g = grid3d
+    arrays = {
+        "P_free": np.asarray(g.P_free, dtype=np.float64),
+        "P_occupied_static": np.asarray(g.P_occupied_static, dtype=np.float64),
+        "P_movable_static": np.asarray(g.P_movable_static, dtype=np.float64),
+        "P_dynamic": np.asarray(g.P_dynamic, dtype=np.float64),
+        "P_unknown": np.asarray(g.P_unknown, dtype=np.float64),
+        "map_confidence": np.asarray(g.map_confidence, dtype=np.float64),
+        "origin_world": np.asarray(g.origin_world, dtype=np.float64),
+        "voxel_size_m": np.asarray(float(g.voxel_size_m)),
+        "floor_axis": np.asarray(int(g.floor_axis)),
+        "band_min_m": np.asarray(float(g.band_min_m)),
+        "band_max_m": np.asarray(float(g.band_max_m)),
+        "scale_uncertainty": np.asarray(float(g.scale_uncertainty)),
+    }
+    np.savez_compressed(
+        str(path),
+        grid_frame=np.asarray(str(g.grid_frame)),
+        acceptance_category=np.asarray(str(g.acceptance_category.value)),
+        **arrays,
+    )
+
+    def _frac(channel: str) -> float:
+        a = arrays[channel]
+        return float(np.count_nonzero(a > 0.0)) / float(a.size) if a.size else 0.0
+
+    dims = [int(d) for d in arrays["P_free"].shape]
+    floor_axis = int(g.floor_axis)
+    field_summary = {
+        "grid_dims": dims,
+        "grid_frame": str(g.grid_frame),
+        "floor_axis": floor_axis,
+        "band_slices": dims[floor_axis] if 0 <= floor_axis < len(dims) else None,
+        "voxel_size_m": float(g.voxel_size_m),
+        "band_min_m": float(g.band_min_m),
+        "band_max_m": float(g.band_max_m),
+        "origin_world": [float(v) for v in g.origin_world],
+        "acceptance_category": g.acceptance_category.value,
+        "scale_uncertainty": float(g.scale_uncertainty),
+        "free_voxel_fraction": _frac("P_free"),
+        "occupied_static_voxel_fraction": _frac("P_occupied_static"),
+        "movable_static_voxel_fraction": _frac("P_movable_static"),
+        "dynamic_voxel_fraction": _frac("P_dynamic"),
+        "mean_map_confidence": (
+            float(np.mean(arrays["map_confidence"])) if arrays["map_confidence"].size else 0.0
+        ),
+    }
+    return {
+        "status": "written",
+        "path": str(path),
+        "size_bytes": _size(path),
+        "field_summary": field_summary,
     }
 
 

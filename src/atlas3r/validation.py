@@ -47,8 +47,16 @@ def validate_and_accept(
     map_report: Mapping[str, Any],
     measured_reference: Sequence[FrameRayPacket] | None = None,
     static_dynamic_states: Sequence[Any] | None = None,
+    band3d_agreement: Mapping[str, Any] | None = None,
 ) -> tuple[ValidationReport, str, dict[str, Any]]:
-    """Return ``(ValidationReport, final_category, validation_report_dict)``."""
+    """Return ``(ValidationReport, final_category, validation_report_dict)``.
+
+    ``band3d_agreement`` is the optional per-voxel agreement of the monocular 3D
+    field vs the measured 3D field inside the collision band. It is REPORTAGE: it
+    is carried on the ``ValidationReport`` and surfaced in the dict, but it never
+    gates ``accepted_for_metric_training`` (the category is driven by the scale
+    posterior).
+    """
     status = scale_posterior.metric_acceptance_status
     status_value = status.value
 
@@ -132,6 +140,7 @@ def validate_and_accept(
             dynamic_leakage_score=float(dynamic_leakage),
             accepted_for_metric_training=bool(accepted),
             rejection_reasons=tuple(rejection_reasons),
+            band3d_agreement=band3d_agreement,
         )
     except ContractValidationError as exc:
         # If the contract rejects our acceptance combination, fall back to a
@@ -144,6 +153,7 @@ def validate_and_accept(
             dynamic_leakage_score=float(dynamic_leakage),
             accepted_for_metric_training=False,
             rejection_reasons=(f"validation_report_contract_reconciled:{exc}",),
+            band3d_agreement=band3d_agreement,
         )
         accepted = False
 
@@ -160,9 +170,34 @@ def validate_and_accept(
         "dynamic_leakage_note": dynamic_note,
         "validation_passes_metric_gate": bool(validation_passes),
         "rejection_reasons": tuple(report.rejection_reasons),
+        "band3d_agreement": dict(band3d_agreement) if isinstance(band3d_agreement, Mapping) else band3d_agreement,
+        "band3d_agreement_summary": _band3d_summary(band3d_agreement),
         "blockers": tuple(report.rejection_reasons) if not report.accepted_for_metric_training else (),
     }
     return report, final_category, validation_dict
+
+
+def _band3d_summary(band3d_agreement: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Compact headline of the per-voxel band agreement vs the measured 3D field.
+
+    Reportage only -- never gates acceptance. ``None`` / non-computed states are
+    surfaced verbatim, never fabricated into numbers.
+    """
+    if not isinstance(band3d_agreement, Mapping):
+        return {"status": "absent"}
+    status = band3d_agreement.get("status")
+    if status != "computed":
+        return {"status": status}
+    keys = (
+        "per_class_agreement",
+        "occupied_static_iou",
+        "free_space_contradiction_rate",
+        "dynamic_leakage_rate",
+        "coverage_of_measured_band",
+        "co_observed_band_voxels",
+        "estimated_scale_monocular_to_measured",
+    )
+    return {"status": status, **{k: band3d_agreement.get(k) for k in keys}}
 
 
 # ---------------------------------------------------------------------------

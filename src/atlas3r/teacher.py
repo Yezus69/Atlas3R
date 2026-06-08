@@ -27,6 +27,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from .config import RobotEnvelopeConfig, load_robot_envelope
 from .contracts import TrackType, VideoAsset
 from .export import export_teacher_artifacts
 from .geometry_adapter import load_geometry_artifacts, load_measured_packets_from_m2
@@ -47,6 +48,13 @@ DEFAULT_M2_DIR = "runs/m2"
 # state arrays align 1:1 with the packet rays (packets hold <=2048 rays), which
 # lets fuse_static_map exclude dynamic pixels without fabricated alignment.
 STATIC_DYNAMIC_SAMPLES_PER_FRAME = 4096
+# Robot-scale tolerance for the band agreement: a measured band voxel matches the
+# nearest OBSERVED candidate voxel within this distance. Two independently sparse
+# (sampled-ray) fields rarely hit the exact same voxel, so an exact-voxel match is
+# dominated by sampling noise; a ~10 cm tolerance is the right granularity for a
+# floor-cleaning occupancy comparison. Both exact and tolerant coverage are
+# reported so nothing is hidden.
+BAND_MATCH_TOLERANCE_M = 0.10
 
 
 def run_teacher(
@@ -61,6 +69,9 @@ def run_teacher(
     root_path = Path.cwd() if root is None else Path(root)
     output_path = _resolve_path(Path(output_dir), root_path)
     output_path.mkdir(parents=True, exist_ok=True)
+
+    # Robot collision envelope (config-driven; bounds the 3D occupancy field).
+    envelope, envelope_meta = load_robot_envelope(root=root_path)
 
     try:
         assets = load_canonical_assets(manifest, repo_root=root_path)
@@ -84,6 +95,7 @@ def run_teacher(
             m1_dir=m1_dir,
             m2_dir=m2_dir,
             output_dir=output_path,
+            envelope=envelope,
         )
         report_path = output_path / f"{asset.asset_id}_teacher_report.json"
         _write_json(report_path, track_report)
@@ -93,6 +105,7 @@ def run_teacher(
     summary = {
         "module": "Atlas3R Teacher",
         "status": "complete",
+        "robot_envelope": envelope_meta,
         "track_reports": report_paths,
         "tracks": [
             {
@@ -127,6 +140,7 @@ def _run_track(
     m1_dir: str | Path,
     m2_dir: str | Path,
     output_dir: Path,
+    envelope: RobotEnvelopeConfig,
 ) -> dict[str, Any]:
     asset_id = asset.asset_id
     is_reference = asset.track_type is TrackType.REFERENCE_METRIC
@@ -226,30 +240,13 @@ def _run_track(
     report["visibility_residual_status"] = _strip_private(visibility_report)
 
     # ------------------------------------------------------------------
-    # MONOCULAR CANDIDATE pipeline (scale -> map(+dynamic exclusion) ->
-    # export -> visual proof -> validation). Run for BOTH tracks.
-    # ------------------------------------------------------------------
-    candidate_result = _run_pipeline(
-        asset_id=asset_id,
-        track_type=asset.track_type.value,
-        packets=candidate_packets,
-        scale_evidence=list(geometry_soft_evidence),
-        static_dynamic_states=static_dynamic_states,
-        measured_reference=None,  # NEVER feed measured into the candidate
-        packet_source="monocular_artifact",
-        out_dir=asset_out_dir,
-        report_path=report_path,
-        visibility_report=_strip_private(visibility_report),
-        blockers=blockers,
-        label="monocular_candidate",
-    )
-
-    # ------------------------------------------------------------------
-    # MEASURED BASELINE pipeline (reference_metric only): the measured RGB-D/pose
-    # packets, evaluated for the metric category. This is the ONLY path that may
-    # reach measured_metric.
+    # MEASURED BASELINE pipeline FIRST (reference_metric only): the measured
+    # RGB-D/pose packets, evaluated for the metric category. This is the ONLY path
+    # that may reach measured_metric, AND it yields the measured 3D occupancy
+    # field used as ground truth for the candidate's band validation.
     # ------------------------------------------------------------------
     baseline_result = None
+    measured_comparison_field = None
     if is_reference and measured_packets:
         baseline_scale_evidence = _collect_scale_evidence(measured_status, is_reference)
         baseline_result = _run_pipeline(
@@ -265,7 +262,32 @@ def _run_track(
             visibility_report=_strip_private(visibility_report),
             blockers=blockers,
             label="measured_baseline",
+            envelope=envelope,
         )
+        measured_comparison_field = baseline_result.get("_comparison_field")
+
+    # ------------------------------------------------------------------
+    # MONOCULAR CANDIDATE pipeline (scale -> map(per-voxel class) -> export ->
+    # visual proof -> validation). Run for BOTH tracks. The measured 3D field (if
+    # any) is passed for READ-ONLY band agreement -- never into its construction.
+    # ------------------------------------------------------------------
+    candidate_result = _run_pipeline(
+        asset_id=asset_id,
+        track_type=asset.track_type.value,
+        packets=candidate_packets,
+        scale_evidence=list(geometry_soft_evidence),
+        static_dynamic_states=static_dynamic_states,
+        measured_reference=None,  # NEVER feed measured into the candidate
+        packet_source="monocular_artifact",
+        out_dir=asset_out_dir,
+        report_path=report_path,
+        visibility_report=_strip_private(visibility_report),
+        blockers=blockers,
+        label="monocular_candidate",
+        envelope=envelope,
+        measured_comparison_field=measured_comparison_field,
+        measured_packets_for_band=(measured_packets if (is_reference and measured_packets) else None),
+    )
 
     # Honest comparison of the monocular candidate against the measured baseline.
     monocular_vs_measured = None
@@ -304,9 +326,11 @@ def _run_track(
             ),
         },
         "comparison_monocular_vs_measured": monocular_vs_measured,
+        "band3d_agreement_monocular_vs_measured": candidate_result.get("band3d_agreement"),
         "truth": (
             "measured_metric is reached ONLY via measured_baseline; the monocular "
-            "candidate carries its own honest category + error-vs-measured"
+            "candidate carries its own honest category + error-vs-measured + "
+            "per-voxel band agreement vs the measured 3D field"
         ),
     }
 
@@ -347,12 +371,16 @@ def _run_pipeline(
     visibility_report: Mapping[str, Any],
     blockers: list[str],
     label: str,
+    envelope: RobotEnvelopeConfig,
+    measured_comparison_field: Any = None,
+    measured_packets_for_band: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
-    """Run scale -> map(+dynamic exclusion) -> export -> visual proof -> validation.
+    """Run scale -> map(per-voxel class) -> export -> visual proof -> validation.
 
     Returns a dict of the per-stage sub-reports plus ``final_category`` /
-    ``provenance_label``. Each stage is wrapped; a missing input is a blocked
-    status with an exact blocker, never a fabricated result.
+    ``provenance_label`` / ``band3d_agreement`` and the private band 3D field
+    ``_voxel_3d``. Each stage is wrapped; a missing input is a blocked status with
+    an exact blocker, never a fabricated result.
     """
     local_blockers: list[str] = []
     result: dict[str, Any] = {
@@ -360,6 +388,8 @@ def _run_pipeline(
         "packet_source": packet_source,
         "packet_count": len(packets),
         "final_category": "rejected",
+        "band3d_agreement": None,
+        "_voxel_3d": None,
     }
 
     measured_evidence_present = any(getattr(e, "measured", False) for e in scale_evidence)
@@ -389,21 +419,34 @@ def _run_pipeline(
         blockers.extend(local_blockers)
         return result
 
-    # MAP + occupancy (dynamic pixels excluded from static fusion).
+    # MAP + per-voxel 3D occupancy (dynamic tagged, never fused into static).
     map_result = _stage(
         local_blockers, f"{label}_map_occupancy",
-        lambda: _map(packets, scale_posterior, static_dynamic_states),
+        lambda: _map(packets, scale_posterior, static_dynamic_states, envelope),
     )
     voxel_map = map_result.get("_voxel_map") if isinstance(map_result, Mapping) else None
     occupancy_grid = map_result.get("_grid") if isinstance(map_result, Mapping) else None
+    voxel_3d = map_result.get("_voxel_3d") if isinstance(map_result, Mapping) else None
+    comparison_field = map_result.get("_comparison_field") if isinstance(map_result, Mapping) else None
     map_report = map_result.get("_map_report", {}) if isinstance(map_result, Mapping) else {}
     result["map_status"] = _strip_private(map_result)
+    result["_voxel_3d"] = voxel_3d
+    result["_comparison_field"] = comparison_field
 
-    # EXPORT artifacts (point cloud / mesh / trajectory / occupancy npz).
+    # Per-voxel band agreement of THIS field vs the measured 3D field (read-only;
+    # the measured field never enters this field's construction). The measured
+    # band is the eval region; this candidate's FULL field is sampled there. Only
+    # the monocular candidate is compared; the measured baseline IS the reference.
+    band3d_agreement = _resolve_band3d_agreement(
+        label, comparison_field, measured_comparison_field, packets, measured_packets_for_band,
+    )
+    result["band3d_agreement"] = band3d_agreement
+
+    # EXPORT artifacts (point cloud / mesh / trajectory / occupancy npz + 3D npz).
     export_result = _stage(
         local_blockers, f"{label}_export",
         lambda: _export(
-            asset_id, packets, voxel_map, occupancy_grid,
+            asset_id, packets, voxel_map, occupancy_grid, voxel_3d,
             static_dynamic_states, scale_posterior, out_dir, map_report,
         ),
     )
@@ -416,6 +459,7 @@ def _run_pipeline(
             asset_id, track_type, packets, occupancy_grid, map_report,
             scale_posterior, packet_source, provenance_label, out_dir,
             report_path, export_result if isinstance(export_result, Mapping) else {},
+            voxel_3d,
         ),
     )
     result["visual_proof"] = visual_result
@@ -429,6 +473,7 @@ def _run_pipeline(
             map_report if isinstance(map_report, Mapping) else {},
             measured_reference,
             static_dynamic_states,
+            band3d_agreement,
         ),
     )
     final_category = validation_result.get("final_category", "rejected") if isinstance(validation_result, Mapping) else "rejected"
@@ -511,17 +556,23 @@ def _map(
     packets: Sequence[Any],
     scale_posterior: Any,
     static_dynamic_states: Sequence[Any] | None = None,
+    envelope: RobotEnvelopeConfig | None = None,
 ) -> dict[str, Any]:
-    voxel_map, grid, report = fuse_static_map(
-        packets, scale_posterior, static_dynamic_states=static_dynamic_states
+    voxel_map, grid, voxel_3d, comparison_field, report = fuse_static_map(
+        packets, scale_posterior,
+        static_dynamic_states=static_dynamic_states,
+        envelope=envelope,
     )
     return {
         **report,
         "_map_report": report,
         "_voxel_map": voxel_map,
         "_grid": grid,
+        "_voxel_3d": voxel_3d,
+        "_comparison_field": comparison_field,
         "voxel_map_produced": voxel_map is not None,
         "occupancy_grid_produced": grid is not None,
+        "voxel_occupancy_3d_produced": voxel_3d is not None,
     }
 
 
@@ -547,6 +598,7 @@ def _export(
     packets: Sequence[Any],
     voxel_map: Any,
     occupancy_grid: Any,
+    voxel_occupancy_3d: Any,
     static_dynamic_states: Sequence[Any] | None,
     scale_posterior: Any,
     out_dir: Path,
@@ -556,6 +608,8 @@ def _export(
         asset_id, packets, voxel_map, occupancy_grid,
         static_dynamic_states, scale_posterior, out_dir,
         map_report=map_report,
+        voxel_occupancy_3d=voxel_occupancy_3d,
+        floor_align_rotation=map_report.get("floor_align_rotation") if isinstance(map_report, Mapping) else None,
     )
 
 
@@ -571,6 +625,7 @@ def _visual_proof(
     out_dir: Path,
     report_path: Path,
     export_result: Mapping[str, Any],
+    voxel_occupancy_3d: Any = None,
 ) -> dict[str, Any]:
     import numpy as np  # lazy; trajectory stacking only
 
@@ -581,6 +636,11 @@ def _visual_proof(
             T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
             centers.append(T[:3, 3])
         trajectory = np.asarray(centers, dtype=np.float64)
+        # The occupancy grids are in the FLOOR-ALIGNED frame; rotate the camera
+        # centres into the same frame so the top-down overlay matches the map.
+        r_align = map_report.get("floor_align_rotation") if isinstance(map_report, Mapping) else None
+        if r_align is not None and trajectory.shape[0]:
+            trajectory = trajectory @ np.asarray(r_align, dtype=np.float64).T
 
     grid_sub = map_report.get("occupancy_grid", {}) if isinstance(map_report, Mapping) else {}
     plane_axes = grid_sub.get("plane_axes") if isinstance(grid_sub, Mapping) else None
@@ -600,7 +660,8 @@ def _visual_proof(
         "blockers": map_report.get("blockers") if isinstance(map_report, Mapping) else None,
     }
     return write_visual_proof(
-        asset_id, occupancy_grid, trajectory, out_dir, status_label, provenance
+        asset_id, occupancy_grid, trajectory, out_dir, status_label, provenance,
+        voxel_occupancy_3d=voxel_occupancy_3d,
     )
 
 
@@ -612,10 +673,12 @@ def _validate(
     map_report: Mapping[str, Any],
     measured_reference: Sequence[Any] | None,
     static_dynamic_states: Sequence[Any] | None = None,
+    band3d_agreement: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _report, final_category, validation_dict = validate_and_accept(
         asset_id, packets, scale_posterior, visibility_report, map_report,
         measured_reference, static_dynamic_states,
+        band3d_agreement=band3d_agreement,
     )
     return {**validation_dict, "final_category": final_category}
 
@@ -832,6 +895,277 @@ def _compare_candidate_to_measured(
     return {
         "method": "no_comparison_possible",
         "note": "no overlapping or comparable frames between candidate and measured",
+    }
+
+
+def _resolve_band3d_agreement(
+    label: str,
+    candidate_field: Mapping[str, Any] | None,
+    measured_field: Mapping[str, Any] | None,
+    packets: Sequence[Any],
+    measured_packets_for_band: Sequence[Any] | None,
+) -> dict[str, Any] | None:
+    """Decide and compute the per-voxel band agreement vs the measured 3D field.
+
+    Honest, never fabricated: the measured baseline IS the reference (no self
+    comparison); a track with no measured 3D reference (phone_room) returns an
+    explicit ``missing_measured_3d_reference`` status; a comparison error is
+    surfaced rather than swallowed.
+    """
+    if label == "measured_baseline":
+        return None
+    if candidate_field is None:
+        return {
+            "status": "no_candidate_3d_field",
+            "note": "no VoxelOccupancyGrid3D was built for this result",
+        }
+    if measured_field is None or not measured_packets_for_band:
+        return {
+            "status": "missing_measured_3d_reference",
+            "note": (
+                "no measured 3D reference for this track; per-voxel band agreement "
+                "is not computable (never fabricated)"
+            ),
+        }
+    try:
+        return _band3d_agreement(
+            candidate_field, measured_field, packets, measured_packets_for_band
+        )
+    except Exception as exc:  # robust: comparison must not crash the run
+        return {
+            "status": "band3d_agreement_error",
+            "error": f"{type(exc).__name__}:{exc}",
+        }
+
+
+def _rotation_align(a, b, np):
+    """Shortest-arc rotation taking unit vector ``a`` onto unit vector ``b``."""
+    a = a / (np.linalg.norm(a) + 1e-12)
+    b = b / (np.linalg.norm(b) + 1e-12)
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    sin = float(np.linalg.norm(v))
+    if sin < 1e-9:
+        if c > 0:
+            return np.eye(3)
+        # 180 deg: rotate about any axis perpendicular to a.
+        perp = np.array([1.0, 0.0, 0.0])
+        if abs(a[0]) > 0.9:
+            perp = np.array([0.0, 1.0, 0.0])
+        axis = np.cross(a, perp)
+        axis = axis / (np.linalg.norm(axis) + 1e-12)
+        vx = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+        return np.eye(3) + 2.0 * (vx @ vx)
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + vx + vx @ vx * (1.0 / (1.0 + c))
+
+
+def _band3d_agreement(
+    candidate_field: Mapping[str, Any],
+    measured_field: Mapping[str, Any],
+    candidate_packets: Sequence[Any],
+    measured_packets: Sequence[Any],
+) -> dict[str, Any]:
+    """Per-voxel agreement of the candidate vs the measured 3D field in the band.
+
+    The eval region is the MEASURED collision band (the robot-relevant ground
+    truth). The candidate has a free gauge, so the measured band voxels are mapped
+    into the candidate frame and the candidate's FULL-volume class field is sampled
+    there by nearest voxel. The alignment is content-independent (no occupancy
+    leak): a Sim(3) from SHARED CAMERA CENTRES fixes scale + yaw + translation, and
+    its rotation is then REFINED to align the two reconstructions' FLOOR PLANES
+    (their RANSAC normals -- a structural prior, not occupancy), because the
+    camera-only Sim(3) leaves a residual floor tilt between two independently
+    floor-aligned reconstructions. Returns concrete MEASURED numbers; an overlap
+    too small for a Sim(3) fit yields an explicit insufficient-overlap status.
+    """
+    import numpy as np  # lazy
+
+    def _center(p: Any) -> Any:
+        T = np.asarray(p.T_world_camera, dtype=np.float64).reshape((4, 4))
+        return T[:3, 3]
+
+    cand_by = {int(p.frame_id): _center(p) for p in candidate_packets}
+    meas_by = {int(p.frame_id): _center(p) for p in measured_packets}
+    common = sorted(set(cand_by) & set(meas_by))
+    if len(common) < 3:
+        return {
+            "status": "insufficient_overlap_for_sim3_band_comparison",
+            "common_frame_count": len(common),
+            "note": (
+                "fewer than 3 shared frame_ids for a Sim(3) fit; no scale-aligned "
+                "band agreement (never fabricated)"
+            ),
+        }
+
+    # Sim(3) from shared camera centres (scale + yaw + translation), then refine
+    # the rotation so the two reconstructions' FLOOR PLANES coincide (their RANSAC
+    # normals -- a structural prior, not occupancy content). The camera-only Sim(3)
+    # leaves a residual floor tilt between two independently floor-aligned
+    # reconstructions; this refinement removes it. Content-independent: occupancy
+    # never informs the transform, so the measured field never leaks in.
+    src = np.asarray([cand_by[f] for f in common], dtype=np.float64)
+    dst = np.asarray([meas_by[f] for f in common], dtype=np.float64)
+    s, r_sim, _t_sim, _aligned, rmse_cam_sim = _umeyama_align(src, dst, np)
+    mu_src = src.mean(axis=0)
+    mu_dst = dst.mean(axis=0)
+    n_c = np.asarray(candidate_field.get("floor_normal", (0.0, 0.0, 1.0)), dtype=np.float64)
+    n_m = np.asarray(measured_field.get("floor_normal", (0.0, 0.0, 1.0)), dtype=np.float64)
+    nc_mapped = r_sim @ (n_c / (np.linalg.norm(n_c) + 1e-12))
+    n_m_u = n_m / (np.linalg.norm(n_m) + 1e-12)
+    if float(np.dot(nc_mapped, n_m_u)) < 0:
+        n_m_u = -n_m_u
+    tilt_before_deg = float(np.degrees(np.arccos(np.clip(np.dot(nc_mapped, n_m_u), -1.0, 1.0))))
+    r_corr = _rotation_align(nc_mapped, n_m_u, np)
+    R = r_corr @ r_sim
+    t = mu_dst - s * (R @ mu_src)
+    aligned = (s * (R @ src.T)).T + t[None, :]
+    rmse_cam = float(np.sqrt(((aligned - dst) ** 2).sum(axis=1).mean()))
+
+    FREE, OCC, MOV, DYN, UNK = 0, 1, 2, 3, 4  # noqa: N806 (class label order)
+
+    # Measured band eval region (the robot-relevant ground truth slab).
+    m_cls = np.asarray(measured_field["class"])
+    m_touched = np.asarray(measured_field["touched"])
+    m_org = np.asarray(measured_field["origin"], dtype=np.float64)
+    m_v = float(measured_field["voxel"])
+    m_dims = measured_field["dims"]
+    m_fa = int(measured_field["floor_axis"])
+    bmin = float(measured_field["band_min_m"])
+    bmax = float(measured_field["band_max_m"])
+    gx = m_org[0] + (np.arange(m_dims[0]) + 0.5) * m_v
+    gy = m_org[1] + (np.arange(m_dims[1]) + 0.5) * m_v
+    gz = m_org[2] + (np.arange(m_dims[2]) + 0.5) * m_v
+    grid_x, grid_y, grid_z = np.meshgrid(gx, gy, gz, indexing="ij")
+    centers = np.stack([grid_x.ravel(), grid_y.ravel(), grid_z.ravel()], axis=1)
+    in_band = (centers[:, m_fa] >= bmin) & (centers[:, m_fa] < bmax)
+    sel = in_band & m_touched.ravel()
+    pts_meas = centers[sel]
+    meas_sel = m_cls.ravel()[sel]
+    meas_band_touched = int(pts_meas.shape[0])
+    if meas_band_touched == 0:
+        return {
+            "status": "no_measured_band_voxels",
+            "estimated_scale_monocular_to_measured": float(s),
+            "camera_center_rmse_m": rmse_cam,
+            "note": "the measured 3D band had no observed voxels to compare against",
+        }
+
+    # Inverse transform: measured -> candidate frame, sample candidate full field.
+    # Two sparse sampled-ray fields rarely hit the exact same voxel, so each
+    # measured band voxel matches the nearest OBSERVED candidate voxel within a
+    # robot-scale tolerance (exact-voxel coverage is reported too).
+    p_cand = ((1.0 / s) * (R.T @ (pts_meas - t[None, :]).T)).T
+    cf_cls = np.asarray(candidate_field["class"])
+    cf_touched = np.asarray(candidate_field["touched"])
+    cf_org = np.asarray(candidate_field["origin"], dtype=np.float64)
+    cf_v = float(candidate_field["voxel"])
+    cd0, cd1, cd2 = (int(candidate_field["dims"][0]), int(candidate_field["dims"][1]), int(candidate_field["dims"][2]))
+    ci = np.floor((p_cand - cf_org[None, :]) / cf_v).astype(np.int64)
+    in_b = (
+        (ci[:, 0] >= 0) & (ci[:, 0] < cd0)
+        & (ci[:, 1] >= 0) & (ci[:, 1] < cd1)
+        & (ci[:, 2] >= 0) & (ci[:, 2] < cd2)
+    )
+    in_bounds_count = int(np.count_nonzero(in_b))
+    rad = max(1, int(round(BAND_MATCH_TOLERANCE_M / cf_v)))
+    n = pts_meas.shape[0]
+    cand_at = np.full(n, -1, dtype=np.int64)
+    matched = np.zeros(n, dtype=bool)
+    exact = 0
+    for k in range(n):
+        if not bool(in_b[k]):
+            continue
+        i, j, l = int(ci[k, 0]), int(ci[k, 1]), int(ci[k, 2])
+        i0, i1 = max(i - rad, 0), min(i + rad + 1, cd0)
+        j0, j1 = max(j - rad, 0), min(j + rad + 1, cd1)
+        l0, l1 = max(l - rad, 0), min(l + rad + 1, cd2)
+        sub_t = cf_touched[i0:i1, j0:j1, l0:l1]
+        if not sub_t.any():
+            continue
+        # Majority class among OBSERVED candidate voxels in the tolerance box.
+        # Majority (not nearest-single) is robust to a thin floor surface sheet
+        # bridging to free-above-floor samples in two sparse fields.
+        sub_c = cf_cls[i0:i1, j0:j1, l0:l1][sub_t].astype(np.int64)
+        counts = np.bincount(sub_c, minlength=5)
+        cand_at[k] = int(np.argmax(counts))
+        matched[k] = True
+        if bool(cf_touched[i, j, l]):
+            exact += 1
+    co = matched
+    n_co = int(np.count_nonzero(co))
+    if n_co == 0:
+        return {
+            "status": "no_co_observed_band_voxels",
+            "estimated_scale_monocular_to_measured": float(s),
+            "camera_center_rmse_m": rmse_cam,
+            "floor_tilt_before_refine_deg": tilt_before_deg,
+            "measured_band_touched_voxels": meas_band_touched,
+            "measured_band_voxels_in_candidate_bounds": in_bounds_count,
+            "match_tolerance_m": float(BAND_MATCH_TOLERANCE_M),
+            "note": "no measured band voxel mapped onto an observed candidate voxel within tolerance",
+        }
+
+    meas_co = meas_sel[co]
+    cand_co = cand_at[co]
+
+    labels = ["free", "occupied_static", "movable_static", "dynamic", "unknown"]
+    confusion: dict[str, int] = {}
+    for mj, mn in enumerate(labels):
+        for cj, cn in enumerate(labels):
+            cnt = int(np.count_nonzero((meas_co == mj) & (cand_co == cj)))
+            if cnt:
+                confusion[f"meas_{mn}__cand_{cn}"] = cnt
+
+    agreement = float(np.mean(meas_co == cand_co))
+    meas_occ = meas_co == OCC
+    cand_occ = cand_co == OCC
+    inter = int(np.count_nonzero(meas_occ & cand_occ))
+    union = int(np.count_nonzero(meas_occ | cand_occ))
+    occ_iou = float(inter / union) if union else 0.0
+
+    # Robot-critical: candidate calls free where the measured GT sees an obstacle.
+    meas_solid = (meas_co == OCC) | (meas_co == MOV)
+    n_meas_solid = int(np.count_nonzero(meas_solid))
+    free_contra = int(np.count_nonzero(meas_solid & (cand_co == FREE)))
+    free_contra_rate = float(free_contra / n_meas_solid) if n_meas_solid else 0.0
+
+    # Dynamic leakage: candidate static-occupied where measured is dynamic, or
+    # candidate dynamic where the measured GT is a solid static obstacle.
+    dyn_leak = int(np.count_nonzero((meas_co == DYN) & (cand_co == OCC))) + int(
+        np.count_nonzero(meas_solid & (cand_co == DYN))
+    )
+    dyn_leak_rate = float(dyn_leak / n_co) if n_co else 0.0
+    coverage = float(n_co / meas_band_touched) if meas_band_touched else 0.0
+
+    return {
+        "status": "computed",
+        "method": "camera_sim3_plus_floor_normal_refine_inverse_sample_candidate_full_at_measured_band",
+        "common_frame_count": len(common),
+        "estimated_scale_monocular_to_measured": float(s),
+        "camera_center_rmse_m": rmse_cam,
+        "camera_center_rmse_m_sim3_only": float(rmse_cam_sim),
+        "floor_tilt_before_refine_deg": tilt_before_deg,
+        "co_observed_band_voxels": n_co,
+        "exact_voxel_co_observed": int(exact),
+        "measured_band_voxels_in_candidate_bounds": in_bounds_count,
+        "measured_band_touched_voxels": meas_band_touched,
+        "match_tolerance_m": float(BAND_MATCH_TOLERANCE_M),
+        "coverage_of_measured_band": coverage,
+        "per_class_agreement": agreement,
+        "occupied_static_iou": occ_iou,
+        "measured_solid_voxels_co_observed": n_meas_solid,
+        "free_space_contradiction_rate": free_contra_rate,
+        "free_space_contradiction_voxels": free_contra,
+        "dynamic_leakage_rate": dyn_leak_rate,
+        "dynamic_leakage_voxels": dyn_leak,
+        "confusion_counts": confusion,
+        "note": (
+            "eval region = measured collision band; candidate FULL field sampled "
+            "there via inverse of a camera-center Sim(3) whose rotation is refined "
+            "to align the two floor planes. free_space_contradiction = candidate "
+            "calls free where the measured GT sees an obstacle (robot-critical)."
+        ),
     }
 
 

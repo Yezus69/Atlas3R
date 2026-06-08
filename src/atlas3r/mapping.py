@@ -17,9 +17,10 @@ Honesty rules honored here:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .config import RobotEnvelopeConfig
 from .contracts import (
     ContractValidationError,
     FrameRayPacket,
@@ -27,9 +28,36 @@ from .contracts import (
     ScalePosterior,
     StaticDynamicState,
     VoxelMapState,
+    VoxelOccupancyGrid3D,
 )
 
 DEFAULT_VOXEL_SIZE_M = 0.05
+
+# Per-sample surface class codes used when fusing the static/dynamic/movable
+# verdict per-voxel. Dynamic is NEVER fused into static occupancy: a dynamic
+# sample writes only the dynamic channel and never carves free space.
+CLASS_OCCUPIED_STATIC = 0
+CLASS_MOVABLE_STATIC = 1
+CLASS_DYNAMIC = 2
+# A per-sample movable_static probability above this (from the M5 state's
+# ``residual_summary["movable_probability"]``) tags the sample movable_static.
+MOVABLE_PROB_THRESHOLD = 0.5
+# Surface/free confidence saturates as ``hits / (hits + half)``: one observation
+# -> 0.5, more observations approach (never reach) 1.0. Honest soft evidence: a
+# single sighting is real but weaker than repeated multi-view agreement.
+SURFACE_CONF_HALF_HITS = 1.0
+FREE_CONF_HALF_HITS = 1.0
+# Small unknown residual painted on touched (observed) cells so the unknown
+# channel stays distinct from free without collapsing the simplex.
+_TOUCHED_UNKNOWN_RESIDUAL = 0.05
+# Scene-level confidence weight by metric acceptance status; multiplied by each
+# voxel's own evidence strength to form the per-voxel map_confidence.
+_MAP_CONFIDENCE_STATUS_WEIGHT = {
+    "measured_metric": 0.9,
+    "metric_pseudo_label": 0.6,
+    "non_metric_pseudo_label": 0.4,
+    "rejected": 0.1,
+}
 # A per-pixel sample is excluded from STATIC fusion when its dynamic probability
 # dominates and exceeds this threshold. Dynamic is NEVER fused into static
 # occupancy (ARCHITECTURE.md). movable_static and unknown stay distinct: a
@@ -51,31 +79,52 @@ def fuse_static_map(
     packets: Sequence[FrameRayPacket],
     scale_posterior: ScalePosterior,
     *,
-    voxel_size_m: float = DEFAULT_VOXEL_SIZE_M,
+    voxel_size_m: float | None = None,
     static_dynamic_states: Sequence[StaticDynamicState] | None = None,
-) -> tuple[VoxelMapState | None, OccupancyGrid2D | None, dict[str, Any]]:
-    """Return ``(VoxelMapState, OccupancyGrid2D, map_report)``.
+    envelope: RobotEnvelopeConfig | None = None,
+) -> tuple[
+    VoxelMapState | None,
+    OccupancyGrid2D | None,
+    VoxelOccupancyGrid3D | None,
+    dict[str, Any] | None,
+    dict[str, Any],
+]:
+    """Return ``(VoxelMapState, OccupancyGrid2D, VoxelOccupancyGrid3D,
+    comparison_field, report)``.
 
-    On too-few packets or empty surface, returns ``(None, None, report)`` with
-    an explicit blocked status -- never a fabricated map.
+    The primary robot output is the band-bounded ``VoxelOccupancyGrid3D``; the
+    ``OccupancyGrid2D`` is its PURE top-down projection (single source of truth).
+    ``comparison_field`` is a full-volume class field (numpy arrays) used only for
+    the band agreement comparison. On too-few packets or empty surface, returns
+    ``(None, None, None, None, report)`` with an explicit blocked status -- never
+    a fabricated map.
 
-    When ``static_dynamic_states`` is supplied, per-pixel samples whose dynamic
-    probability dominates (and exceeds ``DYNAMIC_EXCLUSION_PROB_THRESHOLD``) are
-    EXCLUDED from the static surface lift, so dynamic geometry is never fused
-    into static occupancy. A state is only applied to a packet when its per-pixel
-    array length matches the packet's ray count exactly (no fabricated
-    alignment); otherwise that frame is fused unfiltered and the mismatch is
-    recorded honestly in the report. movable_static and unknown are NOT carved
-    out -- only dynamic.
+    When ``static_dynamic_states`` is supplied, each per-pixel sample is TAGGED by
+    class (occupied_static / movable_static / dynamic) and fused per-voxel:
+
+    - static & movable rays carve free space in front and mark their class at the
+      surface voxel;
+    - dynamic rays mark ONLY the dynamic channel at the surface voxel and never
+      carve free and never touch ``surface_count`` (dynamic is never static).
+
+    A state is applied to a packet only when its per-pixel arrays match the
+    packet's ray count exactly (no fabricated alignment); otherwise that frame is
+    fused as all-occupied_static and the mismatch is recorded honestly.
+    ``envelope`` (the robot collision band) bounds the 3D field vertically.
     """
+    if envelope is None:
+        envelope = RobotEnvelopeConfig()
+    voxel = float(voxel_size_m) if voxel_size_m is not None else float(envelope.voxel_size_m)
+
     base_report: dict[str, Any] = {
         "module": "M7 - Ray-Fused Static Map",
         "packet_count": len(packets),
-        "requested_voxel_size_m": voxel_size_m,
+        "requested_voxel_size_m": voxel,
+        "robot_envelope": envelope.to_dict(),
     }
 
     if len(packets) < 1:
-        return None, None, {
+        return None, None, None, None, {
             **base_report,
             "status": "blocked_no_packets",
             "blockers": ("no_packets_to_fuse",),
@@ -90,29 +139,35 @@ def fuse_static_map(
         else "reconstruction_world"
     )
 
-    surfaces, origins, ray_dirs, dynamic_filter_report = _collect_world_points(
+    surfaces, origins, ray_dirs, classes, dynamic_filter_report = _collect_world_points(
         packets, np, static_dynamic_states
     )
     if surfaces.shape[0] == 0:
-        return None, None, {
+        return None, None, None, None, {
             **base_report,
             "status": "blocked_no_surface_points",
             "dynamic_exclusion": dynamic_filter_report,
             "blockers": ("no_surface_points_after_lifting",),
         }
 
+    # Static (non-dynamic) surfaces drive the floor estimate so a moving object
+    # never defines the floor plane. Grid bounds use ALL surfaces so every fused
+    # voxel (including dynamic) fits in the grid.
+    static_mask = classes != CLASS_DYNAMIC
+    static_surfaces = surfaces[static_mask] if bool(np.any(static_mask)) else surfaces
+
     # Robust bounds: clip extreme outliers so the grid bounds are not blown out
     # by a few stray points. The points themselves are kept; only the grid
     # extent is computed robustly.
     lo = np.percentile(surfaces, 1.0, axis=0)
     hi = np.percentile(surfaces, 99.0, axis=0)
-    pad = TSDF_TRUNCATION_VOXELS * voxel_size_m
+    pad = TSDF_TRUNCATION_VOXELS * voxel
     grid_min = np.minimum(lo, origins.min(axis=0)) - pad
     grid_max = np.maximum(hi, origins.max(axis=0)) + pad
 
     extent = grid_max - grid_min
-    extent = np.where(extent > 0.0, extent, voxel_size_m)
-    effective_voxel = float(voxel_size_m)
+    extent = np.where(extent > 0.0, extent, voxel)
+    effective_voxel = float(voxel)
     needed = np.ceil(extent / effective_voxel).astype(np.int64)
     while int(needed.max()) > MAX_VOXELS_PER_AXIS:
         effective_voxel *= 2.0
@@ -125,18 +180,22 @@ def fuse_static_map(
     log_odds = np.zeros(dims, dtype=np.float64)
     free_count = np.zeros(dims, dtype=np.float64)
     surface_count = np.zeros(dims, dtype=np.float64)
+    occupied_static_count = np.zeros(dims, dtype=np.float64)
+    movable_count = np.zeros(dims, dtype=np.float64)
     dynamic_count = np.zeros(dims, dtype=np.float64)
     uncertainty = np.zeros(dims, dtype=np.float64)
 
     rel_unc = float(scale_posterior.relative_scale_uncertainty)
 
-    # Fuse each surface sample: free along the ray, occupied at the surface.
+    # Fuse each sample by class: free along static/movable rays, occupied at the
+    # surface, dynamic in its own channel (never static, never free-carving).
     _fuse_rays(
-        surfaces, origins, ray_dirs,
+        surfaces, origins, ray_dirs, classes,
         grid_min, effective_voxel, dims,
         tsdf_value, tsdf_weight, log_odds,
-        free_count, surface_count, uncertainty,
-        rel_unc, np,
+        free_count, surface_count,
+        occupied_static_count, movable_count, dynamic_count,
+        uncertainty, rel_unc, np,
     )
 
     try:
@@ -152,31 +211,37 @@ def fuse_static_map(
             uncertainty=uncertainty,
         )
     except ContractValidationError as exc:
-        return None, None, {
+        return None, None, None, None, {
             **base_report,
             "status": "voxel_map_contract_rejected",
             "error": str(exc),
             "blockers": ("voxel_map_contract_rejected",),
         }
 
-    floor_info = _estimate_floor(surfaces, effective_voxel, np)
-    grid, grid_report = _build_occupancy_grid(
-        free_count, surface_count, log_odds,
+    floor_info = _estimate_floor(static_surfaces, effective_voxel, np)
+
+    # Primary output: the collision-band 3D occupancy field. The 2D grid is its
+    # pure top-down projection (single source of truth). ``comparison_field`` is a
+    # full-volume class field used only for the band agreement comparison.
+    voxel3d, band_volumes, comparison_field, band_report = _build_voxel_occupancy_3d(
+        occupied_static_count, movable_count, dynamic_count, free_count,
         grid_min, effective_voxel, dims,
-        floor_info, scale_posterior, coordinate_frame, np,
+        floor_info, scale_posterior, coordinate_frame, envelope, np,
+    )
+    grid, grid_report = _build_occupancy_grid_from_band(
+        band_volumes, scale_posterior, coordinate_frame, grid_min, np,
     )
 
     occupied_voxels = int(np.count_nonzero(surface_count > 0.0))
     free_voxels = int(np.count_nonzero((free_count > 0.0) & (surface_count <= 0.0)))
+    dynamic_voxels = int(np.count_nonzero(dynamic_count > 0.0))
     touched = int(np.count_nonzero((free_count > 0.0) | (surface_count > 0.0)))
     total_voxels = int(nx * ny * nz)
     unknown_voxels = total_voxels - touched
 
-    # Real free/occupied contradiction: voxels that received BOTH free-carve and
-    # surface evidence (across all frames, order-independent). The carve loop
-    # skips a voxel only if it is already a surface voxel at carve time, so a
-    # cross-frame conflict (one frame's surface = another frame's carved-free)
-    # still lands here and is counted honestly.
+    # Real free/occupied contradiction over STATIC surfaces only (dynamic lives in
+    # its own channel and a moving object legitimately makes a cell free at
+    # another time, so it must not perturb this accepted metric).
     conflict_voxels = int(np.count_nonzero((free_count > 0.0) & (surface_count > 0.0)))
     occupied_evidence_voxels = occupied_voxels
     if occupied_evidence_voxels > 0:
@@ -196,25 +261,27 @@ def fuse_static_map(
         "total_voxels": total_voxels,
         "occupied_voxel_count": occupied_voxels,
         "free_voxel_count": free_voxels,
+        "dynamic_voxel_count": dynamic_voxels,
         "unknown_voxel_count": unknown_voxels,
         "occupied_fraction": occupied_voxels / total_voxels if total_voxels else 0.0,
         "free_fraction": free_voxels / total_voxels if total_voxels else 0.0,
         "unknown_fraction": unknown_voxels / total_voxels if total_voxels else 0.0,
         "free_occupied_conflict_voxel_count": conflict_voxels,
         "free_space_contradiction_rate": contradiction_rate,
-        "free_space_contradiction_basis": "conflict_voxels_over_occupied_voxels",
+        "free_space_contradiction_basis": "conflict_voxels_over_occupied_voxels_static_only",
         "surface_point_count": int(surfaces.shape[0]),
         "floor": floor_info["report"],
         "occupancy_grid": grid_report,
+        "voxel_occupancy_3d": band_report,
         "dynamic_inference": (
-            "dynamic_pixels_excluded_from_static_fusion"
+            "dynamic_tagged_per_voxel_excluded_from_static_occupancy"
             if dynamic_filter_report.get("applied")
             else "not_inferred_no_static_dynamic_input"
         ),
         "dynamic_exclusion": dynamic_filter_report,
-        "blockers": tuple(floor_info.get("blockers", ())),
+        "blockers": tuple(floor_info.get("blockers", ())) + tuple(band_report.get("blockers", ())),
     }
-    return voxel_map, grid, report
+    return voxel_map, grid, voxel3d, comparison_field, report
 
 
 # ---------------------------------------------------------------------------
@@ -226,13 +293,17 @@ def _collect_world_points(
     packets: Sequence[FrameRayPacket],
     np: Any,
     static_dynamic_states: Sequence[StaticDynamicState] | None = None,
-) -> tuple[Any, Any, Any, dict[str, Any]]:
-    """Lift packet samples to world, optionally dropping dynamic-dominant pixels.
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+    """Lift packet samples to world and tag each by surface class.
 
-    Returns ``(surfaces, origins, ray_dirs, dynamic_filter_report)``. The filter
-    report records, honestly, how many frames had a usable (shape-matched) state,
-    how many pixels were excluded as dynamic, and which frames were left
-    unfiltered because their state did not align pixel-for-pixel.
+    Returns ``(surfaces, origins, ray_dirs, classes, dynamic_filter_report)``.
+    ``classes`` is an int code per sample (occupied_static / movable_static /
+    dynamic), aligned 1:1 with ``surfaces``. Dynamic samples are KEPT (so the
+    dynamic channel can be painted) but tagged so the fuser never adds them to
+    static occupancy. The filter report records, honestly, how many frames had a
+    usable (shape-matched) state, how many pixels were tagged dynamic/movable, and
+    which frames were left unfiltered (all-occupied_static) because their state
+    did not align pixel-for-pixel.
     """
     state_by_frame: dict[int, StaticDynamicState] = {}
     for state in static_dynamic_states or ():
@@ -241,9 +312,11 @@ def _collect_world_points(
     surf_list = []
     origin_list = []
     dir_list = []
+    class_list = []
     frames_filtered = 0
     frames_state_shape_mismatch = 0
     dynamic_pixels_excluded = 0
+    movable_pixels_tagged = 0
     total_pixels_with_state = 0
     for packet in packets:
         rays = np.asarray(packet.rays_camera, dtype=np.float64).reshape((-1, 3))
@@ -253,36 +326,38 @@ def _collect_world_points(
         t = T[:3, 3]
 
         n = rays.shape[0]
-        keep = np.ones(n, dtype=bool)
+        classes = np.full(n, CLASS_OCCUPIED_STATIC, dtype=np.int64)
         state = state_by_frame.get(int(packet.frame_id))
         if state is not None:
             stat = np.asarray(state.static_probability, dtype=np.float64).reshape((-1,))
             dyn = np.asarray(state.dynamic_probability, dtype=np.float64).reshape((-1,))
             if stat.shape[0] == n and dyn.shape[0] == n:
-                # Dynamic is NEVER fused into static occupancy: drop pixels whose
-                # dynamic probability dominates and clears the threshold. movable/
-                # unknown surfaces are kept (still real static geometry).
+                # Dynamic is NEVER fused into static occupancy: tag (not drop)
+                # pixels whose dynamic probability dominates and clears the
+                # threshold. Movable surfaces (real geometry, repeatedly carved
+                # free) are tagged distinctly; everything else is occupied_static.
                 is_dynamic = (dyn >= stat) & (dyn > DYNAMIC_EXCLUSION_PROB_THRESHOLD)
-                keep = ~is_dynamic
+                movable = _movable_probability(state, n, np)
+                is_movable = (~is_dynamic) & (movable > MOVABLE_PROB_THRESHOLD)
+                classes[is_movable] = CLASS_MOVABLE_STATIC
+                classes[is_dynamic] = CLASS_DYNAMIC
                 frames_filtered += 1
                 dynamic_pixels_excluded += int(np.count_nonzero(is_dynamic))
+                movable_pixels_tagged += int(np.count_nonzero(is_movable))
                 total_pixels_with_state += n
             else:
                 # No fabricated alignment: a state whose sampling differs from the
-                # packet's rays cannot be applied pixel-for-pixel; fuse unfiltered
-                # and record the mismatch honestly.
+                # packet's rays cannot be applied pixel-for-pixel; fuse all as
+                # occupied_static and record the mismatch honestly.
                 frames_state_shape_mismatch += 1
 
-        if not bool(np.any(keep)):
-            continue
-        rays_k = rays[keep]
-        depth_k = depth[keep]
-        X_cam = rays_k * depth_k[:, None]
+        X_cam = rays * depth[:, None]
         X_world = X_cam @ R.T + t[None, :]
-        dirs_world = rays_k @ R.T
+        dirs_world = rays @ R.T
         surf_list.append(X_world)
         origin_list.append(np.repeat(t[None, :], X_world.shape[0], axis=0))
         dir_list.append(dirs_world)
+        class_list.append(classes)
 
     dynamic_filter_report = {
         "applied": frames_filtered > 0,
@@ -290,32 +365,54 @@ def _collect_world_points(
         "frames_filtered": frames_filtered,
         "frames_state_shape_mismatch": frames_state_shape_mismatch,
         "dynamic_pixels_excluded": dynamic_pixels_excluded,
+        "movable_pixels_tagged": movable_pixels_tagged,
         "pixels_considered_with_state": total_pixels_with_state,
         "exclusion_threshold": DYNAMIC_EXCLUSION_PROB_THRESHOLD,
         "note": (
-            "dynamic_dominant_pixels_excluded_from_static_fusion_movable_and_unknown_kept"
+            "dynamic_dominant_pixels_tagged_dynamic_excluded_from_static_occupancy_movable_kept"
             if frames_filtered
-            else "no_shape_matched_static_dynamic_state_fused_unfiltered"
+            else "no_shape_matched_static_dynamic_state_fused_all_occupied_static"
         ),
     }
 
     if not surf_list:
         empty = np.zeros((0, 3), dtype=np.float64)
-        return empty, empty, empty, dynamic_filter_report
+        empty_cls = np.zeros((0,), dtype=np.int64)
+        return empty, empty, empty, empty_cls, dynamic_filter_report
     return (
         np.concatenate(surf_list, axis=0),
         np.concatenate(origin_list, axis=0),
         np.concatenate(dir_list, axis=0),
+        np.concatenate(class_list, axis=0),
         dynamic_filter_report,
     )
 
 
+def _movable_probability(state: StaticDynamicState, n: int, np: Any) -> Any:
+    """Per-sample movable_static probability from the state, or zeros.
+
+    The M5 ``StaticDynamicState`` simplex carries only static/dynamic/unknown; the
+    per-sample movable probability rides in ``residual_summary["movable_probability"]``
+    (written by ``static_dynamic._build_state``). Absent or shape-mismatched ->
+    zeros (movable is never fabricated; the sample stays occupied_static).
+    """
+    residual = getattr(state, "residual_summary", None)
+    movable = residual.get("movable_probability") if isinstance(residual, Mapping) else None
+    if movable is None:
+        return np.zeros(n, dtype=np.float64)
+    arr = np.asarray(movable, dtype=np.float64).reshape((-1,))
+    if arr.shape[0] != n:
+        return np.zeros(n, dtype=np.float64)
+    return arr
+
+
 def _fuse_rays(
-    surfaces, origins, ray_dirs,
+    surfaces, origins, ray_dirs, classes,
     grid_min, voxel, dims,
     tsdf_value, tsdf_weight, log_odds,
-    free_count, surface_count, uncertainty,
-    rel_unc, np,
+    free_count, surface_count,
+    occupied_static_count, movable_count, dynamic_count,
+    uncertainty, rel_unc, np,
 ):
     nx, ny, nz = dims
     inv_voxel = 1.0 / voxel
@@ -327,6 +424,7 @@ def _fuse_rays(
         surfaces = surfaces[idx]
         origins = origins[idx]
         ray_dirs = ray_dirs[idx]
+        classes = classes[idx]  # CRITICAL: keep class labels aligned with samples
         n = surfaces.shape[0]
 
     surf_idx = np.floor((surfaces - grid_min[None, :]) * inv_voxel).astype(np.int64)
@@ -336,13 +434,28 @@ def _fuse_rays(
         & (surf_idx[:, 2] >= 0) & (surf_idx[:, 2] < nz)
     )
     for k in range(n):
+        cls = int(classes[k])
+        is_dynamic = cls == CLASS_DYNAMIC
         if in_bounds[k]:
             ix, iy, iz = int(surf_idx[k, 0]), int(surf_idx[k, 1]), int(surf_idx[k, 2])
-            surface_count[ix, iy, iz] += 1.0
-            tsdf_value[ix, iy, iz] = 0.0
-            tsdf_weight[ix, iy, iz] += 1.0
-            log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
-            uncertainty[ix, iy, iz] += rel_unc
+            if is_dynamic:
+                # Dynamic surface hit: paint ONLY the dynamic channel. Never added
+                # to static surface_count / TSDF / occupancy (dynamic is not static).
+                dynamic_count[ix, iy, iz] += 1.0
+            else:
+                surface_count[ix, iy, iz] += 1.0
+                tsdf_value[ix, iy, iz] = 0.0
+                tsdf_weight[ix, iy, iz] += 1.0
+                log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
+                uncertainty[ix, iy, iz] += rel_unc
+                if cls == CLASS_MOVABLE_STATIC:
+                    movable_count[ix, iy, iz] += 1.0
+                else:
+                    occupied_static_count[ix, iy, iz] += 1.0
+        # Dynamic rays do NOT carve free space: a moving object gives unreliable
+        # free evidence. Only static/movable rays carve free in front of them.
+        if is_dynamic:
+            continue
         # Carve free space: step from the camera origin toward the surface,
         # marking voxels before the surface as free evidence.
         origin = origins[k]
@@ -439,38 +552,230 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
     }
 
 
-def _build_occupancy_grid(
-    free_count, surface_count, log_odds,
+def _build_voxel_occupancy_3d(
+    occupied_static_count, movable_count, dynamic_count, free_count,
     grid_min, voxel, dims,
-    floor_info, scale_posterior, coordinate_frame, np,
+    floor_info, scale_posterior, coordinate_frame, envelope, np,
+) -> tuple[VoxelOccupancyGrid3D | None, dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
+    """Crop the fused volume to the robot collision band and build the per-voxel
+    ``VoxelOccupancyGrid3D``.
+
+    Returns ``(VoxelOccupancyGrid3D|None, band_volumes, comparison_field, report)``.
+    ``band_volumes`` carries the cropped probability arrays + geometry that the 2D
+    projection consumes (so the 2D grid is a pure function of this field).
+    ``comparison_field`` is a full-volume class field for the band comparison. The per-voxel
+    probabilities are a pairwise-non-collapse soft distribution: surface
+    confidence ``c_surf = surf/(surf+half)`` is split among occupied/movable/
+    dynamic by their hit shares; free is suppressed where surface evidence exists;
+    unknown holds the residual (and is 1 where the voxel was never observed).
+    """
+    floor_axis = int(floor_info["floor_axis"])
+    floor_value = float(floor_info["floor_value"])
+    band_min = floor_value
+    band_max = floor_value + float(envelope.band_height_m)
+
+    # Full-volume argmax class field (int8) + touched mask, used ONLY for the
+    # band agreement comparison: the eval region is the OTHER field's band, and
+    # this full field is sampled there (robust to the floor-slab tilt between two
+    # independently floor-aligned reconstructions under a camera-only Sim(3)).
+    # Class codes: 0=free, 1=occupied_static, 2=movable_static, 3=dynamic,
+    # 4=unknown. Computed without materialising 5 full-volume float arrays.
+    full_surf = occupied_static_count + movable_count + dynamic_count
+    full_surf_pos = full_surf > 0.0
+    full_free_only = (~full_surf_pos) & (free_count > 0.0)
+    full_surf_cls = np.where(
+        (occupied_static_count >= movable_count) & (occupied_static_count >= dynamic_count),
+        1,
+        np.where(movable_count >= dynamic_count, 2, 3),
+    )
+    full_cls = np.full(dims, 4, dtype=np.int8)
+    full_cls = np.where(full_free_only, np.int8(0), full_cls)
+    full_cls = np.where(full_surf_pos, full_surf_cls.astype(np.int8), full_cls)
+    floor_normal = floor_info.get("normal", (0.0, 0.0, 1.0))
+    comparison_field = {
+        "class": full_cls,
+        "touched": full_surf_pos | (free_count > 0.0),
+        "origin": (float(grid_min[0]), float(grid_min[1]), float(grid_min[2])),
+        "voxel": float(voxel),
+        "dims": tuple(int(d) for d in dims),
+        "floor_axis": floor_axis,
+        "floor_normal": tuple(float(x) for x in floor_normal),
+        # band_min_m / band_max_m are filled in once the band crop is known.
+    }
+
+    nf = dims[floor_axis]
+    lo_face = grid_min[floor_axis] + np.arange(nf) * voxel
+    hi_face = lo_face + voxel
+    in_band = (hi_face > band_min) & (lo_face < band_max)
+    band_idx = np.nonzero(in_band)[0]
+    if band_idx.shape[0] == 0:
+        # Floor estimate sits outside the fused geometry: clamp to the single
+        # slice containing band_min so we still emit an honest band, not nothing.
+        k0 = int(np.clip(np.floor((band_min - grid_min[floor_axis]) / voxel), 0, nf - 1))
+        band_idx = np.asarray([k0], dtype=np.int64)
+
+    def take(a: Any) -> Any:
+        return np.take(a, band_idx, axis=floor_axis)
+
+    occ = take(occupied_static_count)
+    mov = take(movable_count)
+    dyn = take(dynamic_count)
+    free = take(free_count)
+
+    surf = occ + mov + dyn
+    c_surf = surf / (surf + SURFACE_CONF_HALF_HITS)
+    c_free = free / (free + FREE_CONF_HALF_HITS)
+    surf_pos = surf > 0.0
+    share_occ = np.where(surf_pos, occ / np.where(surf_pos, surf, 1.0), 0.0)
+    share_mov = np.where(surf_pos, mov / np.where(surf_pos, surf, 1.0), 0.0)
+    share_dyn = np.where(surf_pos, dyn / np.where(surf_pos, surf, 1.0), 0.0)
+    p_occ = c_surf * share_occ
+    p_mov = c_surf * share_mov
+    p_dyn = c_surf * share_dyn
+    p_free = c_free * (1.0 - c_surf)
+    touched = surf_pos | (free > 0.0)
+    occupied_mass = p_occ + p_mov + p_dyn + p_free
+    p_unknown = np.where(touched, np.maximum(0.0, 1.0 - occupied_mass), 1.0)
+
+    status_value = scale_posterior.metric_acceptance_status.value
+    status_weight = _MAP_CONFIDENCE_STATUS_WEIGHT.get(status_value, 0.3)
+    evidence_strength = np.maximum(c_surf, c_free)
+    map_confidence = np.clip(status_weight * evidence_strength, 0.0, 1.0)
+
+    origin = [float(grid_min[0]), float(grid_min[1]), float(grid_min[2])]
+    origin[floor_axis] = float(grid_min[floor_axis] + int(band_idx[0]) * voxel)
+    band_floor_min = origin[floor_axis]
+    band_floor_max = band_floor_min + int(band_idx.shape[0]) * voxel
+    comparison_field["band_min_m"] = float(band_floor_min)
+    comparison_field["band_max_m"] = float(band_floor_max)
+
+    plane_axes = tuple(a for a in range(3) if a != floor_axis)
+    band_dims = list(int(d) for d in dims)
+    band_dims[floor_axis] = int(band_idx.shape[0])
+
+    band_volumes: dict[str, Any] = {
+        "P_free": p_free, "P_occupied_static": p_occ, "P_movable_static": p_mov,
+        "P_dynamic": p_dyn, "P_unknown": p_unknown, "map_confidence": map_confidence,
+        "touched": touched,
+        "floor_axis": floor_axis, "plane_axes": plane_axes,
+        "origin_world": tuple(origin), "voxel": float(voxel),
+        "band_dims": tuple(band_dims),
+        "band_min_m": float(band_floor_min), "band_max_m": float(band_floor_max),
+    }
+
+    try:
+        voxel3d = VoxelOccupancyGrid3D(
+            grid_frame=coordinate_frame,
+            voxel_size_m=float(voxel),
+            origin_world=tuple(origin),
+            floor_axis=floor_axis,
+            band_min_m=float(band_floor_min),
+            band_max_m=float(band_floor_max),
+            P_free=p_free.astype(np.float64),
+            P_occupied_static=p_occ.astype(np.float64),
+            P_movable_static=p_mov.astype(np.float64),
+            P_dynamic=p_dyn.astype(np.float64),
+            P_unknown=p_unknown.astype(np.float64),
+            map_confidence=map_confidence.astype(np.float64),
+            scale_uncertainty=float(scale_posterior.relative_scale_uncertainty),
+            acceptance_category=scale_posterior.metric_acceptance_status,
+        )
+    except ContractValidationError as exc:
+        return None, band_volumes, comparison_field, {
+            "status": "voxel_occupancy_3d_contract_rejected",
+            "error": str(exc),
+            "blockers": ("voxel_occupancy_3d_contract_rejected",),
+        }
+
+    occ_vox = int(np.count_nonzero(occ > 0.0))
+    mov_vox = int(np.count_nonzero(mov > 0.0))
+    dyn_vox = int(np.count_nonzero(dyn > 0.0))
+    free_vox = int(np.count_nonzero((free > 0.0) & (~surf_pos)))
+    band_total = 1
+    for d in band_dims:
+        band_total *= int(d)
+    unknown_vox = band_total - int(np.count_nonzero(touched))
+    report = {
+        "status": "built",
+        "floor_axis": floor_axis,
+        "plane_axes": plane_axes,
+        "band_slice_count": int(band_idx.shape[0]),
+        "band_slice_indices": [int(i) for i in band_idx],
+        "band_min_m": float(band_floor_min),
+        "band_max_m": float(band_floor_max),
+        "requested_band_min_m": float(band_min),
+        "requested_band_max_m": float(band_max),
+        "collision_height_m": float(envelope.collision_height_m),
+        "margin_m": float(envelope.margin_m),
+        "voxel_size_m": float(voxel),
+        "band_dims": tuple(band_dims),
+        "band_total_voxels": band_total,
+        "occupied_static_voxels": occ_vox,
+        "movable_static_voxels": mov_vox,
+        "dynamic_voxels": dyn_vox,
+        "free_voxels": free_vox,
+        "unknown_voxels": unknown_vox,
+        "occupied_static_fraction": occ_vox / band_total if band_total else 0.0,
+        "movable_static_fraction": mov_vox / band_total if band_total else 0.0,
+        "dynamic_fraction": dyn_vox / band_total if band_total else 0.0,
+        "free_fraction": free_vox / band_total if band_total else 0.0,
+        "unknown_fraction": unknown_vox / band_total if band_total else 0.0,
+        "movable_inferred": mov_vox > 0,
+        "dynamic_inferred": dyn_vox > 0,
+        "blockers": (),
+    }
+    return voxel3d, band_volumes, comparison_field, report
+
+
+def _build_occupancy_grid_from_band(
+    band_volumes: dict[str, Any] | None,
+    scale_posterior: ScalePosterior,
+    coordinate_frame: str,
+    grid_min: Any,
+    np: Any,
 ) -> tuple[OccupancyGrid2D | None, dict[str, Any]]:
-    floor_axis = floor_info["floor_axis"]
-    # The two non-floor axes form the 2D grid plane.
-    plane_axes = [a for a in range(3) if a != floor_axis]
-    a0, a1 = plane_axes
-    nx, ny, nz = dims
-    plane_dims = (dims[a0], dims[a1])
+    """Project the band 3D field top-down into the ``OccupancyGrid2D``.
 
-    # Collapse occupancy/free counts along the floor axis.
-    occ_any = (surface_count > 0.0)
-    free_any = (free_count > 0.0) & (~occ_any)
+    Single source of truth = the 3D field. The max-then-suppress rule preserves
+    the OccupancyGrid2D pairwise non-collapse invariants by construction so the
+    projection can never raise the collapse error:
 
-    occ_2d = np.any(occ_any, axis=floor_axis)
-    free_2d = np.any(free_any, axis=floor_axis) & (~occ_2d)
-    touched_2d = occ_2d | free_2d
+        P_occupied_static = max over band column
+        P_movable_static  = max over band column
+        P_dynamic         = min(max_dynamic, 1 - P_occupied_static)
+        P_free            = max_free * (1 - max(occ, movable, dynamic))
+        P_unknown         = 1 where the whole column is unobserved, else a small
+                            residual capped to keep free + unknown <= 1
+    """
+    if band_volumes is None:
+        return None, {"status": "occupancy_grid_blocked_no_band_field"}
 
-    p_occupied = np.where(occ_2d, 0.9, 0.0).astype(np.float64)
-    p_free = np.where(free_2d, 0.85, 0.0).astype(np.float64)
-    # Unknown is everything untouched (and is NOT free). Cells that are occupied
-    # or free get a small residual unknown so channels stay distinct but valid.
-    p_unknown = np.where(touched_2d, 0.05, 1.0).astype(np.float64)
-    # No static/dynamic input -> these are honestly zero.
-    p_movable = np.zeros(plane_dims, dtype=np.float64)
-    p_dynamic = np.zeros(plane_dims, dtype=np.float64)
+    floor_axis = band_volumes["floor_axis"]
+    a0, a1 = band_volumes["plane_axes"]
+    voxel = band_volumes["voxel"]
 
-    # Height extent per cell from the actual touched voxel range.
+    o = np.max(band_volumes["P_occupied_static"], axis=floor_axis)
+    m = np.max(band_volumes["P_movable_static"], axis=floor_axis)
+    d = np.max(band_volumes["P_dynamic"], axis=floor_axis)
+    f = np.max(band_volumes["P_free"], axis=floor_axis)
+    touched_col = np.any(band_volumes["touched"], axis=floor_axis)
+
+    hard = np.maximum(np.maximum(o, m), d)
+    p_occupied = o.astype(np.float64)
+    p_movable = m.astype(np.float64)
+    p_dynamic = np.minimum(d, 1.0 - o).astype(np.float64)
+    p_free = (f * (1.0 - hard)).astype(np.float64)
+    p_unknown = np.where(
+        touched_col, np.minimum(_TOUCHED_UNKNOWN_RESIDUAL, 1.0 - p_free), 1.0
+    ).astype(np.float64)
+
+    # Height extent per cell from touched BAND voxels (reuse the floor-axis logic
+    # with the band-cropped floor origin so heights live inside the band).
+    band_grid_min = np.asarray(grid_min, dtype=np.float64).copy()
+    band_grid_min[floor_axis] = float(band_volumes["origin_world"][floor_axis])
     height_min, height_max = _height_extents(
-        occ_any | free_any, floor_axis, grid_min, voxel, dims, np
+        band_volumes["touched"], floor_axis, band_grid_min, voxel,
+        band_volumes["band_dims"], np,
     )
 
     origin_world = (float(grid_min[0]), float(grid_min[1]), float(grid_min[2]))
@@ -492,29 +797,31 @@ def _build_occupancy_grid(
             map_confidence=_map_confidence(scale_posterior),
         )
     except ContractValidationError as exc:
-        return None, {
-            "status": "occupancy_grid_contract_rejected",
-            "error": str(exc),
-        }
+        return None, {"status": "occupancy_grid_contract_rejected", "error": str(exc)}
 
-    occupied_cells = int(np.count_nonzero(occ_2d))
-    free_cells = int(np.count_nonzero(free_2d))
-    unknown_cells = int(np.count_nonzero(~touched_2d))
+    plane_dims = (band_volumes["band_dims"][a0], band_volumes["band_dims"][a1])
+    occ_cells = int(np.count_nonzero(p_occupied > 0.5))
+    mov_cells = int(np.count_nonzero(p_movable > 0.5))
+    dyn_cells = int(np.count_nonzero(p_dynamic > 0.5))
+    free_cells = int(np.count_nonzero((p_free > 0.5) & (p_occupied <= 0.5)))
+    unknown_cells = int(np.count_nonzero(~touched_col))
     total_cells = int(plane_dims[0] * plane_dims[1])
     return grid, {
-        "status": "built",
+        "status": "built_as_projection_of_voxel_occupancy_3d",
         "grid_dims": plane_dims,
         "floor_axis": floor_axis,
         "plane_axes": (a0, a1),
-        "occupied_cells": occupied_cells,
+        "projection_rule": "topdown_max_over_band_then_suppress_free",
+        "occupied_cells": occ_cells,
+        "movable_static_cells": mov_cells,
+        "dynamic_cells": dyn_cells,
         "free_cells": free_cells,
         "unknown_cells": unknown_cells,
         "total_cells": total_cells,
-        "occupied_fraction": occupied_cells / total_cells if total_cells else 0.0,
+        "occupied_fraction": occ_cells / total_cells if total_cells else 0.0,
         "free_fraction": free_cells / total_cells if total_cells else 0.0,
         "unknown_fraction": unknown_cells / total_cells if total_cells else 0.0,
-        "dynamic_channel": "zero_not_inferred",
-        "movable_static_channel": "zero_not_inferred",
+        "dropped_by_projection": "obstacle_height_within_band_kept_in_height_min_max",
     }
 
 

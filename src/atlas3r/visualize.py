@@ -56,6 +56,7 @@ def write_visual_proof(
     out_dir: str | Path,
     status_label: str,
     provenance: Mapping[str, Any] | None = None,
+    voxel_occupancy_3d: Any = None,
 ) -> dict[str, Any]:
     """Render the visual proof for one teacher track.
 
@@ -162,12 +163,25 @@ def write_visual_proof(
         files_written.append(_file_record(png_path))
         channel_files[name] = png_path.name
 
+    # --- minimal 3D proof: a few argmax-colored band height slices -------------
+    band_slice_files: list[tuple[str, float]] = []
+    if voxel_occupancy_3d is not None:
+        try:
+            band_slice_files = _render_band_height_slices(
+                out_path, voxel_occupancy_3d, np
+            )
+            for fname, _height in band_slice_files:
+                files_written.append(_file_record(out_path / fname))
+        except Exception:  # noqa: BLE001 -- slices are optional proof, never fatal
+            band_slice_files = []
+
     # --- markdown index --------------------------------------------------------
     index_path = out_path / "index.md"
     _write_index(
         index_path, asset_id, status_label, provenance_label, prov,
         channel_files, channels, plane_axes, floor_axis, resolution,
         origin_world, grid_shape, traj_uv is not None, np,
+        band_slice_files, voxel_occupancy_3d,
     )
     files_written.append(_file_record(index_path))
 
@@ -183,6 +197,7 @@ def write_visual_proof(
         "resolution_m": resolution,
         "rendered_channels": list(rendered),
         "trajectory_points": 0 if traj_uv is None else int(traj_uv.shape[0]),
+        "band_height_slices": [name for name, _h in band_slice_files],
         "files_written": files_written,
         "blockers": blockers,
     }
@@ -401,6 +416,79 @@ def _render_channel_heat(
 
 
 # ---------------------------------------------------------------------------
+# 3D band height slices (minimal proof of the primary VoxelOccupancyGrid3D)
+# ---------------------------------------------------------------------------
+
+
+def _render_band_height_slices(
+    out_path: Path,
+    grid3d: Any,
+    np: Any,
+    max_slices: int = 4,
+) -> list[tuple[str, float]]:
+    """Render up to ``max_slices`` argmax-colored horizontal slices through the
+    collision band of the ``VoxelOccupancyGrid3D``.
+
+    Each cell is painted by its dominant (argmax) class color where the voxel was
+    observed; unobserved voxels stay white (never colored as free). Returns a list
+    of ``(filename, height_m)``.
+    """
+    plt = _setup_matplotlib()
+
+    floor_axis = int(grid3d.floor_axis)
+    plane_axes = tuple(a for a in range(3) if a != floor_axis)
+    a0, a1 = plane_axes
+    voxel = float(grid3d.voxel_size_m)
+    origin = [float(v) for v in grid3d.origin_world]
+
+    order = ("free", "occupied_static", "movable_static", "dynamic", "unknown")
+    fields = [np.asarray(getattr(grid3d, CHANNEL_FIELDS[c]), dtype=np.float64) for c in order]
+    stack = np.stack(fields, axis=-1)
+    cls = np.argmax(stack, axis=-1)
+    touched = np.asarray(grid3d.P_unknown, dtype=np.float64) < (1.0 - 1e-9)
+    color_lut = np.asarray([CHANNEL_COLORS[c] for c in order], dtype=np.float64)
+
+    nf = cls.shape[floor_axis]
+    if nf <= max_slices:
+        idxs = list(range(nf))
+    else:
+        idxs = sorted({int(round(k)) for k in np.linspace(0, nf - 1, num=max_slices)})
+
+    extent = (
+        origin[a0], origin[a0] + cls.shape[a0] * voxel,
+        origin[a1], origin[a1] + cls.shape[a1] * voxel,
+    )
+    axis_names = {0: "X", 1: "Y", 2: "Z"}
+    files: list[tuple[str, float]] = []
+    for k in idxs:
+        cls_slice = np.take(cls, k, axis=floor_axis)
+        touched_slice = np.take(touched, k, axis=floor_axis)
+        rgb = np.ones((cls_slice.shape[1], cls_slice.shape[0], 3), dtype=np.float64)
+        for ci in range(len(order)):
+            mask = (cls_slice == ci) & touched_slice
+            if not np.any(mask):
+                continue
+            mt = mask.T
+            for c in range(3):
+                rgb[..., c] = np.where(mt, color_lut[ci, c], rgb[..., c])
+        height_m = origin[floor_axis] + (k + 0.5) * voxel
+        fig, ax = plt.subplots(figsize=(5.0, 5.0), dpi=100)
+        ax.imshow(rgb, origin="lower", extent=extent, interpolation="nearest", aspect="equal")
+        ax.set_title(
+            f"band slice k={k}  height={height_m:.3f} m  (argmax class)\n"
+            f"floor axis {floor_axis} ({axis_names[floor_axis]})"
+        )
+        ax.set_xlabel(f"world axis {a0} ({axis_names[a0]}) [m]")
+        ax.set_ylabel(f"world axis {a1} ({axis_names[a1]}) [m]")
+        fname = f"occupancy_band_slice_{k}.png"
+        fig.tight_layout()
+        fig.savefig(out_path / fname, facecolor="white")
+        plt.close(fig)
+        files.append((fname, float(height_m)))
+    return files
+
+
+# ---------------------------------------------------------------------------
 # markdown index
 # ---------------------------------------------------------------------------
 
@@ -420,6 +508,8 @@ def _write_index(
     grid_shape: tuple[int, ...],
     has_trajectory: bool,
     np: Any,
+    band_slice_files: Sequence[tuple[str, float]] = (),
+    voxel_occupancy_3d: Any = None,
 ) -> None:
     track_type = str(prov.get("track_type", "")) or "unknown"
     packet_source = str(prov.get("packet_source", "")) or "unknown"
@@ -490,6 +580,32 @@ def _write_index(
                  "dynamic=magenta, unknown=gray. **unknown is rendered distinctly "
                  "from free (unknown is never free).**")
     lines.append("")
+    lines.append("_The top-down map is the PURE top-down projection of the 3D "
+                 "collision-band field below (single source of truth)._")
+    lines.append("")
+
+    # 3D collision-band occupancy (primary output) -- height slices.
+    if voxel_occupancy_3d is not None and band_slice_files:
+        axis_names = {0: "X", 1: "Y", 2: "Z"}
+        fa = int(getattr(voxel_occupancy_3d, "floor_axis", floor_axis))
+        bmin = float(getattr(voxel_occupancy_3d, "band_min_m", 0.0))
+        bmax = float(getattr(voxel_occupancy_3d, "band_max_m", 0.0))
+        v = float(getattr(voxel_occupancy_3d, "voxel_size_m", resolution))
+        cat = getattr(getattr(voxel_occupancy_3d, "acceptance_category", None), "value", "unknown")
+        lines.append("## 3D collision-band occupancy field (primary output)")
+        lines.append("")
+        lines.append(f"- Floor axis: `{fa}` ({axis_names.get(fa, '?')}); collision band "
+                     f"`[{bmin:.3f}, {bmax:.3f}]` m ({len(band_slice_files)} slice(s) "
+                     f"shown); voxel `{v:.4f}` m; acceptance `{cat}`.")
+        lines.append("- Each slice is colored by the per-voxel **argmax class**; "
+                     "unobserved voxels are blank (unknown is never free).")
+        lines.append("")
+        for fname, height in band_slice_files:
+            lines.append(f"### band slice @ `{height:.3f}` m")
+            lines.append("")
+            lines.append(f"![band slice {height:.3f} m]({fname})")
+            lines.append("")
+
     lines.append("## Per-channel heat maps")
     lines.append("")
     for name in CHANNEL_FIELDS:

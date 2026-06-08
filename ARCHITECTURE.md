@@ -634,9 +634,51 @@ dynamic_count
 uncertainty
 ```
 
+### VoxelOccupancyGrid3D
+
+Purpose: PRIMARY robot-facing output. A per-voxel multichannel occupancy field
+bounded to the robot's vertical collision envelope, in the floor-aligned metric
+(or reconstruction) frame. Units are meters.
+
+Required fields:
+
+```text
+grid_frame
+voxel_size_m
+origin_world[3]                       # world coord of the (0,0,0) voxel corner
+floor_axis                            # 0|1|2: the world axis cropped to the band
+band_min_m, band_max_m                # band extent along floor_axis (world coords)
+P_free[A0,A1,B]
+P_occupied_static[A0,A1,B]
+P_movable_static[A0,A1,B]
+P_dynamic[A0,A1,B]
+P_unknown[A0,A1,B]
+map_confidence[A0,A1,B]
+scale_uncertainty                     # scene-level
+acceptance_category                   # measured_metric | metric_pseudo_label | ...
+```
+
+Where `B` is the number of band slices along `floor_axis`. The band is
+`[floor_plane, floor_plane + robot_collision_height + margin]`, CONFIG-DRIVEN via
+`configs/robot_envelope.json` (`RobotEnvelopeConfig`). Resolution is spent only
+inside the collision envelope; the ceiling / full room volume is never modelled.
+
+Rules (per-voxel, non-negotiable):
+
+- Probability convention mirrors `OccupancyGrid2D`: each channel is a probability
+  in `[0,1]` with PAIRWISE non-collapse (NOT a strict sum-to-one simplex).
+- Unknown is never free (`P_free + P_unknown <= 1`). Dynamic is never static
+  (`P_dynamic + P_occupied_static <= 1`). Movable-static is never free
+  (`P_movable_static + P_free <= 1`).
+- Free space comes from RAY TRAVERSAL only. Space behind a surface along a ray
+  stays unknown. Dynamic surfaces are painted into `P_dynamic` only -- never into
+  static occupancy and never free-carving.
+
 ### OccupancyGrid2D
 
-Purpose: floor-aligned robot grid for downstream training or planning.
+Purpose: floor-aligned robot grid for downstream training or planning. It is the
+PURE top-down projection of `VoxelOccupancyGrid3D` (single source of truth = the
+3D field). It must not be fused independently.
 
 Required fields:
 
@@ -654,6 +696,19 @@ height_max_m[x,y]
 scale_uncertainty
 map_confidence
 ```
+
+Projection rule (per column over the band, contract-invariant by construction):
+
+```text
+P_occupied_static = max over band column
+P_movable_static  = max over band column
+P_dynamic         = min(max_dynamic, 1 - P_occupied_static)
+P_free            = max_free * (1 - max(occupied, movable, dynamic))
+P_unknown         = 1 where the column is unobserved, else a small residual
+```
+
+It drops the height-within-band at which an obstacle occurs; that height is kept
+in `height_min_m` / `height_max_m`.
 
 Rules:
 
@@ -680,9 +735,20 @@ dynamic_leakage_score
 accepted_for_metric_training
 acceptance_category: measured_metric | metric_pseudo_label | non_metric_pseudo_label | rejected
 rejection_reasons[]
+band3d_agreement (optional)
 ```
 
 Metric acceptance requires this report plus a compatible `ScalePosterior`.
+
+`band3d_agreement` (optional) holds the per-voxel agreement of the monocular 3D
+field vs the measured 3D field inside the collision band: per-class agreement,
+`occupied_static_iou`, `free_space_contradiction_rate` (candidate calls free where
+the measured GT sees an obstacle -- robot-critical), `dynamic_leakage_rate`,
+`coverage_of_measured_band`, and the Sim(3) alignment used. It is REPORTAGE: it
+never gates `accepted_for_metric_training` (the category is driven by the scale
+posterior). It is absent / `missing_measured_3d_reference` when no measured 3D
+reference exists (e.g. `phone_room`); a too-small overlap yields an explicit
+`insufficient_overlap_for_sim3_band_comparison` status, never a fabricated number.
 
 ## Core Modules
 
@@ -935,13 +1001,14 @@ Dynamic or uncertain pixels are excluded before static map fusion.
 
 ### Module 9: Ray-Fused Static Mapping
 
-Purpose: convert accepted static rays into TSDF, log-odds occupancy, and uncertainty.
+Purpose: convert accepted rays into TSDF, log-odds occupancy, per-voxel class
+counts, and uncertainty.
 
-For each trusted static ray:
+For each trusted ray:
 
 ```text
-camera origin -> before surface: free evidence
-near surface: surface/TSDF/occupied evidence
+camera origin -> before surface: free evidence (static/movable rays only)
+near surface: surface/TSDF/occupied evidence, tagged by class
 behind surface: unknown
 ```
 
@@ -949,33 +1016,38 @@ Rules:
 
 - Fuse rays, not just points.
 - Unknown is never converted to free.
-- Dynamic pixels are skipped or counted separately before fusion.
+- Each surface sample is tagged occupied_static / movable_static / dynamic. Static
+  and movable rays carve free in front and mark their class at the surface;
+  dynamic rays mark ONLY the dynamic channel (never static, never free-carving).
 - Mesh quality is not occupancy quality.
 
 ### Module 10: Floor-Aligned Robot Occupancy
 
-Purpose: produce the robot-relevant 2D grid from 3D evidence.
+Purpose: produce the robot-relevant occupancy from 3D evidence. The PRIMARY output
+is the `VoxelOccupancyGrid3D` -- a per-voxel multichannel field bounded to the
+robot collision band. The `OccupancyGrid2D` is its pure top-down projection.
 
 Inputs:
 
 ```text
-VoxelMapState
+VoxelMapState / per-voxel class counts
 floor plane estimate
-robot height/collision band
+robot collision envelope (config-driven: collision_height + margin)
 scale posterior
 ```
 
-Cell classes:
+Cell/voxel classes:
 
 ```text
-free: observed free-space rays and no obstacle in collision band
-occupied_static: structural/stable obstacle in collision band
+free: observed free-space rays and no obstacle
+occupied_static: structural/stable obstacle
 movable_static: static during video but likely movable obstacle
-dynamic: moving or temporally inconsistent object occupied the cell
+dynamic: moving or temporally inconsistent object
 unknown: insufficient ray evidence
 ```
 
-The primary output is multichannel, not binary.
+The primary output is multichannel and 3D, not binary. The grid is bounded to the
+collision envelope; resolution is not spent on the ceiling or full room volume.
 
 ### Module 11: Validation And Acceptance
 
@@ -990,6 +1062,8 @@ scale posterior uncertainty
 floor/wall plausibility when available
 dynamic leakage score
 reference metric error when measured evidence exists
+per-voxel band agreement vs the measured 3D field (occupied IoU, free-space
+  contradiction, dynamic leakage, coverage) when a measured reference exists
 ```
 
 Final status:

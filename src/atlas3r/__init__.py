@@ -5,6 +5,11 @@ spine functions (M3 -> M8) lazy-import numpy/cv2/PIL inside their own bodies, so
 importing :mod:`atlas3r` never pulls heavy ML dependencies.
 """
 
+from .config import (
+    RobotEnvelopeConfig,
+    RobotEnvelopeConfigError,
+    load_robot_envelope,
+)
 from .contracts import (
     BackboneAvailability,
     CameraModel,
@@ -41,6 +46,7 @@ from .contracts import (
     VisibilityEdge,
     VisibilityGraph,
     VoxelMapState,
+    VoxelOccupancyGrid3D,
 )
 from .export import export_teacher_artifacts
 from .geometry_adapter import (
@@ -57,6 +63,9 @@ from .visibility import build_visibility_graph
 from .visualize import write_visual_proof
 
 __all__ = [
+    "RobotEnvelopeConfig",
+    "RobotEnvelopeConfigError",
+    "load_robot_envelope",
     "BackboneAvailability",
     "CameraModel",
     "ContractValidationError",
@@ -92,6 +101,7 @@ __all__ = [
     "VisibilityEdge",
     "VisibilityGraph",
     "VoxelMapState",
+    "VoxelOccupancyGrid3D",
     # Teacher spine (M3 -> M8) public entrypoints
     "load_geometry_artifacts",
     "load_measured_packets_from_m2",
