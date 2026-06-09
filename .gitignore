@@ -37,3 +37,4 @@ __pycache__/
 *.npz
 prediction_preview.html
 prediction_preview.svg
+.claude/scheduled_tasks.lock
