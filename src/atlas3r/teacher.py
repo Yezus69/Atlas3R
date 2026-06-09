@@ -985,8 +985,15 @@ def _band3d_agreement(
         T = np.asarray(p.T_world_camera, dtype=np.float64).reshape((4, 4))
         return T[:3, 3]
 
-    cand_by = {int(p.frame_id): _center(p) for p in candidate_packets}
-    meas_by = {int(p.frame_id): _center(p) for p in measured_packets}
+    # Each field was built in its OWN per-reconstruction floor-aligned frame
+    # (mapping up-aligns candidate and measured independently). Bring the camera
+    # centres into the SAME aligned frame as the field they will be matched against,
+    # so the Sim(3) and the sampled occupancy share one frame. Identity R_up (the
+    # honest fallback) leaves the centres untouched.
+    R_up_c = np.asarray(candidate_field.get("R_up", np.eye(3)), dtype=np.float64)
+    R_up_m = np.asarray(measured_field.get("R_up", np.eye(3)), dtype=np.float64)
+    cand_by = {int(p.frame_id): R_up_c @ _center(p) for p in candidate_packets}
+    meas_by = {int(p.frame_id): R_up_m @ _center(p) for p in measured_packets}
     common = sorted(set(cand_by) & set(meas_by))
     if len(common) < 3:
         return {

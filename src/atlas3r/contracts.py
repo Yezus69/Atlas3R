@@ -1104,8 +1104,19 @@ class VoxelOccupancyGrid3D:
     """Primary robot-facing output: a per-voxel multichannel occupancy field
     bounded to the robot's vertical collision envelope.
 
-    The field lives in the floor-aligned metric (or reconstruction) frame. It is
-    cropped along ``floor_axis`` to the band ``[band_min_m, band_max_m]`` =
+    The field lives in a per-reconstruction floor-aligned frame: the fuser derives
+    an up-alignment rotation that maps the estimated floor NORMAL onto ``floor_axis``
+    and rotates the whole reconstruction by it, so the axis-aligned band crop is a
+    true floor-parallel slab. ``grid_frame`` records this: it is
+    ``<metric|reconstruction>_world_floor_aligned`` when the up-alignment was
+    applied. When the floor RANSAC is too weak to trust the up vector, NO alignment
+    is fabricated -- ``grid_frame`` is
+    ``<metric|reconstruction>_world_axis_aligned_band_not_floor_aligned`` and an
+    explicit ``floor_normal_unreliable_band_not_floor_aligned`` blocker is recorded;
+    the band is then an honest axis-aligned approximation, not a floor-parallel slab.
+    Candidate and measured tracks are aligned to their OWN floors independently.
+
+    It is cropped along ``floor_axis`` to the band ``[band_min_m, band_max_m]`` =
     ``[floor, floor + collision_height + margin]`` -- resolution is spent only
     inside the collision envelope; the ceiling / full room volume is never
     modelled.

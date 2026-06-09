@@ -260,6 +260,9 @@ def extract_floor(report: dict[str, Any]) -> dict[str, Any]:
         "method": _pluck(floor, "method"),
         "inlier_ratio": _pluck(floor, "inlier_ratio"),
         "floor_axis": _pluck(floor, "floor_axis"),
+        "up_alignment_applied": _pluck(floor, "up_alignment_applied"),
+        "floor_tilt_to_band_axis_deg_before": _pluck(floor, "floor_tilt_to_band_axis_deg_before"),
+        "floor_tilt_to_band_axis_deg_after": _pluck(floor, "floor_tilt_to_band_axis_deg_after"),
         "blockers": _pluck(report, "map_occupancy_status", "blockers", default=[]),
     }
 
@@ -438,6 +441,8 @@ NUMERIC_METRICS: tuple[str, ...] = (
     "map.free_space_contradiction_rate",
     "map.mean_map_confidence",
     "floor.inlier_ratio",
+    "floor.floor_tilt_to_band_axis_deg_before",
+    "floor.floor_tilt_to_band_axis_deg_after",
 )
 # Categorical / status paths diffed as old -> new.
 CATEGORICAL_METRICS: tuple[str, ...] = (
@@ -636,6 +641,11 @@ def render_summary(
         lines.append("### floor estimate health")
         lines.append(f"- method: {_fmt(fl.get('method'))}")
         lines.append(f"- inlier_ratio: {_fmt(fl.get('inlier_ratio'))}")
+        lines.append(f"- up_alignment_applied: {_fmt(fl.get('up_alignment_applied'))}")
+        lines.append(
+            f"- floor_tilt_to_band_axis_deg: before={_fmt(fl.get('floor_tilt_to_band_axis_deg_before'))} "
+            f"-> after={_fmt(fl.get('floor_tilt_to_band_axis_deg_after'))}"
+        )
         lines.append(f"- blockers: {_fmt(fl.get('blockers'))}")
         lines.append("")
 

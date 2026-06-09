@@ -73,6 +73,11 @@ LOG_ODDS_MISS = -0.40
 LOG_ODDS_CLAMP = 5.0
 RANSAC_ITERS = 200
 RANSAC_INLIER_DIST_FACTOR = 1.5  # in voxel units
+# Minimum floor RANSAC inlier ratio to trust the floor NORMAL enough to up-align
+# the reconstruction. Below this the up vector is unreliable, so the band is left
+# axis-aligned (NOT floor-aligned) with a loud blocker -- never a fabricated
+# alignment that merely makes the band look correct.
+MIN_FLOOR_INLIER_RATIO_FOR_ALIGN = 0.30
 
 
 def fuse_static_map(
@@ -133,7 +138,7 @@ def fuse_static_map(
     import numpy as np  # type: ignore
 
     status_value = scale_posterior.metric_acceptance_status.value
-    coordinate_frame = (
+    base_frame = (
         "metric_world"
         if status_value in {"measured_metric", "metric_pseudo_label"}
         else "reconstruction_world"
@@ -155,6 +160,21 @@ def fuse_static_map(
     # voxel (including dynamic) fits in the grid.
     static_mask = classes != CLASS_DYNAMIC
     static_surfaces = surfaces[static_mask] if bool(np.any(static_mask)) else surfaces
+
+    # Gravity / up-alignment: rotate the whole reconstruction so the floor NORMAL
+    # lands on its dominant axis. Then the axis-aligned band crop below is a true
+    # floor-parallel slab (not an oblique cut through a tilted floor). Weak floor
+    # RANSAC -> IDENTITY + loud blocker (honest unaligned band, never fabricated).
+    align = _up_alignment(static_surfaces, voxel, np)
+    R_up = np.asarray(align["R_up"], dtype=np.float64)
+    if align["applied"]:
+        surfaces = surfaces @ R_up.T
+        origins = origins @ R_up.T
+        ray_dirs = ray_dirs @ R_up.T
+        static_surfaces = surfaces[static_mask] if bool(np.any(static_mask)) else surfaces
+    coordinate_frame = base_frame + (
+        "_floor_aligned" if align["applied"] else "_axis_aligned_band_not_floor_aligned"
+    )
 
     # Robust bounds: clip extreme outliers so the grid bounds are not blown out
     # by a few stray points. The points themselves are kept; only the grid
@@ -218,7 +238,19 @@ def fuse_static_map(
             "blockers": ("voxel_map_contract_rejected",),
         }
 
+    # Floor in the (possibly aligned) fusion frame. After a successful up-align the
+    # normal sits on the band axis, so this tilt collapses toward ~0; the BEFORE
+    # tilt (in the original frame) is carried from the alignment step. Both are
+    # reported so the residual floor tilt before/after alignment is visible.
     floor_info = _estimate_floor(static_surfaces, effective_voxel, np)
+    tilt_after = _normal_axis_tilt_deg(
+        floor_info["normal"], int(floor_info["floor_axis"]), np
+    )
+    floor_info["report"]["up_alignment_applied"] = bool(align["applied"])
+    floor_info["report"]["floor_tilt_to_band_axis_deg_before"] = float(align["tilt_before_deg"])
+    floor_info["report"]["floor_tilt_to_band_axis_deg_after"] = float(tilt_after)
+    floor_info["report"]["min_inlier_ratio_for_alignment"] = float(MIN_FLOOR_INLIER_RATIO_FOR_ALIGN)
+    floor_info["blockers"] = tuple(floor_info.get("blockers", ())) + tuple(align["blockers"])
 
     # Primary output: the collision-band 3D occupancy field. The 2D grid is its
     # pure top-down projection (single source of truth). ``comparison_field`` is a
@@ -228,6 +260,12 @@ def fuse_static_map(
         grid_min, effective_voxel, dims,
         floor_info, scale_posterior, coordinate_frame, envelope, np,
     )
+    # Stamp the alignment onto the comparison field so the band-agreement step can
+    # bring camera centres into THIS field's (per-reconstruction) aligned frame.
+    # Identity on fallback keeps that math correct without a special case.
+    comparison_field["R_up"] = [[float(v) for v in row] for row in R_up]
+    comparison_field["up_aligned"] = bool(align["applied"])
+
     grid, grid_report = _build_occupancy_grid_from_band(
         band_volumes, scale_posterior, coordinate_frame, grid_min, np,
     )
@@ -271,6 +309,24 @@ def fuse_static_map(
         "free_space_contradiction_basis": "conflict_voxels_over_occupied_voxels_static_only",
         "surface_point_count": int(surfaces.shape[0]),
         "floor": floor_info["report"],
+        # R_up consumed by export/visual_proof to bring the camera trajectory +
+        # surface cloud into the SAME floor-aligned frame as the voxel field.
+        # ``None`` on fallback so those artifacts stay in the original (unaligned)
+        # frame, matching the unaligned voxel map.
+        "floor_align_rotation": (
+            [[float(v) for v in row] for row in R_up] if align["applied"] else None
+        ),
+        "up_alignment": {
+            "applied": bool(align["applied"]),
+            "target_axis": int(align["target_axis"]),
+            "floor_tilt_to_band_axis_deg_before": float(align["tilt_before_deg"]),
+            "floor_tilt_to_band_axis_deg_after": float(tilt_after),
+            "floor_inlier_ratio": float(align["inlier_ratio"]),
+            "min_inlier_ratio_for_alignment": float(MIN_FLOOR_INLIER_RATIO_FOR_ALIGN),
+            "floor_method": align["method"],
+            "grid_frame": coordinate_frame,
+            "blockers": list(align["blockers"]),
+        },
         "occupancy_grid": grid_report,
         "voxel_occupancy_3d": band_report,
         "dynamic_inference": (
@@ -548,6 +604,80 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
             "floor_axis": floor_axis,
             "floor_value": floor_value,
         },
+        "blockers": (),
+    }
+
+
+def _rotation_align(a, b, np):
+    """Shortest-arc rotation matrix taking unit vector ``a`` onto unit vector ``b``.
+
+    Rodrigues form; handles the parallel (identity) and antiparallel (180 deg about
+    an arbitrary perpendicular axis) degeneracies.
+    """
+    a = np.asarray(a, dtype=np.float64)
+    b = np.asarray(b, dtype=np.float64)
+    a = a / (np.linalg.norm(a) + 1e-12)
+    b = b / (np.linalg.norm(b) + 1e-12)
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    s = float(np.linalg.norm(v))
+    if s < 1e-9:
+        if c > 0.0:
+            return np.eye(3)
+        perp = np.array([1.0, 0.0, 0.0]) if abs(float(a[0])) <= 0.9 else np.array([0.0, 1.0, 0.0])
+        axis = np.cross(a, perp)
+        axis = axis / (np.linalg.norm(axis) + 1e-12)
+        vx = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+        return np.eye(3) + 2.0 * (vx @ vx)
+    vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    return np.eye(3) + vx + vx @ vx * (1.0 / (1.0 + c))
+
+
+def _normal_axis_tilt_deg(normal, axis, np) -> float:
+    """Acute angle (deg) between a plane normal and the given world axis LINE."""
+    n = np.asarray(normal, dtype=np.float64)
+    n = n / (np.linalg.norm(n) + 1e-12)
+    cos = min(1.0, max(0.0, abs(float(n[axis]))))
+    return float(np.degrees(np.arccos(cos)))
+
+
+def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
+    """Derive a robust per-reconstruction up-alignment rotation ``R_up``.
+
+    Estimate the floor, then build ``R_up`` mapping the floor NORMAL onto the +unit
+    vector of its own dominant axis, so the axis-aligned band crop becomes a true
+    floor-parallel slab. If the floor RANSAC is weak (``inlier_ratio`` below
+    ``MIN_FLOOR_INLIER_RATIO_FOR_ALIGN``) or did not run, the up vector is
+    unreliable -> IDENTITY + a loud blocker; the band is left axis-aligned and
+    reported as unaligned, never fabricated into looking correct.
+    """
+    floor0 = _estimate_floor(static_surfaces, voxel, np)
+    normal = np.asarray(floor0["normal"], dtype=np.float64)
+    floor_axis = int(floor0["floor_axis"])
+    method = str(floor0.get("method", ""))
+    inlier_ratio = float(floor0.get("report", {}).get("inlier_ratio", 0.0))
+    tilt_before = _normal_axis_tilt_deg(normal, floor_axis, np)
+    reliable = method == "ransac" and inlier_ratio >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN
+    if not reliable:
+        return {
+            "applied": False,
+            "R_up": np.eye(3),
+            "target_axis": floor_axis,
+            "tilt_before_deg": tilt_before,
+            "inlier_ratio": inlier_ratio,
+            "method": method,
+            "blockers": ("floor_normal_unreliable_band_not_floor_aligned",),
+        }
+    target = np.zeros(3, dtype=np.float64)
+    target[floor_axis] = 1.0
+    R_up = _rotation_align(normal, target, np)
+    return {
+        "applied": True,
+        "R_up": R_up,
+        "target_axis": floor_axis,
+        "tilt_before_deg": tilt_before,
+        "inlier_ratio": inlier_ratio,
+        "method": method,
         "blockers": (),
     }
 

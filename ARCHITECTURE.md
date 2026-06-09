@@ -663,6 +663,21 @@ Where `B` is the number of band slices along `floor_axis`. The band is
 `configs/robot_envelope.json` (`RobotEnvelopeConfig`). Resolution is spent only
 inside the collision envelope; the ceiling / full room volume is never modelled.
 
+`grid_frame` is FLOOR-ALIGNED, per reconstruction. The fuser derives an
+up-alignment rotation `R_up` that maps the estimated floor NORMAL onto `floor_axis`
+and rotates the whole reconstruction (surfaces, camera origins, ray directions) by
+it before fusion, so the axis-aligned band crop is a genuine floor-parallel slab
+(not an oblique cut through a tilted floor). `grid_frame` is then
+`<metric|reconstruction>_world_floor_aligned`. Candidate and measured tracks are
+aligned to their OWN floors independently; a track's alignment is never reused for
+the other, and measured data never aligns the candidate. When the floor RANSAC is
+too weak to trust the up vector (low `inlier_ratio`), NO alignment is fabricated:
+`R_up` is identity, `grid_frame` is
+`<metric|reconstruction>_world_axis_aligned_band_not_floor_aligned`, and a loud
+`floor_normal_unreliable_band_not_floor_aligned` blocker is recorded. The residual
+floor tilt (normal vs `floor_axis`) BEFORE and AFTER alignment is reported so the
+evaluation harness surfaces it.
+
 Rules (per-voxel, non-negotiable):
 
 - Probability convention mirrors `OccupancyGrid2D`: each channel is a probability
