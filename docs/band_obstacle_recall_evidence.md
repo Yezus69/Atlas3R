@@ -185,3 +185,68 @@ All four upheld the win on their own measurements (none could refute it):
   per_class cost; not landed because per_class is a hard no-regress guardrail. The
   bulk of the remaining obstacle gap is depth-inference-limited (candidate surfaces
   are ~12 cm displaced), a depth-quality task, not a fusion task.
+
+## Phase 2 — exhaustive optimization / occupancy / stitching / depth search
+
+After landing the gravity-support policy, the optimization, fusion, stitching, and
+depth-inference layers were searched for further band-recall gains. An analysis
+fan-out (4 independent analysts) ranked candidates; each was implemented
+config-gated and measured on the candidate-quality harness (band numbers identical
+to the scorecard). **Every lever was a negative result or a guardrail-regressing
+trade** — firmly establishing that the residual gap is an intrinsic DA3 monocular
+depth-accuracy limit, not a fusion / optimization / frame-count / resolution issue.
+
+| lever | result | occ_iou | band_fsc | per_class | verdict |
+|---|---|---|---|---|---|
+| baseline (landed) | — | 0.0777 | 0.7202 | 0.8681 | reference |
+| confidence-gated free-carve | reverted | 0.035 | 0.676 | 0.594 | NEGATIVE — over-occupancy explodes |
+| spatial depth residual δ(u) G=2 | reverted | 0.009 | 0.966 | 0.828 | NEGATIVE — overfits gauge-ambiguous cost |
+| DA3 dense 28 keyframes | reverted | 0.031 | 0.940 | 0.925 | NEGATIVE — shifts surfaces further |
+| DA3 res 644 (14 frames) | not landed | 0.060 | 0.584 | 0.743 | TRADE — band_fsc↓ but occ_iou/per_class↓ |
+
+1. **Confidence-aware fusion** — the 4/4-analyst top pick — is a NEGATIVE result.
+   Gating free-carve by DA3 per-pixel confidence (low-conf = far, −0.88 correlated
+   with depth) removes free broadly; the 10 cm majority-vote box then fills with
+   nearby surfaces → over-occupancy explodes (632→1889→2456 voxels), occ_iou drops,
+   per_class collapses. The free-carve is mostly *correct*; removing it destroys
+   precision. (Lesson: strong analyst consensus is not correctness — measure.)
+
+2. **Smooth spatial depth residual `δ_i(u)`** (architecture-blessed; per-frame G×G
+   bilinear log-depth control grid, smoothness + bound + prior) is NEGATIVE for
+   occupancy. It *lowers* the internal cross-frame cost AND camera RMSE
+   (0.105→0.072) AND scale error (sim3 1.23→1.06), yet *wrecks* band occupancy
+   (occ_iou →0.009, band_fsc →0.97). The cross-frame depth-consistency objective is
+   gauge-ambiguous; extra DOF overfit it into a self-consistent-but-wrong shape.
+   **It also exposed a real risk**: the refinement adopts on `cost_after < cost_before`,
+   so the teacher would auto-adopt this occupancy-degrading solution — the internal
+   cost is a poor proxy for occupancy. A correctly-supervised δ(u) needs a free-space
+   or surface data term, not the consistency residual.
+
+3. **Denser DA3 keyframes** (the flagged "next safety lever") is NEGATIVE. DA3 is
+   deterministic (a 14-frame control run reproduced the baseline exactly) and fast
+   (~0.5 s forward). Re-running with 28 keyframes (the 14 + midpoints, preserving the
+   8 measured-common frames) made recall WORSE (occ_iou 0.078→0.031, band_fsc
+   0.72→0.94): more evenly-spaced frames changed the joint geometry (sim3 1.23→1.32)
+   and shifted surfaces further from the measured obstacles.
+
+4. **DA3 resolution** is a TRADE, not a clean win. 14 frames at process_res 504/644
+   (vs 420) lowers band_fsc substantially (0.72→0.66→0.58 — fewer missed obstacles)
+   and camera RMSE (0.105→0.094→0.091), but regresses occ_iou (→0.060) and per_class
+   (→0.743): higher-res depth is denser but still displaced. A safety-first
+   deployment could choose higher resolution (fewer missed obstacles) accepting the
+   IoU/per_class trade; it is not a clean Pareto win, so the default resolution is
+   unchanged.
+
+5. **Pose relaxation** (looser twist bound / weaker pose prior, no depth DOF) is
+   NEGATIVE/trade. Looser twist (0.30) drops band_fsc to 0.49 but regresses
+   per_class (0.87→0.73) AND camera RMSE (0.105→0.112) — the poses drift without a
+   depth correction to anchor them. No clean stitching win; the camera-RMSE gain
+   seen with the spatial grid came specifically from the grid absorbing depth error,
+   not from pose freedom.
+
+**Conclusion:** the residual ~72% band-obstacle miss is dominated by ~12 cm DA3
+monocular depth displacement that no cheap lever (fusion, optimization, keyframe
+count, resolution) cleanly fixes. Closing it materially needs a better depth source
+— a stronger geometry backbone, or genuine measured-depth anchoring (which would no
+longer be a pure monocular teacher). The landed gravity-support policy remains the
+clean, guardrail-safe win.
