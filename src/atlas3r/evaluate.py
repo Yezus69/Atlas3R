@@ -313,11 +313,27 @@ def build_robot_envelope(root: Path, run: dict[str, Any]) -> dict[str, Any]:
             env[key] = cfg.get(key, NOT_REPORTED)
     else:
         env["config_status"] = "missing_config"
+    # The run summary carries the envelope the teacher ACTUALLY used (its
+    # provenance dict from load_robot_envelope, including any env-override path and
+    # the candidate occupancy-estimation policy). Surface those so the scorecard is
+    # self-documenting: the policy materially shapes the candidate band, and an
+    # ATLAS3R_ROBOT_ENVELOPE_CONFIG override would otherwise be invisible here.
     run_env = _pluck(run, "summary", "robot_envelope", default={})
     if isinstance(run_env, dict):
         env["band_height_m"] = run_env.get("band_height_m", NOT_REPORTED)
         env["present"] = run_env.get("present", NOT_REPORTED)
         env["source"] = run_env.get("source", NOT_REPORTED)
+        # env_override is the raw ATLAS3R_ROBOT_ENVELOPE_CONFIG value (None for the
+        # canonical run); the absolute resolved path is deliberately NOT stamped so
+        # the canonical scorecard stays machine-portable and byte-deterministic.
+        env["env_override"] = run_env.get("env_override")
+        for key in (
+            "free_carve_margin_m",
+            "occupancy_support_height_m",
+            "occupancy_support_min_count",
+            "occupancy_close_voxels",
+        ):
+            env[key] = run_env.get(key, NOT_REPORTED)
     return env
 
 

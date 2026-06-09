@@ -419,10 +419,14 @@ def _run_pipeline(
         blockers.extend(local_blockers)
         return result
 
-    # MAP + per-voxel 3D occupancy (dynamic tagged, never fused into static).
+    # MAP + per-voxel 3D occupancy (dynamic tagged, never fused into static). The
+    # candidate occupancy-estimation policy (free-carve truncation + gravity support)
+    # is applied ONLY to the monocular candidate -- never to the measured GT
+    # baseline, which stays a raw yardstick.
+    apply_fusion_policy = label == "monocular_candidate"
     map_result = _stage(
         local_blockers, f"{label}_map_occupancy",
-        lambda: _map(packets, scale_posterior, static_dynamic_states, envelope),
+        lambda: _map(packets, scale_posterior, static_dynamic_states, envelope, apply_fusion_policy),
     )
     voxel_map = map_result.get("_voxel_map") if isinstance(map_result, Mapping) else None
     occupancy_grid = map_result.get("_grid") if isinstance(map_result, Mapping) else None
@@ -557,11 +561,13 @@ def _map(
     scale_posterior: Any,
     static_dynamic_states: Sequence[Any] | None = None,
     envelope: RobotEnvelopeConfig | None = None,
+    apply_fusion_policy: bool = False,
 ) -> dict[str, Any]:
     voxel_map, grid, voxel_3d, comparison_field, report = fuse_static_map(
         packets, scale_posterior,
         static_dynamic_states=static_dynamic_states,
         envelope=envelope,
+        apply_fusion_policy=apply_fusion_policy,
     )
     return {
         **report,

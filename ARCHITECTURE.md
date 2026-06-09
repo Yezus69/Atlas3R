@@ -1036,6 +1036,43 @@ Rules:
   dynamic rays mark ONLY the dynamic channel (never static, never free-carving).
 - Mesh quality is not occupancy quality.
 
+#### Candidate Occupancy-Estimation Policy
+
+The raw ray fusion above is the GT-grade yardstick. The monocular CANDIDATE map may
+additionally apply a generic, embodiment-agnostic occupancy-estimation policy
+(config-driven via `RobotEnvelopeConfig`; all levers default OFF so an unconfigured
+run reproduces the raw fuser byte-for-byte). The policy is applied ONLY to the
+candidate; the measured 3D GT field is always fused raw, so a band-agreement gain
+is unambiguously a better candidate, never an easier yardstick.
+
+```text
+free_carve_margin_m         DIRECTIONAL truncation: free is retracted only in the
+                            column directly BELOW a CONFIDENT fused surface (toward
+                            the floor) within this distance -- the grazing-ray flood
+                            that masks an obstacle's support column. Lateral free
+                            (beside the obstacle) is preserved. Retracted free becomes
+                            UNKNOWN, never occupied.
+occupancy_support_height_m  gravity/support prior: a detected obstacle rests on the
+                            floor, so occupancy is propagated DOWNWARD within the
+                            collision band by up to this height. HONEST -- it fills
+                            ONLY voxels that are currently UNKNOWN (never overrides an
+                            observed-free voxel) and only below a CONFIDENT obstacle.
+occupancy_support_min_count minimum fused occupied-hit count for a voxel to act as a
+                            truncation/support SOURCE, so single-hit depth noise high
+                            in the band cannot conjure occupancy or retract floor.
+occupancy_close_voxels      in-plane morphological closing radius that bridges small
+                            gaps enclosed by occupancy without expanding outward.
+```
+
+A "confident obstacle" is a voxel with occupied/movable hit count >=
+`occupancy_support_min_count`. These levers ADD occupancy into UNKNOWN space or
+RETRACT free to UNKNOWN only; they never convert unknown to free, never override an
+observed-free voxel with occupancy laterally, never paint dynamic into static, and
+the downstream per-voxel probability construction preserves the pairwise non-collapse
+invariants by design. The measured baseline (`measured_metric`) never receives the
+policy, so a band-agreement gain is always a better candidate, never an easier
+yardstick.
+
 ### Module 10: Floor-Aligned Robot Occupancy
 
 Purpose: produce the robot-relevant occupancy from 3D evidence. The PRIMARY output

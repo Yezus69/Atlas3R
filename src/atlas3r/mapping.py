@@ -87,6 +87,7 @@ def fuse_static_map(
     voxel_size_m: float | None = None,
     static_dynamic_states: Sequence[StaticDynamicState] | None = None,
     envelope: RobotEnvelopeConfig | None = None,
+    apply_fusion_policy: bool = False,
 ) -> tuple[
     VoxelMapState | None,
     OccupancyGrid2D | None,
@@ -218,6 +219,11 @@ def fuse_static_map(
         uncertainty, rel_unc, np,
     )
 
+    # The candidate occupancy-estimation policy (free-carve truncation + gravity
+    # support) is applied later, INSIDE the band field build, on COPIES of the
+    # counts -- so this raw ``VoxelMapState`` and the full-grid free-space
+    # contradiction stay an untouched baseline (the policy never degrades the
+    # candidate's own raw map; it is a band-occupancy estimation layer on top).
     try:
         voxel_map = VoxelMapState(
             voxel_size_m=effective_voxel,
@@ -259,6 +265,7 @@ def fuse_static_map(
         occupied_static_count, movable_count, dynamic_count, free_count,
         grid_min, effective_voxel, dims,
         floor_info, scale_posterior, coordinate_frame, envelope, np,
+        apply_fusion_policy=apply_fusion_policy,
     )
     # Stamp the alignment onto the comparison field so the band-agreement step can
     # bring camera centres into THIS field's (per-reconstruction) aligned frame.
@@ -326,6 +333,16 @@ def fuse_static_map(
             "floor_method": align["method"],
             "grid_frame": coordinate_frame,
             "blockers": list(align["blockers"]),
+        },
+        "fusion_policy": {
+            "apply_fusion_policy": bool(apply_fusion_policy),
+            "policy_active": bool(envelope.policy_active),
+            "free_carve_margin_m": float(envelope.free_carve_margin_m),
+            "occupancy_support_height_m": float(envelope.occupancy_support_height_m),
+            "occupancy_support_min_count": int(envelope.occupancy_support_min_count),
+            "occupancy_close_voxels": int(envelope.occupancy_close_voxels),
+            "free_carve_truncation": band_report.get("free_carve_truncation", {"applied": False}),
+            "occupancy_completion": band_report.get("occupancy_completion", {"applied": False}),
         },
         "occupancy_grid": grid_report,
         "voxel_occupancy_3d": band_report,
@@ -536,6 +553,184 @@ def _fuse_rays(
                 log_odds[fx, fy, fz] = float(np.clip(log_odds[fx, fy, fz] + LOG_ODDS_MISS, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
 
 
+def _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):
+    """Voxel indices along ``floor_axis`` whose slab overlaps the collision band."""
+    nf = dims[floor_axis]
+    lo_face = grid_min[floor_axis] + np.arange(nf) * voxel
+    hi_face = lo_face + voxel
+    in_band = (hi_face > band_min) & (lo_face < band_max)
+    return np.nonzero(in_band)[0]
+
+
+def _apply_band_free_truncation(
+    free_count, occupied_static_count, movable_count,
+    floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
+):
+    """Directional (downward) free-carve truncation inside the collision band.
+
+    Returns ``(free_count_copy, report)`` -- a NEW free-count array (the caller's raw
+    counts and the measured GT field are never mutated). Free is retracted ONLY in
+    the column directly BELOW a fused surface (toward the floor) within
+    ``free_carve_margin_m``: that is the grazing-ray flood that masks an obstacle's
+    support column. LATERAL free (beside the obstacle) is preserved, so observed free
+    space next to an obstacle is not turned into a false positive. Retracted free
+    becomes UNKNOWN (free_count 0), never occupied.
+    """
+    margin_m = float(envelope.free_carve_margin_m)
+    margin_voxels = max(1, int(round(margin_m / voxel)))
+    min_count = int(envelope.occupancy_support_min_count)
+    free_count = np.asarray(free_count, dtype=np.float64).copy()
+    # Only a CONFIDENT obstacle retracts the free below it, so single-hit depth noise
+    # high in the band cannot turn the observed-free floor beneath it into unknown.
+    surf = (np.asarray(occupied_static_count) >= float(min_count)) | (
+        np.asarray(movable_count) >= float(min_count)
+    )
+
+    band_idx = _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np)
+    free_before = int(np.count_nonzero(free_count > 0.0))
+    if band_idx.shape[0] == 0:
+        return free_count, {"applied": True, "note": "no_band_slices_truncation_noop",
+                            "margin_voxels": int(margin_voxels), "free_voxels_retracted_to_unknown": 0}
+    lo = int(band_idx.min())
+    top = int(band_idx.max())
+
+    fm = np.moveaxis(free_count, floor_axis, 0)  # view of the copy; index up = away from floor
+    sm = np.moveaxis(surf, floor_axis, 0)
+    protect = np.zeros_like(sm, dtype=bool)
+    for step in range(1, margin_voxels + 1):
+        hi = top - step + 1
+        if hi <= lo:
+            break
+        tgt = protect[lo:hi]              # band voxel k ...
+        src = sm[lo + step: top + 1]      # ... has a surface at k+step (above it)
+        np.logical_or(tgt, src, out=tgt)  # disjoint base arrays -> safe
+    retract = protect & (fm > 0.0)
+    fm[retract] = 0.0  # writes into the copy via the moved-axis view
+    free_after = int(np.count_nonzero(free_count > 0.0))
+    return free_count, {
+        "applied": True,
+        "margin_m": margin_m,
+        "margin_voxels": int(margin_voxels),
+        "direction": "downward_below_surface_only",
+        "free_voxels_before": free_before,
+        "free_voxels_after": free_after,
+        "free_voxels_retracted_to_unknown": free_before - free_after,
+    }
+
+
+def _apply_occupancy_completion(
+    occupied_static_count, movable_count, dynamic_count, free_count,
+    floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
+):
+    """Complete the candidate occupancy estimate inside the collision band.
+
+    Returns ``(occ, mov, report)`` with NEW arrays (inputs untouched -- the raw
+    counts and measured GT field are never mutated). Two generic levers:
+
+    - downward gravity SUPPORT: a detected obstacle rests on the floor, so occupancy
+      is propagated toward the floor by up to ``occupancy_support_height_m`` to claim
+      the support column. It is HONEST -- it fills ONLY voxels that are currently
+      UNKNOWN (no fused free / surface / dynamic evidence) and supports only from
+      CONFIDENT obstacles (occupied count >= ``occupancy_support_min_count``), so it
+      never overrides an observed-free voxel and single-hit depth noise high in the
+      band cannot conjure a column of occupancy. (Free-carve truncation runs first,
+      so the flood of free that masked real obstacle bases is already retracted to
+      unknown and becomes eligible here.)
+    - in-plane morphological CLOSING (radius ``occupancy_close_voxels``) that bridges
+      small gaps enclosed by occupancy without expanding the obstacle outward.
+
+    Both ADD occupancy only into unknown space; free/dynamic counts are untouched.
+    The per-voxel probability construction downstream keeps the contract invariants.
+    """
+    occ = np.asarray(occupied_static_count, dtype=np.float64)
+    support_h = float(envelope.occupancy_support_height_m)
+    min_count = int(envelope.occupancy_support_min_count)
+    close_v = int(envelope.occupancy_close_voxels)
+
+    nf = dims[floor_axis]
+    lo_face = grid_min[floor_axis] + np.arange(nf) * voxel
+    hi_face = lo_face + voxel
+    in_band = (hi_face > band_min) & (lo_face < band_max)
+    band_idx = np.nonzero(in_band)[0]
+    occ_before = int(np.count_nonzero(occ > 0.0))
+    report: dict[str, Any] = {
+        "applied": True,
+        "support_height_m": support_h,
+        "support_min_count": min_count,
+        "close_voxels": close_v,
+        "occ_voxels_before": occ_before,
+        "band_slice_count": int(band_idx.shape[0]),
+    }
+
+    if band_idx.shape[0] == 0:
+        report["note"] = "no_band_slices_completion_noop"
+        return occ, movable_count, report
+
+    lo = int(band_idx.min())
+    top = int(band_idx.max())
+
+    # --- downward gravity support within the band (unknown-only, confident source) ---
+    if support_h > 0.0:
+        support_voxels = max(1, int(round(support_h / voxel)))
+        # A target voxel is UNKNOWN when it carries no fused evidence at all.
+        unknown = (
+            (occ <= 0.0)
+            & (np.asarray(movable_count) <= 0.0)
+            & (np.asarray(dynamic_count) <= 0.0)
+            & (np.asarray(free_count) <= 0.0)
+        )
+        conf_src = occ >= float(min_count)  # confident obstacle voxels
+        um = np.moveaxis(unknown, floor_axis, 0)        # views; index up = away from floor
+        cm = np.moveaxis(conf_src, floor_axis, 0)
+        supported = np.zeros_like(um, dtype=bool)
+        for step in range(1, support_voxels + 1):
+            hi = top - step + 1
+            if hi <= lo:
+                break
+            tgt = supported[lo:hi]                # band slices that receive support
+            src = cm[lo + step: top + 1]          # confident obstacle slices above
+            np.logical_or(tgt, src, out=tgt)      # disjoint base arrays -> safe
+        fill = supported & um                     # fill ONLY unknown targets
+        if bool(np.any(fill)):
+            occ = occ.copy()
+            np.moveaxis(occ, floor_axis, 0)[fill] = 1.0  # minimal, honest occupancy
+        report["support_voxels"] = int(support_voxels)
+        report["support_filled_unknown_voxels"] = int(np.count_nonzero(fill))
+
+    # --- in-plane morphological closing of the band occupancy ---
+    if close_v > 0:
+        occ_mask = occ > 0.0
+        plane_axes = tuple(a for a in range(3) if a != floor_axis)
+        try:
+            from scipy import ndimage  # lazy
+
+            struct = np.zeros((3, 3, 3), dtype=bool)
+            # in-plane 4-neighbour structuring element (no coupling across floor axis)
+            center = [1, 1, 1]
+            for a in plane_axes:
+                for d in (-1, 1):
+                    idx = list(center); idx[a] += d
+                    struct[tuple(idx)] = True
+            struct[1, 1, 1] = True
+            closed = ndimage.binary_closing(occ_mask, structure=struct, iterations=close_v)
+        except Exception:
+            closed = occ_mask  # closing is best-effort; never fabricate on failure
+        # restrict added occupancy to band slices
+        band_mask = np.zeros(dims, dtype=bool)
+        sl = [slice(None)] * 3
+        sl[floor_axis] = slice(lo, top + 1)
+        band_mask[tuple(sl)] = True
+        added = closed & band_mask & (~occ_mask)
+        if bool(np.any(added)):
+            occ = occ.copy()
+            occ[added] = np.maximum(occ[added], 1.0)
+        report["closed_voxels_added"] = int(np.count_nonzero(closed & band_mask & (~occ_mask)))
+
+    report["occ_voxels_after"] = int(np.count_nonzero(occ > 0.0))
+    report["occ_voxels_added"] = report["occ_voxels_after"] - occ_before
+    return occ, movable_count, report
+
+
 def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
     """RANSAC a horizontal-ish floor plane; fall back to lowest-Z heuristic."""
     n = surfaces.shape[0]
@@ -686,6 +881,7 @@ def _build_voxel_occupancy_3d(
     occupied_static_count, movable_count, dynamic_count, free_count,
     grid_min, voxel, dims,
     floor_info, scale_posterior, coordinate_frame, envelope, np,
+    apply_fusion_policy: bool = False,
 ) -> tuple[VoxelOccupancyGrid3D | None, dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
     """Crop the fused volume to the robot collision band and build the per-voxel
     ``VoxelOccupancyGrid3D``.
@@ -703,6 +899,37 @@ def _build_voxel_occupancy_3d(
     floor_value = float(floor_info["floor_value"])
     band_min = floor_value
     band_max = floor_value + float(envelope.band_height_m)
+
+    # Candidate occupancy-estimation policy (apply_fusion_policy), applied on COPIES
+    # so the caller's raw counts (and the measured GT field) are never mutated:
+    #   1. DIRECTIONAL free-carve truncation -- retract the free flood in the column
+    #      directly BELOW a fused surface (toward the floor) within
+    #      ``free_carve_margin_m``. Lateral free is left intact, so free space beside
+    #      an obstacle is preserved (this is why it is downward-only, not isotropic).
+    #      Retracted free becomes UNKNOWN, never occupied.
+    #   2. Gravity SUPPORT -- fill those now-unknown base voxels (and any pre-existing
+    #      unknown) below a CONFIDENT obstacle with occupancy (honest, unknown-only).
+    #   3. optional in-plane CLOSING.
+    # The floor axis is known here, so truncation/support act strictly along the
+    # collision band. OFF reproduces the prior fuser.
+    free_carve_truncation_report: dict[str, Any] = {"applied": False}
+    occupancy_completion_report: dict[str, Any] = {"applied": False}
+    if apply_fusion_policy and envelope.policy_active:
+        if float(envelope.free_carve_margin_m) > 0.0:
+            free_count, free_carve_truncation_report = _apply_band_free_truncation(
+                free_count, occupied_static_count, movable_count,
+                floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
+            )
+        if (
+            float(envelope.occupancy_support_height_m) > 0.0
+            or int(envelope.occupancy_close_voxels) > 0
+        ):
+            occupied_static_count, movable_count, occupancy_completion_report = (
+                _apply_occupancy_completion(
+                    occupied_static_count, movable_count, dynamic_count, free_count,
+                    floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
+                )
+            )
 
     # Full-volume argmax class field (int8) + touched mask, used ONLY for the
     # band agreement comparison: the eval region is the OTHER field's band, and
@@ -852,6 +1079,8 @@ def _build_voxel_occupancy_3d(
         "unknown_fraction": unknown_vox / band_total if band_total else 0.0,
         "movable_inferred": mov_vox > 0,
         "dynamic_inferred": dyn_vox > 0,
+        "free_carve_truncation": free_carve_truncation_report,
+        "occupancy_completion": occupancy_completion_report,
         "blockers": (),
     }
     return voxel3d, band_volumes, comparison_field, report
