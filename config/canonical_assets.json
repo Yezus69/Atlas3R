@@ -32,6 +32,21 @@
       }
     },
     {
+      "asset_id": "reference_metric_room",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/reference_metric_room",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg1_room \u2014 HARDEST gate scene: full room-LOOP trajectory. Empirically the feed-forward backbone's metric scale (~0.28x) AND pose (cam RMSE ~0.82m) both blow up here (loop closure unmodeled), so this scene fails the band comparison. Kept in the gate precisely to expose that the pipeline is NOT yet usable on full-room loops. Shares fr1 intrinsics.",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true
+      }
+    },
+    {
       "asset_id": "phone_room",
       "track_type": "phone_room",
       "source_uri_or_path": "data/phone_room",

@@ -51,9 +51,15 @@ SUMMARY_NAME = "scorecard_summary.md"
 
 # Canonical tracks, in stable order so the scorecard is deterministic. The gate spans
 # a DIFFICULTY SPREAD of measured scenes so it reflects realistic motion, not just a
-# gentle best case: reference_metric (TUM freiburg1_xyz, gentle) + reference_metric_desk
-# (freiburg1_desk, harder desk-orbit) + phone_room (unanchored target, no measured GT).
-CANONICAL_TRACKS = ("reference_metric", "reference_metric_desk", "phone_room")
+# gentle best case, ordered easy -> hardest:
+#   reference_metric       TUM freiburg1_xyz  gentle hand-held jitter   -> PASSES (cam RMSE ~0.08m, occ_iou ~0.13)
+#   reference_metric_desk  TUM freiburg1_desk harder desk-orbit         -> FAILS  (cam RMSE ~0.25-0.33m, occ_iou ~0.0)
+#   reference_metric_room  TUM freiburg1_room full room-LOOP (hardest)  -> FAILS  (cam RMSE ~0.82m, metric scale ~0.28x)
+#   phone_room             unanchored phone target, no measured GT      -> metric_pseudo_label (no band score)
+# The two failing measured scenes are kept ON PURPOSE: the gate must reflect that the
+# feed-forward backbone's pose/metric-scale degrade under realistic motion and break on
+# loop closure -- that honesty is the point. See docs/band_obstacle_recall_evidence.md.
+CANONICAL_TRACKS = ("reference_metric", "reference_metric_room", "reference_metric_desk", "phone_room")
 
 # band3d_agreement statuses for which numeric per-class metrics exist. Anything else
 # (missing_measured_3d_reference, insufficient_overlap_for_sim3_band_comparison, ...)

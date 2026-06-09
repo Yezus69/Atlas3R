@@ -333,3 +333,49 @@ maps measured obstacles onto the wrong candidate voxels and everything reads as 
    real motion**, not just band-fusion or per-pixel depth.
 3. This is a more valuable result than another metric bump: it tells the truth about
    where the product actually stands.
+
+## Phase 5 — third gate scene: a full room-LOOP breaks the backbone even harder
+
+Per the difficulty-spread plan, a **third measured scene — TUM freiburg1_room** (a full
+room *loop*, 1362 frames, the canonical floor-robot motion) was staged as
+`reference_metric_room` and wired into the canonical gate (`config/canonical_assets.json`
++ `evaluate.CANONICAL_TRACKS`). M1 selected 8 keyframes; the MapAnything backbone was run
+over those 8 + 5 bookend/gap-filler frames (13 total), mirroring the desk recipe. The
+measured GT field is **healthy** (6294 occupied voxels, occupied_fraction 1.06%, free
+9.5%) — so what follows is a genuine *candidate* failure, not a measured/units bug.
+
+| scene (motion) | cam Sim(3) RMSE | est. metric scale | occ_iou | coverage_of_measured_band | verdict |
+|---|---|---|---|---|---|
+| reference_metric — xyz (gentle jitter) | **0.078 m** | ~1.0 | **0.128** | 0.993 | passes |
+| reference_metric_desk — desk-orbit (hard) | 0.278 m | ~1.0 | 0.0 | 0.897 | fails |
+| **reference_metric_room — full loop (hardest)** | **0.823 m** | **0.283** | 0.0 | **0.019** | fails harder |
+
+**On the room loop the feed-forward backbone blows up on *two* axes at once:** camera
+Sim(3) RMSE **0.82 m** (median 0.72, max 1.39) **and metric scale 0.283** — i.e. the
+candidate reconstruction is ~3.5× too large *and* badly mis-posed, so after Sim(3)
+alignment it overlaps only **1.9 %** of the measured band. (Note the *band* `band_fsc`
+reads 0.0 here only because there is almost no overlap left to contradict — read it
+together with `coverage_of_measured_band: 0.019`, never alone.) Pushing to a denser,
+cadence-matched 24-frame set made it **worse**, not better — the comparison degraded to
+`insufficient_overlap_for_sim3_band_comparison` (can't even fit a Sim(3)). So this is the
+*loop*, not under-sampling: the feed-forward backbone has no loop-closure, so a trajectory
+that returns near its start accumulates unbounded pose+scale drift.
+
+**Why keep a scene the pipeline fails (twice now)?** Because the gate's job is to tell the
+truth, and the truth has a clear gradient: **gentle jitter works → desk-orbit fails →
+room-loop fails harder.** Two distinct realistic failure modes (orbit + loop) prove the
+collapse is not desk-specific, and loop-closure is *exactly* the motion a floor-cleaning
+robot produces. The candidate is correctly emitted only as `metric_pseudo_label` with
+`accepted_for_metric_training: False`, so nothing garbage is shipped as `measured_metric`.
+
+**Gate-design gap this exposes (next-step, not yet fixed):** the *acceptance* gate keys on
+the candidate map's **internal** free/occupied conflict (`map.free_space_contradiction_rate`
+= 0.123 for room — comfortably below the 0.358 reject threshold), which a self-consistent
+*but globally wrong* reconstruction can pass. The signals that actually catch the room
+failure — `camera_center_sim3_error` (0.82 m) and `band3d_agreement.coverage` (0.019) —
+are computed only on gate scenes (they need measured GT) and are currently **reportage,
+not blocking**. In production (phone video, no GT) we cannot compute them, so the pipeline
+*cannot self-detect this failure yet*. That is the real frontier: either (a) a backbone
+with loop-closure / global consistency (the pose axis), or (b) a GT-free internal
+consistency signal that correlates with cam-RMSE so the honesty gate can reject loop
+blow-ups without measured GT. Tracked in [[sota-backbone-direction]].
