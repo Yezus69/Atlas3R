@@ -331,6 +331,7 @@ def build_robot_envelope(root: Path, run: dict[str, Any]) -> dict[str, Any]:
             "free_carve_margin_m",
             "occupancy_support_height_m",
             "occupancy_support_min_count",
+            "occupancy_support_overrides_free",
             "occupancy_close_voxels",
         ):
             env[key] = run_env.get(key, NOT_REPORTED)

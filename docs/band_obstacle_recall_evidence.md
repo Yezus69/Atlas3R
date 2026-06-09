@@ -250,3 +250,46 @@ count, resolution) cleanly fixes. Closing it materially needs a better depth sou
 — a stronger geometry backbone, or genuine measured-depth anchoring (which would no
 longer be a pure monocular teacher). The landed gravity-support policy remains the
 clean, guardrail-safe win.
+
+## Phase 3 — better backbone (MapAnything) is a real map-quality win; band_fsc stays depth-limited
+
+Phase 2 predicted the fix was a better depth source. A SOTA-survey-driven backbone
+swap to **MapAnything-apache** (see `docs/sota_backbone_research.md`) plus the honest
+fusion policy (directional free-carve truncation that retracts over-carved free to
+UNKNOWN, + unknown-only gravity support, confidence gate `min_count=3`) took the
+`reference_metric` candidate from the DA3 baseline to the **landed honest state**:
+
+| metric | DA3 baseline | **landed (MapAnything, honest policy)** |
+|---|---|---|
+| `occupied_static_iou` | 0.0777 | **0.1281** (+65%) |
+| band `free_space_contradiction_rate` | 0.7202 | 0.727 (≈flat / marginally ↑) |
+| `per_class_agreement` | 0.8681 | **0.9262** |
+| coverage_of_measured_band | 0.7157 | **0.9926** |
+| camera Sim(3) RMSE | 0.1048 | **0.0779** (−26%) |
+| free-space precision | 0.9677 | 0.9694 |
+| over-occupancy (false-positive voxels) | — | 381 (mc3) vs 436 (mc2): the gate tightening cuts FPs |
+
+**The honest result: a big map-quality win (precision, coverage, poses), but the
+obstacle-base miss is NOT closed.** band_fsc stayed ≈flat — MapAnything makes the map
+far more precise/complete and the poses much better, but raw obstacle *recall* did not
+improve (verified: TP +38%, FP −31% — not inflation). The missed bases are now
+*observed-free* (over-carved), and honestly retracting that to UNKNOWN (truncation)
+does not refill them.
+
+**REJECTED for honesty — `occupancy_support_overrides_free` (OFF).** A lever that fills
+observed-FREE base voxels with occupied (the "solid to the floor" prior) DOES lower
+band_fsc (0.727→0.691) — but it **CLAIMS occupancy over ray-traversal-observed free
+space**, a fabrication that violates Atlas3R's *"free space comes from ray traversal
+only / never fabricate"* invariant. Independent review also debunked its "clean Pareto"
+story: the headline over-occupancy *decrease* was a confound of a simultaneous
+`min_count` change; **isolated, the override adds +39 false-positive voxels for only
++12 true base-fills** (≈3 fabricated voxels per real one). It is config-gated and left
+OFF — the repo prizes honest labels over metric scores. (Caught concurrently by the
+maintainer and the adversarial review — a good example of the honesty gate working.)
+
+**Conclusion:** band_fsc (the robot-critical "drives through obstacles" metric) is
+**not honestly improvable at the fusion layer** — it is bounded by the backbone's own
+depth accuracy. MapAnything raised the *ceiling* of honest map quality substantially;
+honestly closing band_fsc needs a more accurate backbone. Next: the **AMB3R** oracle
+(7-Scenes 1.74 cm, non-commercial) to measure what recall is achievable and whether a
+commercial-clean backbone can reach it.

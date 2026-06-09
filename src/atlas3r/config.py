@@ -21,12 +21,20 @@ when fusing the monocular candidate map (never to the measured GT yardstick):
 - ``occupancy_support_height_m``: a generic gravity/support prior. A real obstacle
   rests on the floor and occupies the whole column from its top down to the floor;
   this propagates occupancy DOWNWARD within the band by up to this height so a
-  detected obstacle claims its support column (raising obstacle-base recall). It is
-  HONEST: it only resolves UNKNOWN space below a CONFIDENT obstacle (occupied count
-  >= ``occupancy_support_min_count``); it never overrides an observed-free voxel.
+  detected obstacle claims its support column (raising obstacle-base recall). By
+  default it only resolves UNKNOWN space below a CONFIDENT obstacle (occupied count
+  >= ``occupancy_support_min_count``).
+- ``occupancy_support_overrides_free``: when True, the confident-obstacle support
+  also fills OBSERVED-FREE base voxels (not just unknown). It DOES lower band_fsc, but
+  it CLAIMS occupied over ray-traversal-observed free space -- a fabrication that
+  violates Atlas3R's "free space comes from ray traversal only / never fabricate"
+  invariant (and an adversarial review showed it adds ~3 false positives per real
+  base-fill in isolation). Left **False on purpose**: honest labels over metric
+  scores. The honest counterpart -- truncation, which retracts over-carved free to
+  UNKNOWN rather than claiming occupied -- stays on.
 - ``occupancy_support_min_count``: minimum fused occupied-hit count for a voxel to
-  act as a support SOURCE, so single-hit depth noise high in the band does not
-  conjure a column of occupancy. Default 1 (any obstacle supports).
+  act as a support/truncation SOURCE, so single-hit depth noise does not conjure a
+  column of occupancy or retract floor. Default 1 (any obstacle supports).
 - ``occupancy_close_voxels``: in-plane morphological closing radius (voxels) that
   bridges small gaps between nearby candidate surface voxels.
 
@@ -55,6 +63,7 @@ DEFAULT_VOXEL_SIZE_M = 0.05
 DEFAULT_FREE_CARVE_MARGIN_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT = 1
+DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE = False
 DEFAULT_OCCUPANCY_CLOSE_VOXELS = 0
 
 DEFAULT_CONFIG_PATH = Path("configs/robot_envelope.json")
@@ -87,6 +96,7 @@ class RobotEnvelopeConfig:
     free_carve_margin_m: float = DEFAULT_FREE_CARVE_MARGIN_M
     occupancy_support_height_m: float = DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M
     occupancy_support_min_count: int = DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT
+    occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
     occupancy_close_voxels: int = DEFAULT_OCCUPANCY_CLOSE_VOXELS
 
     def __post_init__(self) -> None:
@@ -102,6 +112,8 @@ class RobotEnvelopeConfig:
             raise RobotEnvelopeConfigError("occupancy_support_height_m must be a non-negative finite number")
         if not isinstance(self.occupancy_support_min_count, int) or isinstance(self.occupancy_support_min_count, bool) or self.occupancy_support_min_count < 1:
             raise RobotEnvelopeConfigError("occupancy_support_min_count must be an integer >= 1")
+        if not isinstance(self.occupancy_support_overrides_free, bool):
+            raise RobotEnvelopeConfigError("occupancy_support_overrides_free must be a bool")
         if not isinstance(self.occupancy_close_voxels, int) or isinstance(self.occupancy_close_voxels, bool) or self.occupancy_close_voxels < 0:
             raise RobotEnvelopeConfigError("occupancy_close_voxels must be a non-negative integer")
 
@@ -128,6 +140,7 @@ class RobotEnvelopeConfig:
             "free_carve_margin_m": float(self.free_carve_margin_m),
             "occupancy_support_height_m": float(self.occupancy_support_height_m),
             "occupancy_support_min_count": int(self.occupancy_support_min_count),
+            "occupancy_support_overrides_free": bool(self.occupancy_support_overrides_free),
             "occupancy_close_voxels": int(self.occupancy_close_voxels),
         }
 
@@ -185,6 +198,9 @@ def load_robot_envelope(
             ),
             occupancy_support_min_count=int(
                 data.get("occupancy_support_min_count", DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT)
+            ),
+            occupancy_support_overrides_free=bool(
+                data.get("occupancy_support_overrides_free", DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE)
             ),
             occupancy_close_voxels=int(data.get("occupancy_close_voxels", DEFAULT_OCCUPANCY_CLOSE_VOXELS)),
         )

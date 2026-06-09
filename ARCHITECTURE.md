@@ -1054,9 +1054,15 @@ free_carve_margin_m         DIRECTIONAL truncation: free is retracted only in th
                             UNKNOWN, never occupied.
 occupancy_support_height_m  gravity/support prior: a detected obstacle rests on the
                             floor, so occupancy is propagated DOWNWARD within the
-                            collision band by up to this height. HONEST -- it fills
-                            ONLY voxels that are currently UNKNOWN (never overrides an
-                            observed-free voxel) and only below a CONFIDENT obstacle.
+                            collision band by up to this height. By default it fills
+                            ONLY UNKNOWN voxels below a CONFIDENT obstacle.
+occupancy_support_overrides_free  when set, support ALSO fills observed-FREE base
+                            voxels below a confident obstacle. It lowers band_fsc but
+                            CLAIMS occupied over ray-traversal-observed free space -- a
+                            FABRICATION barred by the free-space rule below ("free
+                            comes from RAY TRAVERSAL only"). Left OFF on purpose
+                            (honest labels over metric scores); the honest truncation
+                            lever (free -> UNKNOWN, not occupied) is the alternative.
 occupancy_support_min_count minimum fused occupied-hit count for a voxel to act as a
                             truncation/support SOURCE, so single-hit depth noise high
                             in the band cannot conjure occupancy or retract floor.

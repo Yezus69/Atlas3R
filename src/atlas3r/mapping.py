@@ -669,20 +669,25 @@ def _apply_occupancy_completion(
     lo = int(band_idx.min())
     top = int(band_idx.max())
 
-    # --- downward gravity support within the band (unknown-only, confident source) ---
+    # --- downward gravity support within the band (confident source) ---
     if support_h > 0.0:
         support_voxels = max(1, int(round(support_h / voxel)))
-        # A target voxel is UNKNOWN when it carries no fused evidence at all.
-        unknown = (
-            (occ <= 0.0)
-            & (np.asarray(movable_count) <= 0.0)
-            & (np.asarray(dynamic_count) <= 0.0)
-            & (np.asarray(free_count) <= 0.0)
-        )
+        overrides_free = bool(getattr(envelope, "occupancy_support_overrides_free", False))
+        movable = np.asarray(movable_count)
+        dynamic = np.asarray(dynamic_count)
+        # Eligible target voxels below a confident obstacle. Default: UNKNOWN only
+        # (no fused evidence). With occupancy_support_overrides_free: also fill
+        # OBSERVED-FREE voxels -- the structural prior that a CONFIDENT floor-supported
+        # obstacle's base column is solid to the floor even where a stray ray carved
+        # it free (a depth-noise over-carve). Movable/dynamic are never overridden.
+        if overrides_free:
+            eligible = (occ <= 0.0) & (movable <= 0.0) & (dynamic <= 0.0)
+        else:
+            eligible = (occ <= 0.0) & (movable <= 0.0) & (dynamic <= 0.0) & (np.asarray(free_count) <= 0.0)
         conf_src = occ >= float(min_count)  # confident obstacle voxels
-        um = np.moveaxis(unknown, floor_axis, 0)        # views; index up = away from floor
+        em = np.moveaxis(eligible, floor_axis, 0)       # views; index up = away from floor
         cm = np.moveaxis(conf_src, floor_axis, 0)
-        supported = np.zeros_like(um, dtype=bool)
+        supported = np.zeros_like(em, dtype=bool)
         for step in range(1, support_voxels + 1):
             hi = top - step + 1
             if hi <= lo:
@@ -690,12 +695,13 @@ def _apply_occupancy_completion(
             tgt = supported[lo:hi]                # band slices that receive support
             src = cm[lo + step: top + 1]          # confident obstacle slices above
             np.logical_or(tgt, src, out=tgt)      # disjoint base arrays -> safe
-        fill = supported & um                     # fill ONLY unknown targets
+        fill = supported & em
         if bool(np.any(fill)):
             occ = occ.copy()
             np.moveaxis(occ, floor_axis, 0)[fill] = 1.0  # minimal, honest occupancy
         report["support_voxels"] = int(support_voxels)
-        report["support_filled_unknown_voxels"] = int(np.count_nonzero(fill))
+        report["support_overrides_free"] = overrides_free
+        report["support_filled_voxels"] = int(np.count_nonzero(fill))
 
     # --- in-plane morphological closing of the band occupancy ---
     if close_v > 0:
