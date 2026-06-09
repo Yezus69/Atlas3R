@@ -300,11 +300,12 @@ The MapAnything win above is on `reference_metric` = TUM **freiburg1_xyz**, a *g
 low-rotation* handheld sweep. To test generalization, a **second measured indoor scene
 — TUM freiburg1_desk** (a harder trajectory orbiting a desk; shares fr1 intrinsics) was
 staged, run through M1/M2 (8 measured GT keyframes), and both backbones were measured
-against its measured GT under the landed honest policy. Reproduce: download
+against its measured GT under the landed honest policy. **`reference_metric_desk` is now
+a CANONICAL gate scene** (`config/canonical_assets.json` + `evaluate.CANONICAL_TRACKS`),
+so the scorecard reports it alongside `reference_metric` on every run. Reproduce: download
 `rgbd_dataset_freiburg1_desk.tgz`, flatten into `data/reference_metric_desk/` + copy the
-fr1 intrinsics sidecar, run `python -m atlas3r.{m1,m2} --manifest
-config/_desk_check_manifest.json`, run a backbone with `--asset-id reference_metric_desk`,
-then `runs/_diag/desk_eval.py`.
+fr1 intrinsics sidecar, run the backbone with `--asset-id reference_metric_desk`, then
+`python -m atlas3r.{m1,m2,teacher}` and `python -m atlas3r.evaluate`.
 
 | backbone (scene) | occ_iou | band_fsc | per_class | free_prec | camera Sim(3) RMSE |
 |---|---|---|---|---|---|

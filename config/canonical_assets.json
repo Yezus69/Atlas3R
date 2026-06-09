@@ -17,6 +17,21 @@
       }
     },
     {
+      "asset_id": "reference_metric_desk",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/reference_metric_desk",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg1_desk \u2014 HARDER trajectory (generalization / realistic-motion gate scene); shares fr1 intrinsics",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true
+      }
+    },
+    {
       "asset_id": "phone_room",
       "track_type": "phone_room",
       "source_uri_or_path": "data/phone_room",

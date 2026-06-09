@@ -21,16 +21,35 @@ The teacher is a dataset filter plus reconstructor. Rejecting bad videos is part
 
 ## Canonical Data Strategy
 
-Atlas3R development must stay grounded in two canonical video tracks.
+Atlas3R development must stay grounded in canonical video tracks: measured-metric
+reference scenes spanning a DIFFICULTY SPREAD (so the acceptance gate reflects
+realistic motion, not a gentle best case) plus the unanchored phone target.
 
-### Track A: `reference_metric`
+### Track A: `reference_metric` scenes (measured, multi-scene gate)
 
-A public indoor RGB sequence with metric evidence. The preferred first target is a small TUM RGB-D handheld indoor sequence. Acceptable alternatives include ARKitScenes, ScanNet++, or another public indoor sequence with registered RGB plus measured depth, measured pose, laser scan, known marker, or benchmark ground truth.
-
-This track answers:
+Public indoor RGB sequences with metric evidence, registered as a difficulty spread so
+the gate cannot be over-fit to an easy case. Current canonical scenes (TUM RGB-D, which
+gives RGB + measured depth + mocap-accurate ground-truth trajectory):
 
 ```text
-When metric evidence exists, can Atlas3R load it, compare against it, and prevent false acceptance?
+reference_metric        = freiburg1_xyz   (GENTLE, low-rotation handheld sweep)
+reference_metric_desk   = freiburg1_desk  (HARDER desk-orbit; exposes pose degradation
+                                           under realistic motion -- see the band
+                                           evidence Phase 4: the xyz-only gate
+                                           over-states real-world performance)
+```
+
+Acceptable alternatives/additions include ARKitScenes, ScanNet++, or another public
+indoor sequence with registered RGB plus measured depth/pose/laser/marker/benchmark GT.
+A new measured scene is registered by adding a `track_type: reference_metric` entry to
+`config/canonical_assets.json` (shared intrinsics via the per-scene metadata sidecar)
+and to `evaluate.CANONICAL_TRACKS`.
+
+These scenes answer:
+
+```text
+When metric evidence exists, can Atlas3R load it, compare against it, prevent false
+acceptance, AND do so consistently across EASY and HARD camera motion?
 ```
 
 ### Track B: `phone_room`

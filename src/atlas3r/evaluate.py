@@ -49,8 +49,11 @@ PREV_NAME = "scorecard.prev.json"
 DIFF_NAME = "scorecard_diff.json"
 SUMMARY_NAME = "scorecard_summary.md"
 
-# Canonical tracks, in stable order so the scorecard is deterministic.
-CANONICAL_TRACKS = ("reference_metric", "phone_room")
+# Canonical tracks, in stable order so the scorecard is deterministic. The gate spans
+# a DIFFICULTY SPREAD of measured scenes so it reflects realistic motion, not just a
+# gentle best case: reference_metric (TUM freiburg1_xyz, gentle) + reference_metric_desk
+# (freiburg1_desk, harder desk-orbit) + phone_room (unanchored target, no measured GT).
+CANONICAL_TRACKS = ("reference_metric", "reference_metric_desk", "phone_room")
 
 # band3d_agreement statuses for which numeric per-class metrics exist. Anything else
 # (missing_measured_3d_reference, insufficient_overlap_for_sim3_band_comparison, ...)
