@@ -71,15 +71,33 @@ occupancy_support_min_count=2`):
 camera RMSE, holding free-space precision and band_fsc.** Notes: (1) the directional
 free-carve truncation lever that *regressed* per_class on DA3's sparse geometry now
 *helps* on MapAnything's dense geometry — backbone swap + policy levers compose;
-(2) band_fsc is flat, not down — MapAnything covers 99% of the band (vs 72%) so it
-co-observes MORE solid voxels (337 vs 243); better placement raises occ_iou but the
-*fraction* still missed is similar — the residual obstacle-base miss is the next axis;
+(2) **the occ_iou gain is PRECISION + COVERAGE + ALIGNMENT, NOT recall** (independently
+verified by an adversarial reviewer from the band confusion): occupancy precision rose
+0.097→0.177, false positives fell 31% (FP 632→436), true positives rose 38% (68→94),
+candidate band-occupied fraction *fell* (0.226→0.207), coverage 0.72→0.99 — none of which
+is occupancy inflation; but raw obstacle *recall* is FLAT (0.280→0.279) on a 39%-larger
+obstacle set, and band_fsc is flat (0.72). So MapAnything makes the map far more
+PRECISE, COMPLETE, and better-posed, but does NOT by itself close the obstacle-base
+miss — that is the next axis (AMB3R oracle + a base-aware completion lever);
+(2b) the +57% is from the backbone swap AND the re-tuned policy JOINTLY (a coherent
+adopted change), not a single-variable backbone result;
 (3) honesty unchanged: MapAnything stays `metric_pseudo_label` (learned soft prior),
-measured TUM eval-only. **Caveats before full adoption:** the Apache checkpoint's
-isolated indoor accuracy is unpublished and this is ONE sequence — verify on
-`phone_room` (runs, no band GT) and a second indoor scene; then wire MapAnything as the
-default M3 backbone (regenerate `external/teacher_artifacts/` via the new runner) and
-confirm the full `python -m atlas3r.evaluate` scorecard + determinism.
+measured TUM eval-only.
+
+**ADOPTED (this session).** MapAnything is now the DEFAULT M3 backbone: `phone_room`
+was run through it too (32 keyframes, metric depth, stays `metric_pseudo_label`),
+`external/teacher_artifacts/` regenerated for both tracks (DA3 backed up at
+`external/_da3_artifacts_backup/`, `run_da3_backbone.py` kept as fallback), the policy
+re-tuned in `configs/robot_envelope.json`, and the full `python -m atlas3r.teacher` +
+`python -m atlas3r.evaluate` scorecard confirms the win with the **scorecard `tracks`
+byte-identical on rerun** (determinism holds — the teacher reads cached artifacts) and
+all honest categories preserved (`measured_metric` via the measured baseline,
+candidate `metric_pseudo_label`, `phone_room` `metric_pseudo_label`). **Remaining
+caveats:** the Apache checkpoint's isolated indoor accuracy is unpublished and the band
+agreement is verified on ONE measured scene (`reference_metric`) — a second public
+indoor scene is still a `missing_asset` generalization check; and band_fsc held flat
+(not down), so the obstacle-base miss is the next axis (AMB3R oracle + a base-aware
+completion lever).
 
 ## 1. TL;DR — what to try FIRST, in order
 

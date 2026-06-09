@@ -337,9 +337,10 @@ def build_robot_envelope(root: Path, run: dict[str, Any]) -> dict[str, Any]:
     return env
 
 
-def build_da3_provenance(reports: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """DA3 backbone provenance already in the reports. Asserted identical across tracks;
-    divergence is surfaced rather than hidden."""
+def build_backbone_provenance(reports: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Monocular geometry-backbone provenance already in the reports (backbone-agnostic:
+    MapAnything, DA3, ...). Asserted identical across tracks; divergence is surfaced
+    rather than hidden."""
     seen: dict[str, dict[str, Any]] = {}
     for asset_id, report in reports.items():
         mono = _pluck(report, "geometry_source_status", "monocular_artifact", default={})
@@ -405,7 +406,7 @@ def build_scorecard(root: Path, run: dict[str, Any]) -> dict[str, Any]:
         "git_commit": git_commit if git_commit else NOT_REPORTED,
         "git_commit_iso": git_commit_iso if git_commit_iso else NOT_REPORTED,
         "robot_envelope": build_robot_envelope(root, run),
-        "da3_provenance": build_da3_provenance(reports),
+        "backbone_provenance": build_backbone_provenance(reports),
         "asset_provenance": build_asset_provenance(reports),
         "source_run_summary": run.get("summary_path", NOT_REPORTED),
         "source_reports": source_reports,
@@ -554,8 +555,8 @@ def render_summary(
         f"voxel_size_m={_fmt(env.get('voxel_size_m'))}, "
         f"band_height_m={_fmt(env.get('band_height_m'))}"
     )
-    da3 = meta.get("da3_provenance", {})
-    lines.append(f"- da3_backbone: {_fmt(da3.get('method'))} (metric_evidence={_fmt(da3.get('metric_evidence'))})")
+    bb = meta.get("backbone_provenance", {})
+    lines.append(f"- geometry_backbone: {_fmt(bb.get('method'))} (metric_evidence={_fmt(bb.get('metric_evidence'))})")
     assets = meta.get("asset_provenance", {})
     for asset_id, info in assets.items():
         lines.append(
