@@ -54,11 +54,13 @@ SUMMARY_NAME = "scorecard_summary.md"
 # gentle best case, ordered easy -> hardest:
 #   reference_metric       TUM freiburg1_xyz  gentle hand-held jitter   -> PASSES (cam RMSE ~0.08m, occ_iou ~0.13)
 #   reference_metric_desk  TUM freiburg1_desk harder desk-orbit         -> FAILS  (cam RMSE ~0.25-0.33m, occ_iou ~0.0)
-#   reference_metric_room  TUM freiburg1_room full room-LOOP (hardest)  -> FAILS  (cam RMSE ~0.82m, metric scale ~0.28x)
+#   reference_metric_room  TUM freiburg1_room full room-LOOP            -> FAILS  (depth-limited band miss; occ_iou ~0.0)
 #   phone_room             unanchored phone target, no measured GT      -> metric_pseudo_label (no band score)
-# The two failing measured scenes are kept ON PURPOSE: the gate must reflect that the
-# feed-forward backbone's pose/metric-scale degrade under realistic motion and break on
-# loop closure -- that honesty is the point. See docs/band_obstacle_recall_evidence.md.
+# The two failing measured scenes are kept ON PURPOSE so the gate reflects realistic
+# motion. NOTE on room: its 13-keyframe scorecard (cam RMSE 0.82m, scale 0.28) looks like
+# a loop-closure blow-up but is mostly keyframe UNDER-SAMPLING -- at ~48 keyframes it
+# reconstructs near-metric (cam RMSE 0.24-0.46m), better-posed than desk; the residual
+# fail is the same depth-limited band miss. See docs/band_obstacle_recall_evidence.md Phase 5.
 CANONICAL_TRACKS = ("reference_metric", "reference_metric_room", "reference_metric_desk", "phone_room")
 
 # band3d_agreement statuses for which numeric per-class metrics exist. Anything else

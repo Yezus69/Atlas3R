@@ -334,7 +334,7 @@ maps measured obstacles onto the wrong candidate voxels and everything reads as 
 3. This is a more valuable result than another metric bump: it tells the truth about
    where the product actually stands.
 
-## Phase 5 — third gate scene: a full room-LOOP breaks the backbone even harder
+## Phase 5 — third gate scene (room-LOOP): under-sampling, not loop-closure, was the cause
 
 Per the difficulty-spread plan, a **third measured scene — TUM freiburg1_room** (a full
 room *loop*, 1362 frames, the canonical floor-robot motion) was staged as
@@ -344,38 +344,76 @@ over those 8 + 5 bookend/gap-filler frames (13 total), mirroring the desk recipe
 measured GT field is **healthy** (6294 occupied voxels, occupied_fraction 1.06%, free
 9.5%) — so what follows is a genuine *candidate* failure, not a measured/units bug.
 
-| scene (motion) | cam Sim(3) RMSE | est. metric scale | occ_iou | coverage_of_measured_band | verdict |
-|---|---|---|---|---|---|
-| reference_metric — xyz (gentle jitter) | **0.078 m** | ~1.0 | **0.128** | 0.993 | passes |
-| reference_metric_desk — desk-orbit (hard) | 0.278 m | ~1.0 | 0.0 | 0.897 | fails |
-| **reference_metric_room — full loop (hardest)** | **0.823 m** | **0.283** | 0.0 | **0.019** | fails harder |
+At the committed 13-keyframe recipe the room scorecard looks catastrophic — cam Sim(3)
+RMSE **0.823 m**, metric scale **0.283** (recon ~3.5× too large), `occ_iou` 0.0, only
+**1.9 %** band coverage. The first read (and the first version of this section) called
+that an inherent *loop-closure* breakdown. **A deeper investigation overturned that —
+the n=13 catastrophe is dominated by keyframe UNDER-SAMPLING, not the loop per se.**
 
-**On the room loop the feed-forward backbone blows up on *two* axes at once:** camera
-Sim(3) RMSE **0.82 m** (median 0.72, max 1.39) **and metric scale 0.283** — i.e. the
-candidate reconstruction is ~3.5× too large *and* badly mis-posed, so after Sim(3)
-alignment it overlaps only **1.9 %** of the measured band. (Note the *band* `band_fsc`
-reads 0.0 here only because there is almost no overlap left to contradict — read it
-together with `coverage_of_measured_band: 0.019`, never alone.) Pushing to a denser,
-cadence-matched 24-frame set made it **worse**, not better — the comparison degraded to
-`insufficient_overlap_for_sim3_band_comparison` (can't even fit a Sim(3)). So this is the
-*loop*, not under-sampling: the feed-forward backbone has no loop-closure, so a trajectory
-that returns near its start accumulates unbounded pose+scale drift.
+**Evidence 1 — locally the backbone is near-metric and accurate; only the GLOBAL stitch
+drifts.** Decomposing the n=13 trajectory against TUM mocap GT (`runs/_diag/room_drift.py`):
+a *global* Sim(3) over all 13 frames gives scale 0.21 / RMSE 0.83 m, but *local* 4-frame
+sub-windows fit at **scale 0.95–1.06 (metric!) and RMSE 0.03–0.12 m**. So the geometry is
+locally faithful; the single feed-forward pass accumulates global scale/pose drift across
+a 1362-frame span sampled by only 13 views.
 
-**Why keep a scene the pipeline fails (twice now)?** Because the gate's job is to tell the
-truth, and the truth has a clear gradient: **gentle jitter works → desk-orbit fails →
-room-loop fails harder.** Two distinct realistic failure modes (orbit + loop) prove the
-collapse is not desk-specific, and loop-closure is *exactly* the motion a floor-cleaning
-robot produces. The candidate is correctly emitted only as `metric_pseudo_label` with
-`accepted_for_metric_training: False`, so nothing garbage is shipped as `measured_metric`.
+**Evidence 2 — keyframe count is a first-order, U-shaped lever** (`runs/_diag/kf_sweep.py`,
+camera-center RMSE vs mocap GT, uniform global passes):
 
-**Gate-design gap this exposes (next-step, not yet fixed):** the *acceptance* gate keys on
-the candidate map's **internal** free/occupied conflict (`map.free_space_contradiction_rate`
-= 0.123 for room — comfortably below the 0.358 reject threshold), which a self-consistent
-*but globally wrong* reconstruction can pass. The signals that actually catch the room
-failure — `camera_center_sim3_error` (0.82 m) and `band3d_agreement.coverage` (0.019) —
-are computed only on gate scenes (they need measured GT) and are currently **reportage,
-not blocking**. In production (phone video, no GT) we cannot compute them, so the pipeline
-*cannot self-detect this failure yet*. That is the real frontier: either (a) a backbone
-with loop-closure / global consistency (the pose axis), or (b) a GT-free internal
-consistency signal that correlates with cam-RMSE so the honesty gate can reject loop
-blow-ups without measured GT. Tracked in [[sota-backbone-direction]].
+| n_keyframes | 13 | 16 | 24 | 32 | **48** | 64 | 96 |
+|---|---|---|---|---|---|---|---|
+| metric scale | 0.28 | 0.69 | 0.73 | 0.79 | **0.91** | 0.76 | 0.71 |
+| cam RMSE (m) | 0.74 | 0.60 | 0.53 | 0.34 | **0.236** | 0.39 | 0.46 |
+
+More views *constrain* the loop (drift shrinks, scale → metric) up to an optimum near
+**48** (≈1 keyframe / 28 frames), then degrade again — the same "too-dense confuses the
+feed-forward fusion" effect seen on desk, now bracketed from both sides. At n=48 the loop
+reconstructs at **0.236 m / scale 0.91 — better-posed than desk (0.278 m).** (This needs
+`memory_efficient_inference`; full-res dense heads OOM past ~32 views on the 24 GB 4090.)
+
+**Evidence 3 — the "24-frame got worse" and "n=48 insufficient_overlap" readings were
+EVAL ARTIFACTS, not regressions.** `_band3d_agreement` needs ≥3 *shared frame_ids*
+between candidate and measured packets (it aligns via shared cameras). A *uniform* dense
+set contains none of the 8 measured frame_ids `[108,238,367,626,735,951,1123,1318]`, so
+the comparison can't run — nothing to do with drift. Re-staged with the measured frames
+included (48 total), the band comparison runs and the picture flips:
+
+| scene (motion) | cam RMSE | metric scale | occ_iou | coverage | per_class | verdict |
+|---|---|---|---|---|---|---|
+| reference_metric — xyz (gentle) | 0.078 m | ~1.0 | 0.128 | 0.993 | 0.926 | passes |
+| reference_metric_desk — orbit | 0.278 m | ~1.0 | 0.0 | 0.897 | 0.735 | fails |
+| reference_metric_room — loop, **n=13** | 0.823 m | 0.283 | 0.0 | **0.019** | 0.622 | fails (under-sampled) |
+| reference_metric_room — loop, **n=48** | 0.457 m | ~0.9 | 0.009 | **0.578** | **0.897** | fails (depth-limited) |
+
+Going 13→48 keyframes lifts band **coverage 0.019 → 0.578 (30×)**, per_class 0.62 → 0.90,
+halves cam-RMSE — i.e. the candidate now genuinely overlaps the measured band. But
+`occ_iou` stays ~0 and `band_fsc` ~0.96: the residual failure is the **same depth-limited
+obstacle-base miss** documented for `reference_metric` in Phases 1–3, *not* a unique loop
+catastrophe. (The 48-with-measured set scores 0.457 m vs the clean-uniform 0.236 m because
+snapping in the measured frames created a few near-duplicate views; a min-spacing selector
+would recover most of the gap.)
+
+**Negative result — naive windowed stitching does NOT beat a single global pass.**
+`runs/_diag/stitch_poc.py`: 5 overlapping 8-frame windows, each stitched into world by a
+Sim(3) on its 4-frame overlap, gave **0.87 m** — *worse* than the single global pass over
+the same 24 frames (0.53 m). The windows each spanned a third of the loop (so internally
+drifted) and chaining Sim(3)s compounds error. A real fix would be a global pose-graph /
+bundle adjustment with a loop-closure edge — a genuine SLAM build — not a quick stitch.
+
+**Corrected conclusions:**
+1. **The fixed ~8–13 keyframe budget badly under-samples long trajectories.** The
+   single biggest, cheapest lever for the room loop was simply *more keyframes* (to the
+   ~48 optimum), recovering pose+coverage to desk level. The optimum is motion-dependent
+   (desk wants ~11, the room loop wants ~48 — ~2× density), so the principled fix is a
+   **motion/overlap-aware adaptive keyframe selector**, not a fixed count. (Next-step.)
+2. **Even adequately sampled, the room loop still fails the band gate** — for the known
+   depth-limited reason (`occ_iou`~0, `band_fsc`~0.96), the same ceiling as every scene.
+   So room stays an honest FAIL in the gate; the gate scene is left at the consistent
+   13-frame recipe (room fails either way — only the *diagnosed cause* changes).
+3. **Gate-design gap (unchanged, still open):** the *acceptance* gate keys on the map's
+   **internal** `free_space_contradiction_rate` (room=0.123, passes the 0.358 reject
+   threshold) — a self-consistent-but-globally-wrong recon can pass. The signals that
+   catch the failure (`camera_center_sim3_error`, `band3d_agreement.coverage`) need
+   measured GT, so they're reportage-only and absent in production. Frontier: a GT-free
+   internal consistency signal correlating with cam-RMSE so the honesty gate can reject
+   under-sampled / drifted reconstructions without GT. Tracked in [[sota-backbone-direction]].

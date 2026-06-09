@@ -40,7 +40,7 @@
         "measured_metric_evidence"
       ],
       "metadata": {
-        "recommended_source": "TUM RGB-D freiburg1_room \u2014 HARDEST gate scene: full room-LOOP trajectory. Empirically the feed-forward backbone's metric scale (~0.28x) AND pose (cam RMSE ~0.82m) both blow up here (loop closure unmodeled), so this scene fails the band comparison. Kept in the gate precisely to expose that the pipeline is NOT yet usable on full-room loops. Shares fr1 intrinsics.",
+        "recommended_source": "TUM RGB-D freiburg1_room \u2014 full room-LOOP gate scene (1362 frames). Fails the band gate (occ_iou~0) for the same depth-limited obstacle-base miss as every scene. NOTE: at the staged 13-keyframe recipe the scorecard looks catastrophic (cam RMSE 0.82m, scale 0.28, coverage 0.019) but that is keyframe UNDER-SAMPLING, not loop-closure: at ~48 keyframes the loop reconstructs near-metric (cam RMSE 0.24-0.46m, coverage 0.58, scale ~0.9), better-posed than desk. The fixed keyframe budget under-samples long trajectories; a motion-aware adaptive selector is the real fix. See docs/band_obstacle_recall_evidence.md Phase 5. Shares fr1 intrinsics.",
         "asset_kind": "local_path",
         "frame_glob": "rgb/*.png",
         "metric_evidence_required_later": true
