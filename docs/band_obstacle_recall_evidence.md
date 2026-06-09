@@ -293,3 +293,42 @@ depth accuracy. MapAnything raised the *ceiling* of honest map quality substanti
 honestly closing band_fsc needs a more accurate backbone. Next: the **AMB3R** oracle
 (7-Scenes 1.74 cm, non-commercial) to measure what recall is achievable and whether a
 commercial-clean backbone can reach it.
+
+## Phase 4 — generalization check on a 2nd measured scene: THE WIN DOES NOT GENERALIZE
+
+The MapAnything win above is on `reference_metric` = TUM **freiburg1_xyz**, a *gentle,
+low-rotation* handheld sweep. To test generalization, a **second measured indoor scene
+— TUM freiburg1_desk** (a harder trajectory orbiting a desk; shares fr1 intrinsics) was
+staged, run through M1/M2 (8 measured GT keyframes), and both backbones were measured
+against its measured GT under the landed honest policy. Reproduce: download
+`rgbd_dataset_freiburg1_desk.tgz`, flatten into `data/reference_metric_desk/` + copy the
+fr1 intrinsics sidecar, run `python -m atlas3r.{m1,m2} --manifest
+config/_desk_check_manifest.json`, run a backbone with `--asset-id reference_metric_desk`,
+then `runs/_diag/desk_eval.py`.
+
+| backbone (scene) | occ_iou | band_fsc | per_class | free_prec | camera Sim(3) RMSE |
+|---|---|---|---|---|---|
+| MapAnything — room (xyz) | **0.128** | 0.727 | 0.926 | 0.969 | **0.078 m** |
+| DA3 — desk | 0.054 | 0.937 | 0.736 | 0.762 | 0.253 m |
+| **MapAnything — desk** | **0.0** | **1.0** | 0.735 | 0.744 | 0.278 m |
+| MapAnything — desk (21 keyframes) | 0.026 | 0.969 | 0.730 | — | 0.331 m |
+
+**The +65% MapAnything win COLLAPSES on freiburg1_desk** — occ_iou 0.128 → 0.0, and
+MapAnything is actually *worse* than DA3 here. The decisive signal is **camera Sim(3)
+RMSE: 0.078 m on the gentle scene vs 0.25–0.33 m on the harder one** — i.e. the
+*candidate poses are ~3× worse* on realistic motion (TUM groundtruth is mocap-accurate,
+so the error is the backbone's, not the GT's). Denser keyframes (21 vs 11) did NOT fix
+it (RMSE got worse, 0.33 m) — so it is not a keyframe-density artifact; the monocular
+backbones genuinely fail to recover accurate geometry+pose under faster, higher-rotation
+camera motion. When the candidate trajectory is that misaligned, the band comparison
+maps measured obstacles onto the wrong candidate voxels and everything reads as missed.
+
+**Honest implications (the generalization check did its job):**
+1. The single-scene scorecard (`reference_metric` = xyz only) **over-states real-world
+   performance** — it is a gentle best case. The acceptance gate needs a harder scene.
+2. The MapAnything adoption wins the canonical gate but is **NOT a general win**; on
+   realistic motion (closer to the actual phone-video product use case) the pipeline —
+   *either* backbone — does not yet work. The next bottleneck is **pose accuracy under
+   real motion**, not just band-fusion or per-pixel depth.
+3. This is a more valuable result than another metric bump: it tells the truth about
+   where the product actually stands.
