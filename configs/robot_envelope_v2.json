@@ -1,0 +1,13 @@
+{
+  "_comment": "PRODUCTION RECIPE v2 envelope (pre-registered; see docs/band_obstacle_recall_evidence.md Phase 9). Identical to robot_envelope.json except voxel_size_m 0.05 -> 0.025. The 2.5 cm value is PHYSICALLY derived, never from scene results: the robot's collision-relevant thin-structure class is furniture legs (chair/table legs ~3 cm cross-section, the canonical small obstacle the collision band exists for); a voxel edge larger than the structure's cross-section makes the structure a sub-voxel minority that cannot robustly claim even one voxel, so voxel <= ~3 cm; 0.025 m is the clean halving of the prior 0.05 m grid satisfying that bound, and keeps margin_m representable as exactly 2 voxels. Lever conversions at 2.5 cm: support 0.15 m = 6 voxels; free_carve full-column unchanged; occupancy_support_min_count stays 3 ABSOLUTE (unverified evidence keeps the same count bar; only multi-view-VERIFIED evidence reaches confidence at verified_surface_min_count = 2 = ceil(3/2.2), the once-fixed tier). Selected via ATLAS3R_ROBOT_ENVELOPE_CONFIG for the single-shot; replaces robot_envelope.json only on a measured scorecard win per repo law.",
+  "collision_height_m": 0.2,
+  "margin_m": 0.05,
+  "voxel_size_m": 0.025,
+  "free_carve_margin_m": 0.1,
+  "occupancy_support_height_m": 0.15,
+  "occupancy_support_min_count": 3,
+  "occupancy_support_overrides_free": false,
+  "occupancy_close_voxels": 0,
+  "free_carve_full_column": true,
+  "verified_surface_min_count": 2
+}

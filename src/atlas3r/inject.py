@@ -263,6 +263,11 @@ def _rebuild_injected_packet(
     rays_k = np.asarray(rays_new, dtype=np.float64)[keep]
     depth_k = np.asarray(depth_new, dtype=np.float64)[keep]
     conf_k = np.clip(conf[keep], 0.0, 1.0)
+    # The verified flag describes the ORIGINAL pixel's multi-view provenance;
+    # the injected corruption is recorded separately in provenance/uncertainty.
+    verified_k = None
+    if packet.verified is not None:
+        verified_k = np.asarray(packet.verified, dtype=bool).reshape(-1)[keep]
 
     norms = np.linalg.norm(rays_k, axis=1)
     rays_unit = rays_k / np.maximum(norms[:, None], 1e-12)
@@ -291,6 +296,9 @@ def _rebuild_injected_packet(
             rolling_shutter_model=packet.rolling_shutter_model,
             depth_residual_field=packet.depth_residual_field,
             camera_confidence=packet.camera_confidence,
+            verified=(
+                verified_k.reshape((verified_k.shape[0], 1)) if verified_k is not None else None
+            ),
         )
     except ContractValidationError as exc:  # pragma: no cover - corruption kept contract-valid
         raise ValueError(

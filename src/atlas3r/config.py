@@ -66,6 +66,14 @@ DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT = 1
 DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE = False
 DEFAULT_OCCUPANCY_CLOSE_VOXELS = 0
+# Verified-evidence tier: hits whose depth passed multi-view geometric
+# verification qualify a voxel as a CONFIDENT truncation/support source at
+# this count -- confident := (occ >= occupancy_support_min_count) OR
+# (verified >= verified_surface_min_count). Fixed ONCE from the measured 2.2x
+# verification-accuracy ratio (docs/band_obstacle_recall_evidence.md Phase 8):
+# ceil(occupancy_support_min_count / 2.2) = ceil(3 / 2.2) = 2. Never tuned per
+# scene. Inert when packets carry no verified channel (counts stay zero).
+DEFAULT_VERIFIED_SURFACE_MIN_COUNT = 2
 
 DEFAULT_CONFIG_PATH = Path("configs/robot_envelope.json")
 # Optional env override pointing at an alternate config file. Lets a reversible
@@ -100,6 +108,7 @@ class RobotEnvelopeConfig:
     occupancy_support_min_count: int = DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT
     occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
     occupancy_close_voxels: int = DEFAULT_OCCUPANCY_CLOSE_VOXELS
+    verified_surface_min_count: int = DEFAULT_VERIFIED_SURFACE_MIN_COUNT
 
     def __post_init__(self) -> None:
         if not _positive(self.collision_height_m):
@@ -118,6 +127,8 @@ class RobotEnvelopeConfig:
             raise RobotEnvelopeConfigError("occupancy_support_overrides_free must be a bool")
         if not isinstance(self.occupancy_close_voxels, int) or isinstance(self.occupancy_close_voxels, bool) or self.occupancy_close_voxels < 0:
             raise RobotEnvelopeConfigError("occupancy_close_voxels must be a non-negative integer")
+        if not isinstance(self.verified_surface_min_count, int) or isinstance(self.verified_surface_min_count, bool) or self.verified_surface_min_count < 1:
+            raise RobotEnvelopeConfigError("verified_surface_min_count must be an integer >= 1")
 
     @property
     def band_height_m(self) -> float:
@@ -144,6 +155,7 @@ class RobotEnvelopeConfig:
             "occupancy_support_min_count": int(self.occupancy_support_min_count),
             "occupancy_support_overrides_free": bool(self.occupancy_support_overrides_free),
             "occupancy_close_voxels": int(self.occupancy_close_voxels),
+            "verified_surface_min_count": int(self.verified_surface_min_count),
         }
 
 
@@ -206,6 +218,9 @@ def load_robot_envelope(
                 data.get("occupancy_support_overrides_free", DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE)
             ),
             occupancy_close_voxels=int(data.get("occupancy_close_voxels", DEFAULT_OCCUPANCY_CLOSE_VOXELS)),
+            verified_surface_min_count=int(
+                data.get("verified_surface_min_count", DEFAULT_VERIFIED_SURFACE_MIN_COUNT)
+            ),
         )
     except (TypeError, ValueError) as exc:
         raise RobotEnvelopeConfigError(

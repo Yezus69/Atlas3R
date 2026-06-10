@@ -224,6 +224,15 @@ def _validate_all_probability(value: Any, field_name: str) -> None:
         _validate_probability(scalar, field_name)
 
 
+def _validate_all_boolean(value: Any, field_name: str) -> None:
+    for scalar in _iter_scalars(value):
+        if isinstance(scalar, bool):
+            continue
+        if isinstance(scalar, int) and scalar in (0, 1):
+            continue
+        raise ContractValidationError(f"{field_name} must contain only booleans")
+
+
 def _validate_rays_unit(rays_camera: Any, field_name: str, tolerance: float = 1e-5) -> None:
     rays = _to_plain(rays_camera)
     for row in rays:
@@ -444,6 +453,10 @@ class FrameRayPacket:
     rolling_shutter_model: Mapping[str, Any] | None = None
     depth_residual_field: Any | None = None
     camera_confidence: float | None = None
+    # True where the depth passed MULTI-VIEW GEOMETRIC VERIFICATION (e.g. the
+    # COLMAP PatchMatch geometric check). Absent (None) on purely learned
+    # packets -- never defaulted to True. Spec: ARCHITECTURE.md FrameRayPacket.
+    verified: Any | None = None
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.asset_id, "asset_id")
@@ -485,6 +498,9 @@ class FrameRayPacket:
             _validate_mapping(self.rolling_shutter_model, "rolling_shutter_model")
         if self.camera_confidence is not None:
             _validate_probability(self.camera_confidence, "camera_confidence")
+        if self.verified is not None:
+            _validate_shape(self.verified, (height, width), "verified")
+            _validate_all_boolean(self.verified, "verified")
 
 
 @dataclass(frozen=True)

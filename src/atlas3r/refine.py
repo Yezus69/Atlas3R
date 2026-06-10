@@ -851,6 +851,9 @@ def _rebuild_packet(
     rays_k = rays[keep]
     d_k = d_new[keep]
     conf_k = np.clip(conf[keep], 0.0, 1.0)
+    verified_k = None
+    if packet.verified is not None:
+        verified_k = np.asarray(packet.verified, dtype=bool).reshape((-1,))[keep]
 
     # Re-normalize rays after the float round-trip (1e-5 tolerance).
     norms = np.linalg.norm(rays_k, axis=1)
@@ -896,6 +899,9 @@ def _rebuild_packet(
             rolling_shutter_model=packet.rolling_shutter_model,
             depth_residual_field=packet.depth_residual_field,
             camera_confidence=packet.camera_confidence,
+            verified=(
+                verified_k.reshape((verified_k.shape[0], 1)) if verified_k is not None else None
+            ),
         )
     except ContractValidationError as exc:
         return {"reason": f"frame_ray_packet_contract_rejected: {exc}"}

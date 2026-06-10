@@ -154,6 +154,7 @@ def load_geometry_artifacts(
 
     depth_dir = asset_dir / "depth"
     confidence_dir = asset_dir / "confidence"
+    verified_dir = asset_dir / "verified"
 
     packets: list[FrameRayPacket] = []
     packet_summaries: list[dict[str, Any]] = []
@@ -257,6 +258,18 @@ def load_geometry_artifacts(
         depth_packet = radial_depth.reshape((radial_depth.shape[0], 1))
         confidence_packet = conf_sampled.reshape((conf_sampled.shape[0], 1))
 
+        # Optional multi-view verification mask (ARCHITECTURE.md FrameRayPacket
+        # ``verified``): sampled at the SAME pixels as depth so the per-ray flag
+        # stays aligned. Absent file -> None (purely learned packet, never
+        # defaulted to True).
+        verified_packet = None
+        verified_sampled_count = 0
+        verified_mask = _load_verified(verified_dir / f"{frame_id}.npy", valid_mask, np)
+        if verified_mask is not None:
+            verified_sampled = verified_mask[sampled_yx[:, 0], sampled_yx[:, 1]]
+            verified_packet = verified_sampled.reshape((verified_sampled.shape[0], 1))
+            verified_sampled_count = int(np.count_nonzero(verified_sampled))
+
         source = f"external_artifact:{backbone_name}"
         try:
             packet = FrameRayPacket(
@@ -288,6 +301,7 @@ def load_geometry_artifacts(
                 source_depth_convention=convention,
                 intrinsics=camera.to_metadata(),
                 camera_confidence=_clamp01(float(manifest.get("camera_confidence", 0.5))),
+                verified=verified_packet,
             )
         except ContractValidationError as exc:
             skipped.append({"frame_id": frame_id, "reason": "frame_ray_packet_contract_rejected", "error": str(exc)})
@@ -303,6 +317,8 @@ def load_geometry_artifacts(
                 "source_depth_pixel_count": int(valid_mask.size),
                 "outlier_high_cut_m": high_cut,
                 "source_depth_convention": convention.value,
+                "verified_channel_present": verified_packet is not None,
+                "verified_sampled_ray_count": verified_sampled_count,
             }
         )
 
@@ -632,6 +648,23 @@ def _load_confidence(path: Path, valid_mask: Any, np: Any) -> Any | None:
     if conf.shape != valid_mask.shape:
         return None
     return conf
+
+
+def _load_verified(path: Path, valid_mask: Any, np: Any) -> Any | None:
+    """Per-pixel multi-view verification mask, or None when absent/unusable.
+
+    Shape-mismatched or unreadable masks are dropped (None), never coerced --
+    a verification claim that cannot be aligned pixel-for-pixel is no claim.
+    """
+    if not path.exists():
+        return None
+    try:
+        mask = np.load(path)
+    except (OSError, ValueError):
+        return None
+    if mask.shape != valid_mask.shape:
+        return None
+    return mask.astype(bool)
 
 
 def _sample_valid_pixels(valid_mask: Any, max_rays_per_packet: int, np: Any) -> Any:

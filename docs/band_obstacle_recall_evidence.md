@@ -637,3 +637,121 @@ and confidence floors at 2.5 cm with verified-trust weighting, all
 fusion-side, no fabrication. The depth arc verdict: pose solved, scale
 solved, perception now substantially solved by a commercially clean verified
 source; classification is the last segment of the last mile.
+
+(Amendment, same day, pre-GT for the tier: the "verified-trust weighting"
+phrasing above was superseded by the red-teamed SPEC — continuous
+confidence-WEIGHTED counting was analyzed and REJECTED (cannot flip any class;
+silently breaks canonical min-count levers). The landed mechanism tiers the
+GATES instead: confident := (occ >= min_count) OR (verified >= k). See
+ARCHITECTURE.md FrameRayPacket `verified` and Phase 9 below.)
+
+### Phase 9 — verified-evidence tier + PRODUCTION RECIPE v2 (pre-registration)
+
+This section is committed BEFORE the v2 single-shot teacher+evaluate runs;
+the commit timestamp is the proof. The verified-evidence tier itself is
+implemented exactly per the amended ARCHITECTURE.md FrameRayPacket spec
+(commit a57a60c) and verified GT-free:
+
+- **Plumbing:** `verified/<frame_id>.npy` masks (written by
+  `tools/run_mvs_depth_backend.py`) -> `FrameRayPacket.verified` optional
+  channel (contracts.py; shape-validated, boolean-validated, never defaulted
+  True) -> sampled at the same pixels as depth (geometry_adapter) -> threaded
+  + row-filtered through refine/inject packet rebuilds -> per-voxel
+  `verified_surface_count` in fusion (mapping.py, static hits only).
+- **The tier (gates, not counts):** truncation/support confident-source
+  predicates become `(occ >= occupancy_support_min_count) OR
+  (verified_surface_count >= verified_surface_min_count)`. k =
+  verified_surface_min_count = **2** = ceil(3 / 2.2), fixed ONCE from the
+  measured 2.2x verification-accuracy ratio (Phase 8), never per scene.
+  Raw counts preserved; support fill stays UNKNOWN-only; free never
+  overridden; every tier decision reported (`verified_tier` block +
+  per-lever `sources_confident_via_verified_only`).
+- **fsc-metric-only exclusion:** the contested-voxel test excludes voxels
+  with verified surface evidence; BOTH rates reported
+  (`free_space_contradiction_rate` and
+  `..._without_verified_exclusion`).
+- **GT-free verification of the mechanics** (runs/_diag/verified_tier_smoke.py,
+  synthetic geometry, no GT): no-channel == all-False-channel byte-identical
+  fields; 2 unverified hits fire nothing while 2 verified hits fire the
+  unknown-only fill; raw `VoxelMapState` counts identical with/without tier;
+  tier-added occupied voxels never overlap observed-free; refine threads +
+  preserves None; contract rejects shape/boolean violations. ALL PASSED.
+- **Canonical no-change proof (MEASURED):** full teacher+evaluate rerun on the
+  canonical artifacts (no verified channel anywhere) with the tier code
+  landed — `runs/eval/scorecard_diff.json` numeric and categorical deltas
+  EMPTY on all four tracks; a field-level deep diff of the full scorecard
+  payload shows every metric, status, and category byte-identical, with
+  exactly ONE non-meta change: the `free_space_contradiction_basis`
+  self-description string now names the (vacuous-without-channel) verified
+  exclusion. The tier is provably inert on canonical inputs.
+
+**Recipe v2 (frozen components, all pre-existing):**
+1. Overlap-aware selector keyframes (Phase 6 tool; params pre-registered,
+   never GT-tuned) — the keyframe sets already staged in
+   `runs/_diag/keyframe_selection_*.json`.
+2. COLMAP BA-grade poses via `tools/run_colmap_pose_backend.py`
+   (freeze_poses in refine; candidate-only Umeyama scale).
+3. MVS verified depth + learned fill via `tools/run_mvs_depth_backend.py`
+   (gauge-consistent: each scene's dense workspace is built from the SAME
+   COLMAP model that produced its hybrid poses — xyz/desk from their scene
+   models, room from the 375-image `room_dense` model).
+4. Verified-evidence tier, k=2 (above).
+5. **Voxel size 0.025 m — physically derived** (configs/robot_envelope_v2.json):
+   the collision-relevant thin-structure class is furniture legs (~3 cm
+   cross-section — the canonical small obstacle the collision band exists
+   for); a voxel edge larger than the structure cross-section makes the
+   structure a sub-voxel minority that cannot robustly claim even one voxel;
+   0.025 m is the clean halving of the 0.05 m grid satisfying voxel <= ~3 cm
+   and keeps margin_m = exactly 2 voxels. Honesty note: 2.5 cm first appeared
+   in the Phase 8 pilot as a scale correction; this pre-registration fixes it
+   from physics so the value cannot float with scene results. The committed
+   envelope is untouched; the single-shot selects the v2 envelope via
+   `ATLAS3R_ROBOT_ENVELOPE_CONFIG`.
+
+**Single-shot mechanics:** composite artifacts for reference_metric (exists),
+reference_metric_desk + reference_metric_room (dense MVS running now);
+phone_room rides as a COPY of its canonical artifacts (no verified channel,
+no COLMAP — its production treatment is the separate Phase 10 path), so its
+v2-run gate verdict is reportage at the new voxel size only. Then ONE run:
+`ATLAS3R_ROBOT_ENVELOPE_CONFIG=configs/robot_envelope_v2.json python -m
+atlas3r.teacher --artifacts-dir external/_composite_artifacts --output-dir
+runs/teacher_v2` followed by `python -m atlas3r.evaluate --no-run
+--teacher-dir runs/teacher_v2 --eval-dir runs/eval_v2`, compared against the
+canonical scorecard.
+
+**Pre-registered structural risks (stated before the run):**
+- The band3d tolerance box at 2.5 cm becomes rad=4 -> 9x9x9 = 729 voxels
+  (BAND_MATCH_TOLERANCE_M = 0.10 unchanged — the metric law is not touched);
+  free-neighbour vote dominance gets structurally worse; the tier's support
+  fill is the counter-mechanism. If occ_iou still reads ~0 while
+  recall(any,10cm) is high, the verdict will say exactly that.
+- MAX_VOXELS_PER_AXIS=256 silently doubles the effective voxel where an axis
+  exceeds 6.4 m (likely the room loop); `effective_voxel_size_m` per report
+  is the truth, not the config value.
+- The measured GT side fuses at the same 2.5 cm (the envelope is global), so
+  per-voxel hit counts halve on BOTH sides; per_class_agreement may move for
+  measured-side reasons. Reported as observed.
+
+**Pre-registered EXPECTATIONS (expectations, not targets; the run happens
+ONCE and the scorecard reports whatever it reports):**
+- xyz: camera RMSE ~0.005 m (frozen BA poses); recall(any,10cm) up
+  substantially vs canonical (pilot precedent 0.78 out-of-spine);
+  occupied_static_iou up vs canonical but possibly still low in absolute
+  terms (vote mechanics); acceptance uncertain (map fsc at 2.5 cm unknown).
+- desk: camera RMSE ~0.011 m; gate expected to still reject on its
+  consistency defect UNLESS the verified depth genuinely resolves the
+  free-vs-surface contradiction — an acceptance flip must trace to a fixed
+  defect, never a weakened gate, and will be audited as such.
+- room: effective voxel may snap back toward 5 cm (extent cap); evidence
+  mass expected up vs canonical (Phase 8 precedent 0.000 -> 0.229); still
+  expected REJECTED (Stage 0 threshold 0.30).
+- phone_room: artifacts unchanged; expected rejected for the same Stage 0 +
+  Stage 1 reasons (inbounds ~0.035, floor inlier ~0.13).
+
+**Adoption rule (unchanged repo law):** adopt only on a band3d scorecard win
+— occupied_static_iou up AND per_class_agreement held, holding free-space
+precision and band_fsc; categories preserved; any acceptance flip audited
+for honesty. Mixed is reported as mixed and NOT adopted; the canonical
+artifacts and committed envelope stay; no parameter may be revised in
+response to these GT numbers (revision requires fresh GT-free rationale and
+re-registration).

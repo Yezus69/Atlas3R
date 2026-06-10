@@ -486,19 +486,24 @@ camera_confidence
 verified[H,W]            bool; True where the depth passed MULTI-VIEW GEOMETRIC
                          VERIFICATION (e.g. COLMAP PatchMatch geometric check).
                          Absent on purely learned packets -- never defaulted to
-                         True. SPEC (implementation pending, measured basis in
-                         docs/band_obstacle_recall_evidence.md Phase 8): fusion
-                         carries a verified_surface_count channel; the
-                         contested-voxel test (free traversals outnumber surface
-                         hits) EXCLUDES voxels with verified surface evidence,
-                         because multi-view verification is the resolution of
-                         exactly that contradiction (note: this part moves the
-                         fsc METRIC only, not classification). The LOAD-BEARING
-                         tier (red-team verified, 2026-06-10): verified hits
-                         qualify a voxel as a CONFIDENT source for the existing
-                         truncation/support levers -- confident :=
-                         (occupied_count >= min_count) OR
-                         (verified_surface_count >= k), k in {1,2} fixed once
+                         True. IMPLEMENTED (measured basis in
+                         docs/band_obstacle_recall_evidence.md Phase 8): the
+                         adapter samples verified/<frame_id>.npy at the same
+                         pixels as depth; refine/inject thread + row-filter the
+                         per-ray flags; fusion carries a verified_surface_count
+                         channel; the contested-voxel test (free traversals
+                         outnumber surface hits) EXCLUDES voxels with verified
+                         surface evidence, because multi-view verification is
+                         the resolution of exactly that contradiction (note:
+                         this part moves the fsc METRIC only, not
+                         classification; both rates are reported). The
+                         LOAD-BEARING tier (red-team verified, 2026-06-10):
+                         verified hits qualify a voxel as a CONFIDENT source
+                         for the existing truncation/support levers --
+                         confident := (occupied_count >= min_count) OR
+                         (verified_surface_count >= k), k =
+                         verified_surface_min_count = 2 =
+                         ceil(occupancy_support_min_count / 2.2), fixed once
                          from the measured 2.2x verification-accuracy ratio,
                          never per scene. A verified thin-structure hit then
                          triggers the existing UNKNOWN-ONLY gravity-support

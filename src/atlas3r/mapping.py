@@ -145,9 +145,10 @@ def fuse_static_map(
         else "reconstruction_world"
     )
 
-    surfaces, origins, ray_dirs, classes, dynamic_filter_report = _collect_world_points(
+    surfaces, origins, ray_dirs, classes, verified, dynamic_filter_report = _collect_world_points(
         packets, np, static_dynamic_states
     )
+    verified_channel_present = any(p.verified is not None for p in packets)
     if surfaces.shape[0] == 0:
         return None, None, None, None, {
             **base_report,
@@ -204,6 +205,7 @@ def fuse_static_map(
     occupied_static_count = np.zeros(dims, dtype=np.float64)
     movable_count = np.zeros(dims, dtype=np.float64)
     dynamic_count = np.zeros(dims, dtype=np.float64)
+    verified_surface_count = np.zeros(dims, dtype=np.float64)
     uncertainty = np.zeros(dims, dtype=np.float64)
 
     rel_unc = float(scale_posterior.relative_scale_uncertainty)
@@ -211,11 +213,12 @@ def fuse_static_map(
     # Fuse each sample by class: free along static/movable rays, occupied at the
     # surface, dynamic in its own channel (never static, never free-carving).
     _fuse_rays(
-        surfaces, origins, ray_dirs, classes,
+        surfaces, origins, ray_dirs, classes, verified,
         grid_min, effective_voxel, dims,
         tsdf_value, tsdf_weight, log_odds,
         free_count, surface_count,
         occupied_static_count, movable_count, dynamic_count,
+        verified_surface_count,
         uncertainty, rel_unc, np,
     )
 
@@ -263,6 +266,7 @@ def fuse_static_map(
     # full-volume class field used only for the band agreement comparison.
     voxel3d, band_volumes, comparison_field, band_report = _build_voxel_occupancy_3d(
         occupied_static_count, movable_count, dynamic_count, free_count,
+        verified_surface_count,
         grid_min, effective_voxel, dims,
         floor_info, scale_posterior, coordinate_frame, envelope, np,
         apply_fusion_policy=apply_fusion_policy,
@@ -292,13 +296,27 @@ def fuse_static_map(
     # ratio survives densification). Existence-based counting ((free>0)&(surf>0))
     # saturates as views densify -- eventually some ray traverses every surface
     # voxel -- and the old order-dependent skip undercounted nondeterministically.
-    conflict_voxels = int(np.count_nonzero((free_count > surface_count) & (surface_count > 0.0)))
+    # Verified-evidence exclusion (fsc METRIC only, never classification): a
+    # voxel whose surface evidence passed multi-view geometric verification is
+    # not contested -- verification is the resolution of exactly the
+    # free-vs-surface contradiction this metric measures. No verified channel
+    # -> verified_surface_count is all zero -> the exclusion is a no-op and the
+    # canonical rate is reproduced exactly. Both rates are reported.
+    contested = (free_count > surface_count) & (surface_count > 0.0)
+    conflict_voxels_raw = int(np.count_nonzero(contested))
+    conflict_excluded_by_verification = int(
+        np.count_nonzero(contested & (verified_surface_count > 0.0))
+    )
+    conflict_voxels = conflict_voxels_raw - conflict_excluded_by_verification
     occupied_evidence_voxels = occupied_voxels
     if occupied_evidence_voxels > 0:
         contradiction_rate = conflict_voxels / occupied_evidence_voxels
+        contradiction_rate_raw = conflict_voxels_raw / occupied_evidence_voxels
     else:
         contradiction_rate = 0.0
+        contradiction_rate_raw = 0.0
     contradiction_rate = float(max(0.0, min(1.0, contradiction_rate)))
+    contradiction_rate_raw = float(max(0.0, min(1.0, contradiction_rate_raw)))
 
     report = {
         **base_report,
@@ -318,7 +336,16 @@ def fuse_static_map(
         "unknown_fraction": unknown_voxels / total_voxels if total_voxels else 0.0,
         "free_occupied_conflict_voxel_count": conflict_voxels,
         "free_space_contradiction_rate": contradiction_rate,
-        "free_space_contradiction_basis": "free_traversals_outnumber_surface_hits_over_occupied_voxels",
+        "free_space_contradiction_basis": "free_traversals_outnumber_surface_hits_over_occupied_voxels_excluding_verified_surfaces",
+        "verified_tier": {
+            "channel_present": bool(verified_channel_present),
+            "verified_sample_count": int(np.count_nonzero(verified)),
+            "sample_count": int(verified.shape[0]),
+            "verified_surface_voxel_count": int(np.count_nonzero(verified_surface_count > 0.0)),
+            "verified_surface_min_count": int(envelope.verified_surface_min_count),
+            "free_space_contradiction_rate_without_verified_exclusion": contradiction_rate_raw,
+            "conflict_voxels_excluded_by_verification": conflict_excluded_by_verification,
+        },
         "surface_point_count": int(surfaces.shape[0]),
         "floor": floor_info["report"],
         # R_up consumed by export/visual_proof to bring the camera trajectory +
@@ -374,9 +401,12 @@ def _collect_world_points(
 ) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
     """Lift packet samples to world and tag each by surface class.
 
-    Returns ``(surfaces, origins, ray_dirs, classes, dynamic_filter_report)``.
-    ``classes`` is an int code per sample (occupied_static / movable_static /
-    dynamic), aligned 1:1 with ``surfaces``. Dynamic samples are KEPT (so the
+    Returns ``(surfaces, origins, ray_dirs, classes, verified,
+    dynamic_filter_report)``. ``classes`` is an int code per sample
+    (occupied_static / movable_static / dynamic), aligned 1:1 with
+    ``surfaces``; ``verified`` is a bool per sample (multi-view geometric
+    verification provenance, False when the packet carries no channel --
+    absence of verification is never promoted). Dynamic samples are KEPT (so the
     dynamic channel can be painted) but tagged so the fuser never adds them to
     static occupancy. The filter report records, honestly, how many frames had a
     usable (shape-matched) state, how many pixels were tagged dynamic/movable, and
@@ -391,6 +421,7 @@ def _collect_world_points(
     origin_list = []
     dir_list = []
     class_list = []
+    verified_list = []
     frames_filtered = 0
     frames_state_shape_mismatch = 0
     dynamic_pixels_excluded = 0
@@ -436,6 +467,10 @@ def _collect_world_points(
         origin_list.append(np.repeat(t[None, :], X_world.shape[0], axis=0))
         dir_list.append(dirs_world)
         class_list.append(classes)
+        if packet.verified is not None:
+            verified_list.append(np.asarray(packet.verified).reshape((-1,)).astype(bool))
+        else:
+            verified_list.append(np.zeros(n, dtype=bool))
 
     dynamic_filter_report = {
         "applied": frames_filtered > 0,
@@ -456,12 +491,14 @@ def _collect_world_points(
     if not surf_list:
         empty = np.zeros((0, 3), dtype=np.float64)
         empty_cls = np.zeros((0,), dtype=np.int64)
-        return empty, empty, empty, empty_cls, dynamic_filter_report
+        empty_ver = np.zeros((0,), dtype=bool)
+        return empty, empty, empty, empty_cls, empty_ver, dynamic_filter_report
     return (
         np.concatenate(surf_list, axis=0),
         np.concatenate(origin_list, axis=0),
         np.concatenate(dir_list, axis=0),
         np.concatenate(class_list, axis=0),
+        np.concatenate(verified_list, axis=0),
         dynamic_filter_report,
     )
 
@@ -485,11 +522,12 @@ def _movable_probability(state: StaticDynamicState, n: int, np: Any) -> Any:
 
 
 def _fuse_rays(
-    surfaces, origins, ray_dirs, classes,
+    surfaces, origins, ray_dirs, classes, verified,
     grid_min, voxel, dims,
     tsdf_value, tsdf_weight, log_odds,
     free_count, surface_count,
     occupied_static_count, movable_count, dynamic_count,
+    verified_surface_count,
     uncertainty, rel_unc, np,
 ):
     nx, ny, nz = dims
@@ -522,6 +560,11 @@ def _fuse_rays(
             dynamic_count[ix, iy, iz] += 1.0
         else:
             surface_count[ix, iy, iz] += 1.0
+            if bool(verified[k]):
+                # Raw provenance count: how many fused static hits in this voxel
+                # passed multi-view geometric verification. Counts only; the
+                # tier acts on GATES downstream, never on these raw counts.
+                verified_surface_count[ix, iy, iz] += 1.0
             tsdf_value[ix, iy, iz] = 0.0
             tsdf_weight[ix, iy, iz] += 1.0
             log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
@@ -576,7 +619,7 @@ def _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):
 
 
 def _apply_band_free_truncation(
-    free_count, occupied_static_count, movable_count,
+    free_count, occupied_static_count, movable_count, verified_surface_count,
     floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
 ):
     """Directional (downward) free-carve truncation inside the collision band.
@@ -596,9 +639,17 @@ def _apply_band_free_truncation(
     free_count = np.asarray(free_count, dtype=np.float64).copy()
     # Only a CONFIDENT obstacle retracts the free below it, so single-hit depth noise
     # high in the band cannot turn the observed-free floor beneath it into unknown.
-    surf = (np.asarray(occupied_static_count) >= float(min_count)) | (
+    # Verified-evidence tier (ARCHITECTURE.md FrameRayPacket): hits that passed
+    # multi-view geometric verification reach confidence at a LOWER count
+    # (verified_surface_min_count, fixed once from the measured 2.2x
+    # verification-accuracy ratio) -- the gate is tiered, the counts are not.
+    k_verified = int(envelope.verified_surface_min_count)
+    count_confident = (np.asarray(occupied_static_count) >= float(min_count)) | (
         np.asarray(movable_count) >= float(min_count)
     )
+    verified_confident = np.asarray(verified_surface_count) >= float(k_verified)
+    surf = count_confident | verified_confident
+    sources_verified_only = int(np.count_nonzero(verified_confident & ~count_confident))
 
     band_idx = _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np)
     free_before = int(np.count_nonzero(free_count > 0.0))
@@ -637,11 +688,14 @@ def _apply_band_free_truncation(
         "free_voxels_before": free_before,
         "free_voxels_after": free_after,
         "free_voxels_retracted_to_unknown": free_before - free_after,
+        "verified_surface_min_count": k_verified,
+        "sources_confident_via_verified_only": sources_verified_only,
     }
 
 
 def _apply_occupancy_completion(
     occupied_static_count, movable_count, dynamic_count, free_count,
+    verified_surface_count,
     floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
 ):
     """Complete the candidate occupancy estimate inside the collision band.
@@ -706,7 +760,18 @@ def _apply_occupancy_completion(
             eligible = (occ <= 0.0) & (movable <= 0.0) & (dynamic <= 0.0)
         else:
             eligible = (occ <= 0.0) & (movable <= 0.0) & (dynamic <= 0.0) & (np.asarray(free_count) <= 0.0)
-        conf_src = occ >= float(min_count)  # confident obstacle voxels
+        # Confident obstacle voxels. Verified-evidence tier: confident :=
+        # (occ >= min_count) OR (verified >= verified_surface_min_count) -- a
+        # multi-view-verified thin-structure hit qualifies as a support source
+        # at the lower, once-fixed count. The fill itself stays UNKNOWN-only
+        # (free is never overridden) and the raw counts are untouched.
+        k_verified = int(envelope.verified_surface_min_count)
+        count_confident = occ >= float(min_count)
+        verified_confident = np.asarray(verified_surface_count) >= float(k_verified)
+        conf_src = count_confident | verified_confident
+        support_sources_verified_only = int(
+            np.count_nonzero(verified_confident & ~count_confident)
+        )
         em = np.moveaxis(eligible, floor_axis, 0)       # views; index up = away from floor
         cm = np.moveaxis(conf_src, floor_axis, 0)
         supported = np.zeros_like(em, dtype=bool)
@@ -724,6 +789,8 @@ def _apply_occupancy_completion(
         report["support_voxels"] = int(support_voxels)
         report["support_overrides_free"] = overrides_free
         report["support_filled_voxels"] = int(np.count_nonzero(fill))
+        report["verified_surface_min_count"] = k_verified
+        report["support_sources_confident_via_verified_only"] = support_sources_verified_only
 
     # --- in-plane morphological closing of the band occupancy ---
     if close_v > 0:
@@ -908,6 +975,7 @@ def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
 
 def _build_voxel_occupancy_3d(
     occupied_static_count, movable_count, dynamic_count, free_count,
+    verified_surface_count,
     grid_min, voxel, dims,
     floor_info, scale_posterior, coordinate_frame, envelope, np,
     apply_fusion_policy: bool = False,
@@ -946,7 +1014,7 @@ def _build_voxel_occupancy_3d(
     if apply_fusion_policy and envelope.policy_active:
         if float(envelope.free_carve_margin_m) > 0.0:
             free_count, free_carve_truncation_report = _apply_band_free_truncation(
-                free_count, occupied_static_count, movable_count,
+                free_count, occupied_static_count, movable_count, verified_surface_count,
                 floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
             )
         if (
@@ -956,6 +1024,7 @@ def _build_voxel_occupancy_3d(
             occupied_static_count, movable_count, occupancy_completion_report = (
                 _apply_occupancy_completion(
                     occupied_static_count, movable_count, dynamic_count, free_count,
+                    verified_surface_count,
                     floor_axis, band_min, band_max, grid_min, voxel, dims, envelope, np,
                 )
             )
