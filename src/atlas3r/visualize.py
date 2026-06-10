@@ -668,8 +668,8 @@ def _write_missing_index(
         "",
         "## No occupancy grid to render",
         "",
-        f"The fused occupancy grid was not produced, so **no visual proof PNGs "
-        f"were written** (nothing is fabricated).",
+        "The fused occupancy grid was not produced, so **no visual proof PNGs "
+        "were written** (nothing is fabricated).",
         "",
         f"- Missing artifact: `{missing}`",
         f"- Map/occupancy stage status: `{map_status}`",

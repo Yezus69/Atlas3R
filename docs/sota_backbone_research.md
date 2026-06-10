@@ -93,11 +93,11 @@ re-tuned in `configs/robot_envelope.json`, and the full `python -m atlas3r.teach
 byte-identical on rerun** (determinism holds — the teacher reads cached artifacts) and
 all honest categories preserved (`measured_metric` via the measured baseline,
 candidate `metric_pseudo_label`, `phone_room` `metric_pseudo_label`). **Remaining
-caveats:** the Apache checkpoint's isolated indoor accuracy is unpublished and the band
-agreement is verified on ONE measured scene (`reference_metric`) — a second public
-indoor scene is still a `missing_asset` generalization check; and band_fsc held flat
-(not down), so the obstacle-base miss is the next axis (AMB3R oracle + a base-aware
-completion lever).
+caveats:** the Apache checkpoint's isolated indoor accuracy is unpublished. The
+second-scene generalization check was RUN (freiburg1_desk, band evidence Phase 4):
+the win does NOT generalize — poses degrade ~3x under realistic motion. band_fsc
+held flat (not down), so the obstacle-base miss remains the other axis (AMB3R
+oracle pending license terms).
 
 ## 1. TL;DR — what to try FIRST, in order
 

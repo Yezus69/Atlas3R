@@ -185,7 +185,6 @@ def main(argv=None) -> int:
     parser.add_argument("--model", default="facebook/map-anything-apache")
     parser.add_argument("--out-dir", default="external/teacher_artifacts")
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--process-res", type=int, default=518, help="resize long side to this before inference")
     parser.add_argument("--memory-efficient", action="store_true", help="MapAnything memory_efficient_inference (slower, less VRAM)")
     parser.add_argument("--poses-w2c", action="store_true", help="installed build emits world-to-camera poses (invert to c2w)")
     parser.add_argument("--depth-is-radial", action="store_true", help="installed build emits along-ray depth (skip optical_z label)")
@@ -243,9 +242,6 @@ def main(argv=None) -> int:
         if depth is None or pose is None or intr is None:
             skipped.append({"frame_id": int(frame_id), "reason": "missing_depth_pose_or_intrinsics_from_model"})
             continue
-        if args.depth_is_radial:
-            # caller asserts along-ray depth; we still label it via depth_meta below
-            pass
         finite_pos = np.isfinite(depth) & (depth > 0.0)
         if int(np.count_nonzero(finite_pos)) == 0:
             skipped.append({"frame_id": int(frame_id), "reason": "no_finite_positive_depth"})
@@ -272,8 +268,12 @@ def main(argv=None) -> int:
             "fx": float(intr[0, 0]), "fy": float(intr[1, 1]),
             "cx": float(intr[0, 2]), "cy": float(intr[1, 2]),
         }
-        fxs.append(intr[0, 0]); fys.append(intr[1, 1]); cxs.append(intr[0, 2]); cys.append(intr[1, 2])
-        hs.append(H); ws.append(W)
+        fxs.append(intr[0, 0])
+        fys.append(intr[1, 1])
+        cxs.append(intr[0, 2])
+        cys.append(intr[1, 2])
+        hs.append(H)
+        ws.append(W)
         dv = depth[finite_pos]
         depth_stats.append({"frame_id": int(frame_id), "min": float(dv.min()),
                             "median": float(np.median(dv)), "max": float(dv.max())})

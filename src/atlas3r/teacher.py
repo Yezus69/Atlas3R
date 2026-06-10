@@ -1057,7 +1057,7 @@ def _band3d_agreement(
     aligned = (s * (R @ src.T)).T + t[None, :]
     rmse_cam = float(np.sqrt(((aligned - dst) ** 2).sum(axis=1).mean()))
 
-    FREE, OCC, MOV, DYN, UNK = 0, 1, 2, 3, 4  # noqa: N806 (class label order)
+    FREE, OCC, MOV, DYN = 0, 1, 2, 3  # noqa: N806 (class label order)
 
     # Measured band eval region (the robot-relevant ground truth slab).
     m_cls = np.asarray(measured_field["class"])
@@ -1111,10 +1111,10 @@ def _band3d_agreement(
     for k in range(n):
         if not bool(in_b[k]):
             continue
-        i, j, l = int(ci[k, 0]), int(ci[k, 1]), int(ci[k, 2])
+        i, j, kz = int(ci[k, 0]), int(ci[k, 1]), int(ci[k, 2])
         i0, i1 = max(i - rad, 0), min(i + rad + 1, cd0)
         j0, j1 = max(j - rad, 0), min(j + rad + 1, cd1)
-        l0, l1 = max(l - rad, 0), min(l + rad + 1, cd2)
+        l0, l1 = max(kz - rad, 0), min(kz + rad + 1, cd2)
         sub_t = cf_touched[i0:i1, j0:j1, l0:l1]
         if not sub_t.any():
             continue
@@ -1125,7 +1125,7 @@ def _band3d_agreement(
         counts = np.bincount(sub_c, minlength=5)
         cand_at[k] = int(np.argmax(counts))
         matched[k] = True
-        if bool(cf_touched[i, j, l]):
+        if bool(cf_touched[i, j, kz]):
             exact += 1
     co = matched
     n_co = int(np.count_nonzero(co))

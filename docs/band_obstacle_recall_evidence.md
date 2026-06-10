@@ -132,20 +132,9 @@ rerun; with the policy OFF the teacher reproduces the committed baseline exactly
 - **phone_room (no measured GT):** the policy applies, band still builds,
   `final_category` stays `metric_pseudo_label`, blockers unchanged — no regression
   on the floor-unreliable track.
-- **Cross-scene check — MISSING ASSET (not fabricated):** a truly independent second
-  indoor scene is not present. To run it:
-  ```
-  # fetch a second TUM RGB-D sequence (e.g. freiburg1_desk)
-  curl -L -o data/freiburg1_desk.tgz https://cvg.cit.tum.de/rgbd/dataset/freiburg1/rgbd_dataset_freiburg1_desk.tgz
-  # register + inspect (M1), build measured packets (M2)
-  python -m atlas3r.m1 && python -m atlas3r.m2
-  # run the DA3 backbone for its keyframes (GPU env), then re-run teacher + evaluate
-  python tools/run_da3_backbone.py --asset-id freiburg1_desk
-  python -m atlas3r.evaluate
-  ```
-  status: `missing_asset:second_independent_indoor_scene` — the win is confirmed on
-  `reference_metric` (full + independent subset) only; cross-scene confirmation is
-  pending this asset.
+- **Cross-scene check — COMPLETED (superseded):** the second scene (freiburg1_desk)
+  was fetched, registered, and made a canonical gate scene; see Phase 4 below for the
+  measured result (the win does NOT generalize to realistic motion).
 
 ## Adversarial cross-check (4 independent reviewers, each tried to REFUTE)
 

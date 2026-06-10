@@ -175,13 +175,10 @@ def _provenance(
     # the ScalePosterior's evidence sources (measured=False). Detect it there so
     # the provenance label is not down-graded just because the packet provenance
     # does not echo the manifest flag.
-    has_measured_evidence = False
     has_learned_prior = False
     if scale_posterior is not None:
         for ev in getattr(scale_posterior, "scale_sources", ()) or ():
             etype = getattr(getattr(ev, "evidence_type", None), "value", None)
-            if getattr(ev, "measured", False):
-                has_measured_evidence = True
             if etype == "learned_metric_depth_prior":
                 has_learned_prior = True
 

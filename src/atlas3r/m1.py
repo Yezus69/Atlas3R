@@ -15,7 +15,6 @@ from urllib.parse import urlparse
 from .contracts import (
     ContractValidationError,
     KeyframeProposal,
-    TrackType,
     VideoAsset,
     VideoAssetStatus,
     VideoInspectionReport,
@@ -514,7 +513,6 @@ def _propose_keyframes(
     sharp_norm = _normalized_scores({sample.frame_id: sample.sharpness for sample in candidates})
     motion_norm = _normalized_scores({sample.frame_id: motion_by_frame.get(sample.frame_id, 0.0) for sample in candidates})
     selected: dict[int, tuple[FrameSample, float, str]] = {}
-    last_frame_id = max(report.frame_count - 1, 1)
 
     for segment_index in range(desired):
         start = int(round(segment_index * report.frame_count / desired))

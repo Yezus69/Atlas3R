@@ -37,6 +37,8 @@ reference_metric_desk   = freiburg1_desk  (HARDER desk-orbit; exposes pose degra
                                            under realistic motion -- see the band
                                            evidence Phase 4: the xyz-only gate
                                            over-states real-world performance)
+reference_metric_room   = freiburg1_room  (HARDEST full room loop; exposes keyframe
+                                           under-sampling and drift)
 ```
 
 Acceptable alternatives/additions include ARKitScenes, ScanNet++, or another public
@@ -72,7 +74,7 @@ The cohesive teacher stack is:
 canonical video asset
 -> video inspection and keyframe proposal
 -> metric reference adapter when measured evidence exists
--> ViPE/DA3 geometry artifact adapter
+-> geometry backbone artifact adapter (MapAnything default, DA3 fallback)
 -> canonical ray/depth/pose packets
 -> visibility and residual graph
 -> optional SAM2 mask grouping
@@ -96,14 +98,6 @@ camera rays: unit vectors in camera coordinates
 internal depth: radial range along the unit ray
 scale: global scale variable with posterior uncertainty
 state separation: unknown/free/occupied_static/movable_static/dynamic/predicted/measured stay distinct
-```
-
-Pixel lifting:
-
-```text
-X_camera(u,v) = radial_depth_m(u,v) * ray_camera(u,v)
-X_world(u,v)  = R_world_camera * X_camera(u,v) + t_world_camera
-X_metric      = scale * X_world when geometry is soft-metric
 ```
 
 Depth alone is not the map. Pose alone is not the map. The core atom is:
@@ -353,12 +347,7 @@ Metric acceptance requires:
 - acceptable held-out view consistency;
 - acceptable dynamic leakage score.
 
-The final status must be one of:
-
-- `measured_metric`;
-- `metric_pseudo_label`;
-- `non_metric_pseudo_label`;
-- `rejected`.
+The final status must be one of the four Truth Boundary categories.
 
 A good-looking reconstruction without accepted scale evidence is not metric GT.
 
@@ -930,13 +919,9 @@ Rules:
 Default external backbone:
 
 ```text
-ViPE with DA3 pipeline
-```
-
-Fallback:
-
-```text
-MegaSaM only when explicitly selected for hard dynamic or weak-parallax videos
+MapAnything (facebook/map-anything-apache) via tools/run_mapanything_backbone.py
+fallback: Depth Anything 3 via tools/run_da3_backbone.py
+(adoption evidence: docs/sota_backbone_research.md)
 ```
 
 Purpose: normalize external geometry proposals into Atlas3R packets.
@@ -1041,35 +1026,8 @@ A nice-looking mesh is not scale evidence.
 
 Purpose: refine geometry while preventing dynamic objects from contaminating the static map.
 
-Variables:
-
-```text
-T_i                 refined camera pose
-d_i                 refined depth through constrained correction
-r_i or camera model  refined rays/camera state where allowed
-s                   global scale
-m_i                 static probability
-```
-
-Depth correction form:
-
-```text
-d_i(u) = exp(alpha_i * log(d_i_initial(u)) + beta_i + delta_i(u))
-```
-
-Residual terms:
-
-```text
-multi-view depth consistency
-image/feature consistency where reliable
-backbone prior
-free-space consistency
-scale evidence
-room/floor/wall regularization where supported
-smoothness of corrections
-```
-
-Use robust losses. Do not let one bad model prediction, moving person, reflection, or blur patch dominate the solution.
+Variables, depth-correction form, and residual families are defined ONCE in the
+Mathematical Objective section above; Module 8 implements them. Use robust losses. Do not let one bad model prediction, moving person, reflection, or blur patch dominate the solution.
 
 Static/dynamic rule:
 
@@ -1202,14 +1160,7 @@ corruption has no authority on that scene and its clean reading is reported as
 in scene-relative units (fraction of trajectory span) because absolute scale is
 gauge-free without an anchor.
 
-Final status:
-
-```text
-measured_metric
-metric_pseudo_label
-non_metric_pseudo_label
-rejected
-```
+Final status: one of the four Truth Boundary categories.
 
 For `phone_room`, metric acceptance requires strong evidence. Otherwise the correct result is non-metric pseudo-label or rejection.
 
@@ -1234,9 +1185,7 @@ Do not add broad unit-test scaffolding or synthetic scene pipelines to create th
 
 ## External Technical References
 
-- ViPE: https://github.com/nv-tlabs/vipe
 - Depth Anything 3: https://github.com/bytedance-seed/depth-anything-3
-- MegaSaM: https://arxiv.org/html/2412.04463v1
 - SAM2: https://github.com/facebookresearch/sam2
 - Grounded-SAM2: https://github.com/IDEA-Research/Grounded-SAM-2
 - TUM RGB-D benchmark: https://cvg.cit.tum.de/data/datasets/rgbd-dataset

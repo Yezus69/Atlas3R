@@ -1,10 +1,10 @@
 """M3 geometry adapter.
 
-Normalizes external monocular-backbone artifacts (ViPE/DA3/MegaSaM-style or the
-local ``tools/run_geometry_backbone.py`` output) into canonical
-``FrameRayPacket`` objects, and rebuilds in-memory measured ``FrameRayPacket``
-objects from the M2 sidecar/report so the teacher can consume both tracks
-through one shape.
+Normalizes external monocular-backbone artifacts (the local
+``tools/run_mapanything_backbone.py`` / ``tools/run_da3_backbone.py`` output)
+into canonical ``FrameRayPacket`` objects, and rebuilds in-memory measured
+``FrameRayPacket`` objects from the M2 sidecar/report so the teacher can
+consume both tracks through one shape.
 
 Hard rules honored here:
 - No heavy ML deps at import time. ``numpy`` is imported lazily inside functions.
@@ -70,7 +70,7 @@ def load_geometry_artifacts(
     }
 
     next_command = (
-        f"python tools/run_geometry_backbone.py --asset-id {asset_id} "
+        f"python tools/run_mapanything_backbone.py --asset-id {asset_id} "
         f"--artifacts-dir {artifacts_dir}"
     )
 

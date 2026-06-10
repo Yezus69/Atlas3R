@@ -50,20 +50,6 @@ class StaticDynamicLabel(str, Enum):
     UNKNOWN = "unknown"
 
 
-class OccupancyChannel(str, Enum):
-    FREE = "free"
-    OCCUPIED_STATIC = "occupied_static"
-    MOVABLE_STATIC = "movable_static"
-    DYNAMIC = "dynamic"
-    UNKNOWN = "unknown"
-    PREDICTED = "predicted"
-    MEASURED = "measured"
-
-
-class BackboneAvailability(str, Enum):
-    AVAILABLE = "available"
-    UNAVAILABLE = "unavailable"
-
 
 class TrackType(str, Enum):
     REFERENCE_METRIC = "reference_metric"
@@ -98,18 +84,6 @@ class CameraModel(Protocol):
 
     def project(self, X_camera: object) -> object: ...
 
-
-@runtime_checkable
-class VideoGeometryBackbone(Protocol):
-    """Boundary for external geometry engines such as ViPE/DA3 or MegaSaM."""
-
-    backend_name: str
-
-    def predict(self, video_or_keyframes: object) -> "GeometryBackbonePrediction": ...
-
-
-class ExternalBackboneUnavailableError(RuntimeError):
-    """Raised when an external model boundary is called without dependencies."""
 
 
 def _as_enum(value: Any, enum_type: type[Enum], field_name: str) -> Enum:
@@ -454,104 +428,6 @@ class KeyframeProposal:
 
 
 @dataclass(frozen=True)
-class VideoInput:
-    source_uri: str
-    frame_count: int
-    fps: float
-    width_px: int
-    height_px: int
-    timestamp_s: Sequence[float]
-    metadata: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        _validate_non_empty_string(self.source_uri, "source_uri")
-        _validate_positive_int(self.frame_count, "frame_count")
-        _validate_positive_number(self.fps, "fps")
-        _validate_positive_int(self.width_px, "width_px")
-        _validate_positive_int(self.height_px, "height_px")
-        timestamps = _validate_sequence(self.timestamp_s, "timestamp_s")
-        if len(timestamps) != self.frame_count:
-            raise ContractValidationError("timestamp_s length must match frame_count")
-        previous = None
-        for timestamp in timestamps:
-            _validate_non_negative_number(timestamp, "timestamp_s")
-            if previous is not None and timestamp <= previous:
-                raise ContractValidationError("timestamp_s must be strictly increasing")
-            previous = timestamp
-        _validate_mapping(self.metadata, "metadata")
-
-
-@dataclass(frozen=True)
-class ReconstructabilityReport:
-    accepted_for_reconstruction: bool
-    rejection_reasons: Sequence[str]
-    parallax_score: float
-    blur_score: float
-    dynamic_foreground_ratio: float
-    zoom_or_stabilization_score: float
-    static_structure_score: float
-    confidence: float
-
-    def __post_init__(self) -> None:
-        _validate_bool(self.accepted_for_reconstruction, "accepted_for_reconstruction")
-        reasons = _validate_sequence(self.rejection_reasons, "rejection_reasons")
-        for reason in reasons:
-            _validate_non_empty_string(reason, "rejection_reasons")
-        if not self.accepted_for_reconstruction and not reasons:
-            raise ContractValidationError("rejected videos must carry rejection reasons")
-        for field_name in (
-            "parallax_score",
-            "blur_score",
-            "dynamic_foreground_ratio",
-            "zoom_or_stabilization_score",
-            "static_structure_score",
-            "confidence",
-        ):
-            _validate_probability(getattr(self, field_name), field_name)
-
-
-@dataclass(frozen=True)
-class KeyframeSet:
-    selected_frame_ids: Sequence[int]
-    selection_reasons: Sequence[str]
-    baseline_scores: Sequence[float]
-    overlap_scores: Sequence[float]
-    sharpness_scores: Sequence[float]
-    dynamic_ratio_scores: Sequence[float]
-    timestamps_s: Sequence[float]
-
-    def __post_init__(self) -> None:
-        frame_ids = _validate_frame_ids(self.selected_frame_ids, "selected_frame_ids")
-        count = len(frame_ids)
-        fields = {
-            "selection_reasons": self.selection_reasons,
-            "baseline_scores": self.baseline_scores,
-            "overlap_scores": self.overlap_scores,
-            "sharpness_scores": self.sharpness_scores,
-            "dynamic_ratio_scores": self.dynamic_ratio_scores,
-            "timestamps_s": self.timestamps_s,
-        }
-        for field_name, value in fields.items():
-            sequence = _validate_sequence(value, field_name)
-            if len(sequence) != count:
-                raise ContractValidationError(
-                    f"{field_name} length must match selected_frame_ids"
-                )
-        for field_name in (
-            "baseline_scores",
-            "overlap_scores",
-            "sharpness_scores",
-            "dynamic_ratio_scores",
-        ):
-            for score in getattr(self, field_name):
-                _validate_probability(score, field_name)
-        for reason in self.selection_reasons:
-            _validate_non_empty_string(reason, "selection_reasons")
-        for timestamp in self.timestamps_s:
-            _validate_non_negative_number(timestamp, "timestamps_s")
-
-
-@dataclass(frozen=True)
 class FrameRayPacket:
     asset_id: str
     frame_id: int
@@ -609,77 +485,6 @@ class FrameRayPacket:
             _validate_mapping(self.rolling_shutter_model, "rolling_shutter_model")
         if self.camera_confidence is not None:
             _validate_probability(self.camera_confidence, "camera_confidence")
-
-
-@dataclass(frozen=True)
-class ExternalDependencyStatus:
-    backend_name: str
-    availability: BackboneAvailability
-    dependency_paths: Sequence[str] = field(default_factory=tuple)
-    artifact_paths: Sequence[str] = field(default_factory=tuple)
-    missing_dependency_paths: Sequence[str] = field(default_factory=tuple)
-    missing_artifact_paths: Sequence[str] = field(default_factory=tuple)
-    message: str = ""
-
-    def __post_init__(self) -> None:
-        _validate_non_empty_string(self.backend_name, "backend_name")
-        availability = _as_enum(self.availability, BackboneAvailability, "availability")
-        object.__setattr__(self, "availability", availability)
-        for field_name in (
-            "dependency_paths",
-            "artifact_paths",
-            "missing_dependency_paths",
-            "missing_artifact_paths",
-        ):
-            values = _validate_sequence(getattr(self, field_name), field_name)
-            for value in values:
-                _validate_non_empty_string(value, field_name)
-        if availability is BackboneAvailability.UNAVAILABLE and not (
-            self.missing_dependency_paths or self.missing_artifact_paths or self.message
-        ):
-            raise ContractValidationError(
-                "unavailable external backbones must explain missing dependencies or artifacts"
-            )
-
-
-@dataclass(frozen=True)
-class GeometryBackbonePrediction:
-    frame_ray_packets: Sequence[FrameRayPacket]
-    camera_confidence: float
-    depth_confidence: float
-    dependency_provenance: ExternalDependencyStatus
-
-    def __post_init__(self) -> None:
-        _validate_sequence(self.frame_ray_packets, "frame_ray_packets", non_empty=True)
-        _validate_probability(self.camera_confidence, "camera_confidence")
-        _validate_probability(self.depth_confidence, "depth_confidence")
-        if not isinstance(self.dependency_provenance, ExternalDependencyStatus):
-            raise ContractValidationError(
-                "dependency_provenance must be an ExternalDependencyStatus"
-            )
-
-
-@dataclass(frozen=True)
-class UnavailableVideoGeometryBackbone:
-    backend_name: str
-    dependency_status: ExternalDependencyStatus
-
-    def __post_init__(self) -> None:
-        _validate_non_empty_string(self.backend_name, "backend_name")
-        if not isinstance(self.dependency_status, ExternalDependencyStatus):
-            raise ContractValidationError(
-                "dependency_status must be an ExternalDependencyStatus"
-            )
-        if self.dependency_status.availability is not BackboneAvailability.UNAVAILABLE:
-            raise ContractValidationError(
-                "UnavailableVideoGeometryBackbone requires unavailable dependency_status"
-            )
-
-    def predict(self, video_or_keyframes: object) -> GeometryBackbonePrediction:
-        del video_or_keyframes
-        raise ExternalBackboneUnavailableError(
-            f"{self.backend_name} is unavailable: {self.dependency_status.message}"
-        )
 
 
 @dataclass(frozen=True)
@@ -911,43 +716,6 @@ class ScalePosterior:
 
 
 @dataclass(frozen=True)
-class OptimizedSceneState:
-    frame_ray_packets: Sequence[FrameRayPacket]
-    scale_posterior: ScalePosterior
-    static_dynamic_state: Sequence[StaticDynamicState]
-    visibility_graph: VisibilityGraph
-    optimizer_trace: Mapping[str, Any]
-    validation_inputs: Mapping[str, Any]
-
-    def __post_init__(self) -> None:
-        packets = _validate_sequence(self.frame_ray_packets, "frame_ray_packets", non_empty=True)
-        for packet in packets:
-            if not isinstance(packet, FrameRayPacket):
-                raise ContractValidationError(
-                    "frame_ray_packets must contain FrameRayPacket objects"
-                )
-        if not isinstance(self.scale_posterior, ScalePosterior):
-            raise ContractValidationError("scale_posterior must be a ScalePosterior")
-        states = _validate_sequence(
-            self.static_dynamic_state, "static_dynamic_state", non_empty=True
-        )
-        packet_frame_ids = {packet.frame_id for packet in packets}
-        for state in states:
-            if not isinstance(state, StaticDynamicState):
-                raise ContractValidationError(
-                    "static_dynamic_state must contain StaticDynamicState objects"
-                )
-            if state.frame_id not in packet_frame_ids:
-                raise ContractValidationError(
-                    "static_dynamic_state frame_id must match a FrameRayPacket"
-                )
-        if not isinstance(self.visibility_graph, VisibilityGraph):
-            raise ContractValidationError("visibility_graph must be a VisibilityGraph")
-        _validate_mapping(self.optimizer_trace, "optimizer_trace")
-        _validate_mapping(self.validation_inputs, "validation_inputs")
-
-
-@dataclass(frozen=True)
 class VoxelMapState:
     voxel_size_m: float
     coordinate_frame: str
@@ -985,43 +753,6 @@ class VoxelMapState:
         for field_name in ("free_space_count", "surface_count", "dynamic_count"):
             _validate_all_non_negative(getattr(self, field_name), field_name)
         _validate_all_non_negative(self.uncertainty, "uncertainty")
-
-
-@dataclass(frozen=True)
-class MeshChunkMetadata:
-    chunk_id: str
-    source_frame_ids: Sequence[int]
-    observed_coverage_estimate: float
-    voxel_size_m: float
-    coordinate_frame: str
-    metric_scale_source: str
-    mean_uncertainty_m: float
-    p50_uncertainty_m: float
-    p95_uncertainty_m: float
-    observed_only: bool
-    predicted_completion: bool
-
-    def __post_init__(self) -> None:
-        _validate_non_empty_string(self.chunk_id, "chunk_id")
-        _validate_frame_ids(self.source_frame_ids, "source_frame_ids")
-        _validate_probability(
-            self.observed_coverage_estimate, "observed_coverage_estimate"
-        )
-        _validate_positive_number(self.voxel_size_m, "voxel_size_m")
-        _validate_non_empty_string(self.coordinate_frame, "coordinate_frame")
-        _validate_non_empty_string(self.metric_scale_source, "metric_scale_source")
-        for field_name in (
-            "mean_uncertainty_m",
-            "p50_uncertainty_m",
-            "p95_uncertainty_m",
-        ):
-            _validate_non_negative_number(getattr(self, field_name), field_name)
-        _validate_bool(self.observed_only, "observed_only")
-        _validate_bool(self.predicted_completion, "predicted_completion")
-        if self.observed_only and self.predicted_completion:
-            raise ContractValidationError(
-                "observed_only and predicted_completion must remain distinct"
-            )
 
 
 @dataclass(frozen=True)

@@ -715,7 +715,8 @@ def _apply_occupancy_completion(
             center = [1, 1, 1]
             for a in plane_axes:
                 for d in (-1, 1):
-                    idx = list(center); idx[a] += d
+                    idx = list(center)
+                    idx[a] += d
                     struct[tuple(idx)] = True
             struct[1, 1, 1] = True
             closed = ndimage.binary_closing(occ_mask, structure=struct, iterations=close_v)
@@ -1195,7 +1196,6 @@ def _height_extents(touched_3d, floor_axis, grid_min, voxel, dims, np):
     # Default: a flat valid extent (min==max) where nothing is touched.
     plane_axes = [a for a in range(3) if a != floor_axis]
     a0, a1 = plane_axes
-    plane_dims = (dims[a0], dims[a1])
 
     # Build coordinate of each voxel index along the floor axis (world).
     nf = dims[floor_axis]
