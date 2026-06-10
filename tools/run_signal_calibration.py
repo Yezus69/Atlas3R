@@ -44,6 +44,7 @@ from atlas3r.validation import (  # noqa: E402
     _gravity_alignment_stage,
     _held_out_render_error,
 )
+from atlas3r.plane_ledger import ledger_for_packets  # noqa: E402
 from atlas3r.visibility import build_visibility_graph  # noqa: E402
 from atlas3r import teacher as T  # noqa: E402
 
@@ -104,6 +105,8 @@ def eval_config(asset: str, adir: str, label: str, backbone: str, envelope, meas
         envelope=envelope, apply_fusion_policy=True,
     )
     held_out, held_out_note = _held_out_render_error(refined, None)
+    ledger = ledger_for_packets(refined)
+    ledger_signals = ledger.get("signals", {}) if ledger.get("status") == "audited" else {}
 
     stage0 = _evidence_mass_stage(vis_report, True)
     stage1 = _gravity_alignment_stage(map_report, True)
@@ -138,7 +141,15 @@ def eval_config(asset: str, adir: str, label: str, backbone: str, envelope, meas
             "floor_inlier_ratio": floor.get("inlier_ratio"),
             "floor_up_alignment_applied": floor.get("up_alignment_applied"),
             "scale_std": getattr(post, "scale_std", None),
+            **{k: ledger_signals.get(k) for k in (
+                "ledger_offset_drift_p90_span_fraction",
+                "ledger_offset_rate_p90_span_fraction_per_frame",
+                "ledger_normal_drift_p90_deg",
+                "ledger_scale_ramp_p90_abs_log_ratio",
+                "ledger_noise_floor_p90_span_fraction",
+            )},
         },
+        "ledger_status": ledger.get("status"),
         "gate_cascade": {
             "stage0_would_reject": stage0["would_reject"],
             "stage1_would_reject": stage1["would_reject"],
@@ -206,6 +217,10 @@ def analyze(rows):
     coverage_proxy = [r["signals"]["median_reprojection_inbounds_ratio"] or 0.0 for r in gt_rows]
 
     signal_keys = [
+        "ledger_offset_drift_p90_span_fraction",
+        "ledger_offset_rate_p90_span_fraction_per_frame",
+        "ledger_normal_drift_p90_deg",
+        "ledger_scale_ramp_p90_abs_log_ratio",
         "prerefine_p90_log_depth_residual",
         "prerefine_median_log_depth_residual",
         "postrefine_p90_log_depth_residual",

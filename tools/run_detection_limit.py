@@ -72,8 +72,18 @@ SUITE_RECIPE = {
 }
 
 
+LEDGER_SIGNALS = (
+    "ledger_offset_drift_p90_span_fraction",
+    "ledger_offset_rate_p90_span_fraction_per_frame",
+    "ledger_normal_drift_p90_deg",
+    "ledger_scale_ramp_p90_abs_log_ratio",
+)
+
+
 def score_suite(packets, soft_evidence, envelope) -> dict:
     """The GT-free signal suite + current-gate verdict for one packet set."""
+    from atlas3r.plane_ledger import ledger_for_packets
+
     _, vis_report = build_visibility_graph(packets)
     post, _ = estimate_scale_posterior(packets, soft_evidence)
     _, _, _, cand_field, map_report = fuse_static_map(
@@ -94,6 +104,9 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
     if held_out > MAX_HELD_OUT_ERROR_FOR_ACCEPT:
         reject_reasons.append(f"held_out_render_error_too_high:{held_out:.3f}")
 
+    ledger = ledger_for_packets(packets)
+    ledger_signals = ledger.get("signals", {}) if ledger.get("status") == "audited" else {}
+
     floor = map_report.get("floor", {}) or {}
     return {
         "signals": {
@@ -105,7 +118,10 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
             "unknown_fraction": map_report.get("unknown_fraction"),
             "floor_inlier_ratio": floor.get("inlier_ratio"),
             "floor_up_alignment_applied": floor.get("up_alignment_applied"),
+            **{k: ledger_signals.get(k) for k in LEDGER_SIGNALS},
         },
+        "ledger_status": ledger.get("status"),
+        "ledger_direction_authority": ledger.get("direction_authority"),
         "internal_signal_reject": bool(
             stage0["would_reject"]
             or fsc > MAX_CONTRADICTION_RATE_FOR_ACCEPT
@@ -227,6 +243,46 @@ def compute_detection_limits(runs, clean, seeds) -> dict:
                       else "detected")
             ),
         }
+    return out
+
+
+def compute_ungated_responses(runs, clean, signal_names) -> dict:
+    """Response curves for signals WITHOUT gate thresholds (e.g. the plane
+    ledger). Language discipline: an ungated signal RESPONDS (median moves
+    beyond the across-seed half-range AND beyond the clean baseline); only a
+    gated signal can DETECT. These curves are the pre-registration source for
+    any future threshold -- labeled GT configs stay pure test."""
+    import numpy as np
+
+    clean_signals = clean.get("signals", {})
+    out: dict[str, Any] = {}
+    families = sorted({r["family"] for r in runs})
+    for sig in signal_names:
+        base_val = clean_signals.get(sig)
+        per_family: dict[str, Any] = {"clean_baseline": base_val}
+        for family in families:
+            fam_rows = [r for r in runs if r["family"] == family]
+            curve = {}
+            for m in sorted({r["magnitude"] for r in fam_rows}):
+                vals = [r["suite"]["signals"].get(sig)
+                        for r in fam_rows if r["magnitude"] == m]
+                vals = [v for v in vals if isinstance(v, (int, float))]
+                if not vals:
+                    curve[str(m)] = {"status": "no_values"}
+                    continue
+                med = float(np.median(vals))
+                halfrange = (max(vals) - min(vals)) / 2.0
+                responds = (
+                    isinstance(base_val, (int, float))
+                    and abs(med - base_val) > max(halfrange, 1e-9)
+                )
+                curve[str(m)] = {
+                    "median": round(med, 4),
+                    "across_seed_halfrange": round(halfrange, 4),
+                    "responds_beyond_seed_noise": bool(responds),
+                }
+            per_family[family] = curve
+        out[sig] = per_family
     return out
 
 
@@ -364,6 +420,44 @@ def main() -> int:
                 )
 
     detection_limits = compute_detection_limits(runs, clean, seeds)
+    ledger_response = compute_ungated_responses(runs, clean, LEDGER_SIGNALS)
+
+    # Direction-resolved authority probe (red-team requirement): a plane track
+    # is blind to translation drift perpendicular to its normal, so random-axis
+    # injections would fabricate direction-averaged authority. Probe the
+    # ledger's own measured DOMINANT and BLIND axes deterministically.
+    direction_probe = None
+    auth = clean.get("ledger_direction_authority")
+    if isinstance(auth, dict):
+        probe_rows = []
+        for axis_name in ("translation_dominant_axis_world", "translation_blind_axis_world"):
+            axis = auth.get(axis_name)
+            if not axis:
+                continue
+            for magnitude in (0.10, 0.20):
+                corrupted, record = inject_corruption(
+                    refined, "pose_drift_translation", magnitude, 0, direction=axis,
+                )
+                suite = score_suite(corrupted, soft, envelope)
+                suite.pop("_cand_field", None)
+                probe_rows.append({
+                    "axis": axis_name,
+                    "magnitude": magnitude,
+                    "direction": record["direction_axis"],
+                    "ledger_signals": {k: suite["signals"].get(k) for k in LEDGER_SIGNALS},
+                    "gate_would_reject": suite["gate_would_reject"],
+                    "true_sim3_rmse_m": true_rmse(corrupted),
+                })
+                print(f"[detection_limit] direction probe {axis_name}@{magnitude}: "
+                      f"{probe_rows[-1]['ledger_signals']}", flush=True)
+        direction_probe = {
+            "note": (
+                "deterministic drift along the ledger's measured dominant vs "
+                "blind axis; authority along the blind axis is NOT claimed -- "
+                "this records exactly where the ledger can and cannot see"
+            ),
+            "rows": probe_rows,
+        }
 
     tilt_control = tilt_negative_control(runs, clean, seeds)
 
@@ -413,6 +507,8 @@ def main() -> int:
             "true_sim3_rmse_m": clean_rmse,
         },
         "detection_limits": detection_limits,
+        "ledger_response_curves": ledger_response,
+        "ledger_direction_probe": direction_probe,
         "negative_control_tilt": tilt_control,
         "method_validation_vs_gt": method_validation,
         "suite_recipe": SUITE_RECIPE,

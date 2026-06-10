@@ -114,12 +114,18 @@ def inject_corruption(
     family: str,
     magnitude: float,
     seed: int,
+    direction: Sequence[float] | None = None,
 ) -> tuple[list[FrameRayPacket], dict[str, Any]]:
     """Return ``(corrupted_packets, injection_record)``.
 
     Deterministic for a given (asset, family, magnitude, seed). Raises on an
     unknown family rather than silently no-op'ing (a no-op injection would
     fabricate a detection-limit data point).
+
+    ``direction`` (optional, pose families only) overrides the seeded random
+    axis with an explicit world-frame direction -- used for direction-resolved
+    authority calibration (e.g. probing a verifier's measured blind axis). The
+    override is recorded in the injection record; it is never silent.
     """
     if family not in CORRUPTION_FAMILIES:
         raise ValueError(f"unknown corruption family: {family!r}")
@@ -145,14 +151,22 @@ def inject_corruption(
         "negative_control": family == "global_tilt_control",
     }
 
-    # Family-level randomized direction parameters (seeded, recorded).
+    # Family-level direction parameters (seeded random, or explicit override
+    # for direction-resolved authority calibration; always recorded).
     if family in ("pose_drift_translation", "pose_drift_rotation", "global_tilt_control"):
-        axis = rng.normal(size=3)
-        if family == "global_tilt_control":
-            # Tilt about a WORLD-horizontal axis (perpendicular to world z).
-            axis[2] = 0.0
-            if np.linalg.norm(axis) < 1e-9:
-                axis = np.array([1.0, 0.0, 0.0])
+        if direction is not None:
+            axis = np.asarray(direction, dtype=np.float64)
+            if axis.shape != (3,) or np.linalg.norm(axis) < 1e-9:
+                raise ValueError("direction override must be a non-zero 3-vector")
+            record["direction_source"] = "override"
+        else:
+            axis = rng.normal(size=3)
+            if family == "global_tilt_control":
+                # Tilt about a WORLD-horizontal axis (perpendicular to world z).
+                axis[2] = 0.0
+                if np.linalg.norm(axis) < 1e-9:
+                    axis = np.array([1.0, 0.0, 0.0])
+            record["direction_source"] = "seeded"
         axis = axis / np.linalg.norm(axis)
         record["direction_axis"] = [float(v) for v in axis]
     if family == "regional_depth_bias":
