@@ -406,3 +406,45 @@ bundle adjustment with a loop-closure edge — a genuine SLAM build — not a qu
    measured GT, so they're reportage-only and absent in production. Frontier: a GT-free
    internal consistency signal correlating with cam-RMSE so the honesty gate can reject
    under-sampled / drifted reconstructions without GT. Tracked in [[sota-backbone-direction]].
+
+## Phase 6 — Overlap-aware keyframe selector: PRE-REGISTRATION (before any GT run)
+
+This section is committed BEFORE the backbone runs on the selected frames; the
+commit timestamp is the proof. The selector (`atlas3r.keyframes`) is a GT-free
+policy: accumulate median sparse-LK optical flow over the raw frames and emit a
+keyframe each time the accumulated displacement reaches a fixed budget.
+
+Frozen parameters and their provenance (NOT tunable against GT, ever):
+- `FLOW_BUDGET_WIDTHS = 0.25` — displacement ~ lost overlap; 0.25 keeps ~75%
+  shared field between adjacent keyframes, the middle of standard multi-view
+  practice (60–80%). Chosen from overlap geometry alone.
+- `MIN_GAP_FRAMES = 3`, first/last always included.
+- `MAX_KEYFRAMES = 48` — provenance: the PRE-EXISTING Phase-5 measured finding
+  that MapAnything degrades beyond ~48 views. A settled model property applied
+  scene-blind; not a parameter of this experiment. (Transparency note: the
+  uncapped policy wanted ~114 frames for room; the cap binds only there.)
+
+GT-free selection outcome (deterministic): xyz 39, desk 40, room 48 (capped),
+phone_room 43 keyframes.
+
+Pre-registered GT-FREE predictions (checkable without ground truth):
+1. room's Stage-0 evidence mass rises materially (inbounds ratio 0.000/0.074 at
+   13/48-even kf -> expected > 0.30 with overlap-matched selection).
+2. plane-ledger qualifying tracks lengthen and multiply on all scenes
+   (the ledger's translation/rotation gauges may begin to gain leverage).
+3. phone_room's evidence mass rises (inbounds 0.035 -> higher).
+
+Pre-registered GT EXPECTATIONS (stated as expectations, not targets; the run
+happens ONCE and the scorecard reports whatever it reports):
+- room camera Sim(3) RMSE should land near the Phase-5 measured band for dense
+  sampling (~0.24–0.46 m vs 0.823 m at 13 kf).
+- desk is the honest risk: Phase 4 measured denser-as-WORSE on desk
+  (0.331 m @ 21 kf vs 0.278 m @ 11 kf); the selector chose 40. A desk
+  regression is a plausible outcome and will be reported as such.
+- xyz at 39 kf vs 14 kf baseline: unknown direction.
+
+Adoption rule (unchanged repo law): the selector's artifacts replace the
+canonical ones only on a band3d scorecard win; a mixed result is reported as
+mixed and the decision documented. No parameter of the selector may be revised
+in response to these GT results — revisions require new GT-free rationale and
+a fresh pre-registration.
