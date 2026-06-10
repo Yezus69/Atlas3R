@@ -51,12 +51,116 @@ def read_colmap_depth(path: Path) -> np.ndarray:
     return arr.reshape(h, w, c).squeeze().astype(np.float64)
 
 
+# COLMAP camera models supported by the remap. Params order:
+# SIMPLE_PINHOLE f,cx,cy; PINHOLE fx,fy,cx,cy; SIMPLE_RADIAL f,cx,cy,k.
+_SUPPORTED_CAMERA_MODELS = {"SIMPLE_PINHOLE", "PINHOLE", "SIMPLE_RADIAL"}
+
+
+def read_colmap_cameras(model_dir: Path) -> dict[int, tuple[str, int, int, list[float]]]:
+    """camera_id -> (model_name, width, height, params) from cameras.txt.
+
+    TXT only, on purpose: the 4.x BIN layout is rig-versioned and a wrong
+    hand parse would silently mis-calibrate the remap. Missing TXT -> the
+    exact conversion command, never a guess."""
+    txt = model_dir / "cameras.txt"
+    if not txt.exists():
+        raise FileNotFoundError(
+            f"{txt} missing -- convert first: external/colmap/bin/colmap.exe "
+            f"model_converter --input_path {model_dir} --output_path {model_dir} "
+            f"--output_type TXT"
+        )
+    cams: dict[int, tuple[str, int, int, list[float]]] = {}
+    for row in txt.read_text().splitlines():
+        if not row.strip() or row.startswith("#"):
+            continue
+        cam_id, model, w, h, *params = row.split()
+        if model not in _SUPPORTED_CAMERA_MODELS:
+            raise ValueError(f"unsupported camera model {model} in {txt}")
+        cams[int(cam_id)] = (model, int(w), int(h), [float(p) for p in params])
+    return cams
+
+
+def read_image_camera_ids(model_dir: Path) -> dict[str, int]:
+    """image name -> camera_id from images.txt (same TXT-only rule)."""
+    txt = model_dir / "images.txt"
+    if not txt.exists():
+        raise FileNotFoundError(
+            f"{txt} missing -- convert first: external/colmap/bin/colmap.exe "
+            f"model_converter --input_path {model_dir} --output_path {model_dir} "
+            f"--output_type TXT"
+        )
+    out: dict[str, int] = {}
+    for line in txt.read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        v = s.split()
+        if len(v) >= 10 and v[0].isdigit():  # image row, not the points2D row
+            out[v[9]] = int(v[8])
+    return out
+
+
+def distortion_aware_sample_map(
+    learned_hw: tuple[int, int],
+    orig_cam: tuple[str, int, int, list[float]],
+    undist_cam: tuple[str, int, int, list[float]],
+    depth_hw: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(row_idx, col_idx, valid) mapping each LEARNED-grid pixel to the MVS
+    depth-map grid through the lens model: learned pixel -> original distorted
+    pixel -> normalized ray (iterative SIMPLE_RADIAL inversion) -> undistorted
+    pinhole pixel -> depth-map index. Depth VALUES need no correction --
+    optical_z is shared between the original and undistorted cameras (same
+    center, same axis); only the SAMPLING LOCATION moves with distortion."""
+    ph, pw = learned_hw
+    o_model, ow, oh, op = orig_cam
+    u_model, uw, uh, up = undist_cam
+    if o_model == "SIMPLE_PINHOLE":
+        fx, fy, cx, cy, k = op[0], op[0], op[1], op[2], 0.0
+    elif o_model == "PINHOLE":
+        fx, fy, cx, cy = op[:4]
+        k = 0.0
+    else:  # SIMPLE_RADIAL
+        fx, fy, cx, cy, k = op[0], op[0], op[1], op[2], op[3]
+    if u_model == "SIMPLE_PINHOLE":
+        ufx, ufy, ucx, ucy = up[0], up[0], up[1], up[2]
+    else:  # PINHOLE (image_undistorter always writes PINHOLE)
+        ufx, ufy, ucx, ucy = up[:4]
+
+    jj, ii = np.meshgrid(np.arange(pw), np.arange(ph))
+    u0 = (jj + 0.5) * ow / pw - 0.5
+    v0 = (ii + 0.5) * oh / ph - 0.5
+    xd = (u0 - cx) / fx
+    yd = (v0 - cy) / fy
+    x, y = xd.copy(), yd.copy()
+    for _ in range(6):  # fixed-point inversion of x_d = x (1 + k r^2)
+        r2 = x * x + y * y
+        denom = 1.0 + k * r2
+        x = xd / denom
+        y = yd / denom
+    u1 = ufx * x + ucx
+    v1 = ufy * y + ucy
+    mh, mw = depth_hw
+    col = np.rint((u1 + 0.5) * mw / uw - 0.5).astype(int)
+    row = np.rint((v1 + 0.5) * mh / uh - 0.5).astype(int)
+    valid = (row >= 0) & (row < mh) & (col >= 0) & (col < mw)
+    return np.clip(row, 0, mh - 1), np.clip(col, 0, mw - 1), valid
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--asset-id", required=True)
     parser.add_argument("--hybrid-artifacts", default="external/_hybrid_artifacts")
     parser.add_argument("--dense-workspace", required=True)
     parser.add_argument("--out-dir", default="external/_composite_artifacts")
+    parser.add_argument(
+        "--source-sparse-model", default=None,
+        help="COLMAP sparse model dir of the ORIGINAL (possibly distorted) "
+             "camera. When given, MVS depth (which lives in the UNDISTORTED "
+             "image geometry) is sampled through the lens model instead of by "
+             "raw index ratio -- required for self-calibrated distorted video "
+             "(e.g. SIMPLE_RADIAL phone footage); without it a distorted "
+             "camera would misregister verified depth by up to ~k*r^3*f px.")
     args = parser.parse_args()
 
     src = ROOT / args.hybrid_artifacts / args.asset_id
@@ -75,7 +179,18 @@ def main() -> int:
                           "note": "run tools/run_colmap_pose_backend.py first"}))
         return 1
 
+    orig_cams = undist_cams = orig_cam_of = undist_cam_of = None
+    resample = "index_nn"
+    if args.source_sparse_model:
+        orig_cams = read_colmap_cameras(ROOT / args.source_sparse_model)
+        orig_cam_of = read_image_camera_ids(ROOT / args.source_sparse_model)
+        undist_cams = read_colmap_cameras(dense / "sparse")
+        undist_cam_of = read_image_camera_ids(dense / "sparse")
+        resample = "distortion_aware_remap"
+
     replaced_px, total_px, frames_done, frames_missing_mvs = 0, 0, 0, []
+    frames_missing_camera: list[int] = []
+    sample_maps: dict = {}  # (cam_id pair, shapes) -> precomputed map
     for fr in poses["frames"]:
         fid = int(fr["frame_id"])
         name = Path(str(fr["source_frame_path"])).name
@@ -90,9 +205,22 @@ def main() -> int:
         mvs = read_colmap_depth(geo)
         ph, pw = learned.shape[:2]
         mh, mw = mvs.shape
-        yi = (np.arange(ph) * mh / ph).astype(int)
-        xi = (np.arange(pw) * mw / pw).astype(int)
-        mvs_r = mvs[yi][:, xi] * scale
+        if orig_cams is not None:
+            if name not in orig_cam_of or name not in undist_cam_of:
+                frames_missing_mvs.append(fid)
+                frames_missing_camera.append(fid)  # no calibration claim -> learned-only
+                continue
+            key = (orig_cam_of[name], undist_cam_of[name], ph, pw, mh, mw)
+            if key not in sample_maps:
+                sample_maps[key] = distortion_aware_sample_map(
+                    (ph, pw), orig_cams[key[0]], undist_cams[key[1]], (mh, mw)
+                )
+            row, col, valid = sample_maps[key]
+            mvs_r = np.where(valid, mvs[row, col], 0.0) * scale
+        else:
+            yi = (np.arange(ph) * mh / ph).astype(int)
+            xi = (np.arange(pw) * mw / pw).astype(int)
+            mvs_r = mvs[yi][:, xi] * scale
         verified = mvs_r > 1e-6
         np.save(npy, np.where(verified, mvs_r, learned).astype(np.float32))
         np.save(out / "verified" / f"{fid}.npy", verified)
@@ -111,6 +239,12 @@ def main() -> int:
         "frames_learned_only": frames_missing_mvs,
         "scale_applied_from_pose_provenance": scale,
         "verified_masks": "verified/<frame_id>.npy (bool, depth-map resolution)",
+        "mvs_resample": resample,
+        "original_cameras": (
+            {str(cid): {"model": c[0], "width": c[1], "height": c[2], "params": c[3]}
+             for cid, c in orig_cams.items()} if orig_cams else None
+        ),
+        "frames_missing_camera": frames_missing_camera,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps({
