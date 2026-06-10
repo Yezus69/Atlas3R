@@ -238,3 +238,19 @@ injection-calibrated, direction-resolved authority — was not found published.
 4. Wire the per-scene `injected_corruption_detection_limit` block into the
    teacher report/scorecard once per-scene runs exist (today it lives in
    `runs/_diag/`).
+
+## Vault protocol (anti-overfitting safeguard)
+
+The gravest failure mode for a fleet-less teacher is silent overfitting to the
+scenes it is developed against: every threshold and policy in this repo is
+exercised on the fr1 gate scenes, and a teacher accidentally specialized to
+them would be wrong on no-GT internet video with no warning. The structural
+safeguard is a SEALED VAULT SCENE: `reference_metric_vault` = TUM
+freiburg3_long_office_household, a DIFFERENT camera (fr3 calibration) than
+every gate scene, registered only in `config/vault_assets.json` (never in the
+canonical manifest or `CANONICAL_TRACKS`). Rules, binding: vault runs happen
+only at declared milestones via `--manifest config/vault_assets.json`; every
+run is recorded with its commit hash; nothing is ever tuned in response to a
+vault result -- a vault regression is an overfitting ALARM about the
+development process, not a bug to fix on the vault scene; a vault scene used
+for tuning is burned and must be replaced.

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "vault_protocol": {
+    "purpose": "Sealed validation scenes: protection against overfitting the teacher or the GT-free gate to the development gate scenes. A teacher tuned (even accidentally) to the gate scenes would be silently wrong on no-GT internet video -- the exact failure the whole system exists to prevent.",
+    "rules": [
+      "Vault scenes are NEVER part of config/canonical_assets.json or evaluate.CANONICAL_TRACKS.",
+      "Vault scenes are run ONLY at declared milestones (python -m atlas3r.teacher --manifest config/vault_assets.json), and every vault run is recorded in docs/ with its commit hash.",
+      "No threshold, parameter, policy, or code path may ever be tuned in response to a vault result. A vault regression is an OVERFITTING ALARM that triggers diagnosis of the development process, not a fix targeted at the vault scene.",
+      "A vault scene that gets used for tuning is burned: it must be retired from the vault and replaced."
+    ]
+  },
+  "tracks": [
+    {
+      "asset_id": "reference_metric_vault",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/reference_metric_vault",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg3_long_office_household -- DIFFERENT camera (fr3 calibration) than every fr1 gate scene, so it also tests intrinsics generalization",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "vault": true
+      }
+    }
+  ]
+}
