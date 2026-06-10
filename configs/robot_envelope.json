@@ -1,11 +1,12 @@
 {
   "_comment": "Robot vertical collision envelope for the Atlas3R 3D occupancy field. The VoxelOccupancyGrid3D is bounded to [floor, floor + collision_height_m + margin_m] along the floor axis; resolution is spent only inside this envelope. Units are meters. Defaults model a standard floor-cleaning robot. The last fields are the candidate occupancy-estimation policy (applied ONLY to the monocular candidate, never the measured GT), tuned for the default MapAnything backbone. HONEST levers, ON: free_carve_margin_m retracts the grazing-ray over-carve flood directly below a confident surface to UNKNOWN (admits uncertainty, never claims occupied); occupancy_support_height_m fills only UNKNOWN band voxels below a confident obstacle (hit count >= occupancy_support_min_count) -- a gravity prior on UNOBSERVED space. occupancy_support_overrides_free is left FALSE ON PURPOSE: enabling it fills OBSERVED-FREE base voxels with occupied (a 'solid to the floor' prior) and DOES improve the band metric (band_fsc ~0.73->0.69), but that CLAIMS occupancy over ray-traversal-observed free space -- a fabrication that violates Atlas3R's 'free space comes from ray traversal only / never fabricate' invariant. The repo prizes honest labels over metric scores, so it stays OFF. See docs/sota_backbone_research.md (Section 0b) and docs/band_obstacle_recall_evidence.md (Phase 3).",
-  "collision_height_m": 0.20,
+  "collision_height_m": 0.2,
   "margin_m": 0.05,
   "voxel_size_m": 0.05,
-  "free_carve_margin_m": 0.10,
+  "free_carve_margin_m": 0.1,
   "occupancy_support_height_m": 0.15,
   "occupancy_support_min_count": 3,
   "occupancy_support_overrides_free": false,
-  "occupancy_close_voxels": 0
+  "occupancy_close_voxels": 0,
+  "free_carve_full_column": true
 }

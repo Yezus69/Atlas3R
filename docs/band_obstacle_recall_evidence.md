@@ -498,3 +498,51 @@ Net: the selector is NOT a loss as an instrument finding -- it confirmed the
 ledger leverage path, isolated the loop-closure deficit from sampling
 density, and exposed the density/over-carve interaction. But as a teacher
 change it does not meet the adoption bar. Canonical recipe unchanged.
+
+## Phase 7 — Fusion upgrade: determinism, density fairness, ratio-test conflict, full-column truncation
+
+Motive: Phase 6 measured that better poses + denser views made the BAND worse
+(xyz occ_iou 0.128 -> 0.000) — fusion was the bottleneck through which every
+other improvement must pass. Every step below was scorecard-measured; the
+middle step was a NEAR-MISS THE GATE ITSELF CAUGHT.
+
+1. **Two-pass fusion (determinism bug fix).** The old interleaved pass made
+   output depend on ray processing order (the carve-skip read surface_count
+   mid-stream). First fix attempt (complete-field carve-skip) structurally
+   ZEROED free_space_contradiction_rate on all scenes and silently flipped
+   desk to ACCEPTED — caught by the scorecard in one run and reverted.
+2. **Density-fair budget.** The fixed 20k global subsample silently starved
+   per-frame evidence as views densified (39 frames got ~512 rays/frame vs 14
+   frames' ~1428) — Phase 6's density comparison was confounded by it. Gone;
+   the per-packet cap (<=2048/frame) now bounds the budget and scales with
+   frames.
+3. **Ratio-test conflict metric.** Existence-based complete counting saturates
+   with density (measured: xyz 0.444 ABOVE room 0.308 — clusters collapsed).
+   New definition: a voxel is contested when free traversals OUTNUMBER its
+   surface hits — deterministic, complete, density-stable, and it lands on
+   the prior scale (xyz 0.244 vs old 0.231; desk 0.364 vs 0.358): the 0.25
+   threshold needed NO re-anchoring and all four verdicts held.
+4. **Count-level recall companion** (`occupied_recall_any_within_tolerance`).
+   xyz reads 0.843 at count level vs 0.122 majority-vote IoU — the Phase 6
+   "collapse to 0.000" was substantially a tolerance-box VOTE-FLIP artifact,
+   now measurable separately from true field degradation.
+5. **Full-column free-carve truncation ADOPTED** (`free_carve_full_column:
+   true`): a confident band surface retracts free in its entire band column
+   below (free -> unknown, never occupied; the margin knob is removed by the
+   gravity principle, not tuned). Measured trade on xyz, both directions
+   reported: robot-critical metrics improved (band_fsc 0.727 -> 0.677, recall
+   0.843 -> 0.875); agreement metrics dipped (occ_iou 0.122 -> 0.114,
+   per_class 0.922 -> 0.900) because retracted free becomes honest UNKNOWN.
+   Same adoption character as the original free_carve_margin lever.
+
+**Stage-3 density diagnostic** (cached 46-kf xyz selector artifacts, new
+fusion, reportage): trajectory 0.072 m, coverage 1.0, per_class 0.959, ratio
+fsc stable at 0.296 (no saturation) — and count-level recall now MEASURES
+0.371 where the old run could only say "0.000 IoU". But the vote-level band
+still collapses at density (occ_iou 0.0, band_fsc 1.0): thin-structure solid
+evidence stays below the confidence floor while free votes blanket the band.
+Honest residual: the backbone's thin-structure depth limit (the documented
+~12 cm gap). No fusion accounting can recover structure the depth never
+measured — fabricating it is the rejected lever. The path remains a stronger
+backbone (pose backend + AMB3R-class depth oracle), now with fusion that will
+not collapse when it arrives.
