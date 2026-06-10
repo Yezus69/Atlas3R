@@ -225,6 +225,7 @@ def _band3d_summary(band3d_agreement: Mapping[str, Any] | None) -> dict[str, Any
     keys = (
         "per_class_agreement",
         "occupied_static_iou",
+        "occupied_recall_any_within_tolerance",
         "free_space_contradiction_rate",
         "dynamic_leakage_rate",
         "coverage_of_measured_band",

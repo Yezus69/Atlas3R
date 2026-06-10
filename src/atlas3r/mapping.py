@@ -287,7 +287,12 @@ def fuse_static_map(
     # Real free/occupied contradiction over STATIC surfaces only (dynamic lives in
     # its own channel and a moving object legitimately makes a cell free at
     # another time, so it must not perturb this accepted metric).
-    conflict_voxels = int(np.count_nonzero((free_count > 0.0) & (surface_count > 0.0)))
+    # Density-robust conflict test: a voxel is CONTESTED when free traversals
+    # OUTNUMBER its surface hits (both sides scale with view count, so the
+    # ratio survives densification). Existence-based counting ((free>0)&(surf>0))
+    # saturates as views densify -- eventually some ray traverses every surface
+    # voxel -- and the old order-dependent skip undercounted nondeterministically.
+    conflict_voxels = int(np.count_nonzero((free_count > surface_count) & (surface_count > 0.0)))
     occupied_evidence_voxels = occupied_voxels
     if occupied_evidence_voxels > 0:
         contradiction_rate = conflict_voxels / occupied_evidence_voxels
@@ -313,7 +318,7 @@ def fuse_static_map(
         "unknown_fraction": unknown_voxels / total_voxels if total_voxels else 0.0,
         "free_occupied_conflict_voxel_count": conflict_voxels,
         "free_space_contradiction_rate": contradiction_rate,
-        "free_space_contradiction_basis": "conflict_voxels_over_occupied_voxels_static_only",
+        "free_space_contradiction_basis": "free_traversals_outnumber_surface_hits_over_occupied_voxels",
         "surface_point_count": int(surfaces.shape[0]),
         "floor": floor_info["report"],
         # R_up consumed by export/visual_proof to bring the camera trajectory +
@@ -490,15 +495,11 @@ def _fuse_rays(
     nx, ny, nz = dims
     inv_voxel = 1.0 / voxel
     n = surfaces.shape[0]
-    # Cap fused samples to keep the fuse bounded for dense monocular packets.
-    max_fuse = 20000
-    if n > max_fuse:
-        idx = np.unique(np.rint(np.linspace(0, n - 1, num=max_fuse)).astype(np.int64))
-        surfaces = surfaces[idx]
-        origins = origins[idx]
-        ray_dirs = ray_dirs[idx]
-        classes = classes[idx]  # CRITICAL: keep class labels aligned with samples
-        n = surfaces.shape[0]
+    # No global subsample: the per-packet ray cap upstream (<=2048/frame) bounds
+    # the budget, and it scales WITH frame count so denser-view runs fuse the
+    # same per-frame evidence density as sparse runs. (The previous fixed 20k
+    # subsample silently starved per-frame evidence as views densified, which
+    # confounded every density comparison.)
 
     surf_idx = np.floor((surfaces - grid_min[None, :]) * inv_voxel).astype(np.int64)
     in_bounds = (
@@ -506,31 +507,36 @@ def _fuse_rays(
         & (surf_idx[:, 1] >= 0) & (surf_idx[:, 1] < ny)
         & (surf_idx[:, 2] >= 0) & (surf_idx[:, 2] < nz)
     )
+    # PASS 1 -- integrate ALL surface evidence first. The carve pass below skips
+    # voxels with surface evidence; two passes make that skip a function of the
+    # COMPLETE surface field instead of the ray processing order (the previous
+    # interleaved pass made fusion output depend on sample order).
     for k in range(n):
-        cls = int(classes[k])
-        is_dynamic = cls == CLASS_DYNAMIC
-        if in_bounds[k]:
-            ix, iy, iz = int(surf_idx[k, 0]), int(surf_idx[k, 1]), int(surf_idx[k, 2])
-            if is_dynamic:
-                # Dynamic surface hit: paint ONLY the dynamic channel. Never added
-                # to static surface_count / TSDF / occupancy (dynamic is not static).
-                dynamic_count[ix, iy, iz] += 1.0
-            else:
-                surface_count[ix, iy, iz] += 1.0
-                tsdf_value[ix, iy, iz] = 0.0
-                tsdf_weight[ix, iy, iz] += 1.0
-                log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
-                uncertainty[ix, iy, iz] += rel_unc
-                if cls == CLASS_MOVABLE_STATIC:
-                    movable_count[ix, iy, iz] += 1.0
-                else:
-                    occupied_static_count[ix, iy, iz] += 1.0
-        # Dynamic rays do NOT carve free space: a moving object gives unreliable
-        # free evidence. Only static/movable rays carve free in front of them.
-        if is_dynamic:
+        if not in_bounds[k]:
             continue
-        # Carve free space: step from the camera origin toward the surface,
-        # marking voxels before the surface as free evidence.
+        cls = int(classes[k])
+        ix, iy, iz = int(surf_idx[k, 0]), int(surf_idx[k, 1]), int(surf_idx[k, 2])
+        if cls == CLASS_DYNAMIC:
+            # Dynamic surface hit: paint ONLY the dynamic channel. Never added
+            # to static surface_count / TSDF / occupancy (dynamic is not static).
+            dynamic_count[ix, iy, iz] += 1.0
+        else:
+            surface_count[ix, iy, iz] += 1.0
+            tsdf_value[ix, iy, iz] = 0.0
+            tsdf_weight[ix, iy, iz] += 1.0
+            log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
+            uncertainty[ix, iy, iz] += rel_unc
+            if cls == CLASS_MOVABLE_STATIC:
+                movable_count[ix, iy, iz] += 1.0
+            else:
+                occupied_static_count[ix, iy, iz] += 1.0
+
+    # PASS 2 -- carve free space along static/movable rays against the complete
+    # surface field. Dynamic rays do NOT carve free space: a moving object
+    # gives unreliable free evidence.
+    for k in range(n):
+        if int(classes[k]) == CLASS_DYNAMIC:
+            continue
         origin = origins[k]
         target = surfaces[k]
         seg = target - origin
@@ -547,8 +553,15 @@ def _fuse_rays(
         for m in range(free_idx.shape[0] - 1):  # last sample is near surface
             fx, fy, fz = int(free_idx[m, 0]), int(free_idx[m, 1]), int(free_idx[m, 2])
             if 0 <= fx < nx and 0 <= fy < ny and 0 <= fz < nz:
-                if surface_count[fx, fy, fz] > 0.0:
-                    continue
+                # Carve UNCONDITIONALLY. Surface priority lives in the class /
+                # probability construction (surface always beats free), so this
+                # does not change classes -- it makes the free-vs-surface
+                # CONFLICT signal (free_space_contradiction_rate) deterministic
+                # and COMPLETE: every traversal of a surface voxel is counted,
+                # instead of the order-dependent undercount of the old
+                # interleaved skip (output depended on sample order; and a
+                # complete-field skip would structurally zero the metric and
+                # silently un-gate the desk failure class).
                 free_count[fx, fy, fz] += 1.0
                 log_odds[fx, fy, fz] = float(np.clip(log_odds[fx, fy, fz] + LOG_ODDS_MISS, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
 
@@ -578,6 +591,7 @@ def _apply_band_free_truncation(
     """
     margin_m = float(envelope.free_carve_margin_m)
     margin_voxels = max(1, int(round(margin_m / voxel)))
+    full_column = bool(getattr(envelope, "free_carve_full_column", False))
     min_count = int(envelope.occupancy_support_min_count)
     free_count = np.asarray(free_count, dtype=np.float64).copy()
     # Only a CONFIDENT obstacle retracts the free below it, so single-hit depth noise
@@ -593,6 +607,13 @@ def _apply_band_free_truncation(
                             "margin_voxels": int(margin_voxels), "free_voxels_retracted_to_unknown": 0}
     lo = int(band_idx.min())
     top = int(band_idx.max())
+    if full_column:
+        # Full-column variant: a CONFIDENT surface anywhere in the band retracts
+        # free in its ENTIRE band column below (free -> unknown, never occupied).
+        # Parameter-free by the gravity principle -- the column under a
+        # confidently fused surface is exactly where monocular see-through bias
+        # lives; the margin knob is removed rather than tuned.
+        margin_voxels = max(margin_voxels, top - lo + 1)
 
     fm = np.moveaxis(free_count, floor_axis, 0)  # view of the copy; index up = away from floor
     sm = np.moveaxis(surf, floor_axis, 0)
@@ -610,6 +631,7 @@ def _apply_band_free_truncation(
     return free_count, {
         "applied": True,
         "margin_m": margin_m,
+        "full_column": full_column,
         "margin_voxels": int(margin_voxels),
         "direction": "downward_below_surface_only",
         "free_voxels_before": free_before,

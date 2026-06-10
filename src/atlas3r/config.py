@@ -61,6 +61,7 @@ DEFAULT_MARGIN_M = 0.05
 DEFAULT_VOXEL_SIZE_M = 0.05
 # Candidate occupancy-estimation policy. OFF by default -> prior fuser reproduced.
 DEFAULT_FREE_CARVE_MARGIN_M = 0.0
+DEFAULT_FREE_CARVE_FULL_COLUMN = False
 DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT = 1
 DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE = False
@@ -94,6 +95,7 @@ class RobotEnvelopeConfig:
     margin_m: float = DEFAULT_MARGIN_M
     voxel_size_m: float = DEFAULT_VOXEL_SIZE_M
     free_carve_margin_m: float = DEFAULT_FREE_CARVE_MARGIN_M
+    free_carve_full_column: bool = DEFAULT_FREE_CARVE_FULL_COLUMN
     occupancy_support_height_m: float = DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M
     occupancy_support_min_count: int = DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT
     occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
@@ -193,6 +195,7 @@ def load_robot_envelope(
             margin_m=float(data.get("margin_m", DEFAULT_MARGIN_M)),
             voxel_size_m=float(data.get("voxel_size_m", DEFAULT_VOXEL_SIZE_M)),
             free_carve_margin_m=float(data.get("free_carve_margin_m", DEFAULT_FREE_CARVE_MARGIN_M)),
+            free_carve_full_column=bool(data.get("free_carve_full_column", DEFAULT_FREE_CARVE_FULL_COLUMN)),
             occupancy_support_height_m=float(
                 data.get("occupancy_support_height_m", DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M)
             ),

@@ -232,6 +232,7 @@ def extract_band3d_agreement(report: dict[str, Any]) -> dict[str, Any]:
         "measured_comparison_ran": True,
         "per_class_agreement": _pluck(summary, "per_class_agreement"),
         "occupied_static_iou": _pluck(summary, "occupied_static_iou"),
+        "occupied_recall_any_within_tolerance": _pluck(summary, "occupied_recall_any_within_tolerance"),
         "free_space_contradiction_rate": _pluck(summary, "free_space_contradiction_rate"),
         "dynamic_leakage_rate": _pluck(summary, "dynamic_leakage_rate"),
         "coverage_of_measured_band": _pluck(summary, "coverage_of_measured_band"),

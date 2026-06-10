@@ -1128,6 +1128,7 @@ def _band3d_agreement(
     cand_at = np.full(n, -1, dtype=np.int64)
     matched = np.zeros(n, dtype=bool)
     exact = 0
+    occ_any = np.zeros(n, dtype=bool)
     for k in range(n):
         if not bool(in_b[k]):
             continue
@@ -1144,6 +1145,13 @@ def _band3d_agreement(
         sub_c = cf_cls[i0:i1, j0:j1, l0:l1][sub_t].astype(np.int64)
         counts = np.bincount(sub_c, minlength=5)
         cand_at[k] = int(np.argmax(counts))
+        # Count-level companion (no majority vote): does the tolerance box
+        # contain ANY observed occupied/movable candidate voxel? The majority
+        # vote can flip en masse as views densify (a few free-touched box
+        # neighbours outvote one solid leg voxel), so the gate-facing IoU can
+        # cliff to 0 while solid evidence still exists at count level. This
+        # recall separates "field degraded" from "vote flipped". Reportage.
+        occ_any[k] = bool(np.any((sub_c == OCC) | (sub_c == MOV)))
         matched[k] = True
         if bool(cf_touched[i, j, kz]):
             exact += 1
@@ -1192,6 +1200,11 @@ def _band3d_agreement(
     )
     dyn_leak_rate = float(dyn_leak / n_co) if n_co else 0.0
     coverage = float(n_co / meas_band_touched) if meas_band_touched else 0.0
+    occ_any_co = occ_any[co]
+    occupied_recall_any = (
+        float(np.count_nonzero(occ_any_co & meas_solid) / n_meas_solid)
+        if n_meas_solid else 0.0
+    )
 
     return {
         "status": "computed",
@@ -1210,6 +1223,7 @@ def _band3d_agreement(
         "per_class_agreement": agreement,
         "occupied_static_iou": occ_iou,
         "measured_solid_voxels_co_observed": n_meas_solid,
+        "occupied_recall_any_within_tolerance": occupied_recall_any,
         "free_space_contradiction_rate": free_contra_rate,
         "free_space_contradiction_voxels": free_contra,
         "dynamic_leakage_rate": dyn_leak_rate,
