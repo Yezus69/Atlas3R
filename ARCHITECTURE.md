@@ -492,10 +492,24 @@ verified[H,W]            bool; True where the depth passed MULTI-VIEW GEOMETRIC
                          contested-voxel test (free traversals outnumber surface
                          hits) EXCLUDES voxels with verified surface evidence,
                          because multi-view verification is the resolution of
-                         exactly that contradiction. Verification never creates
-                         occupancy (free still comes only from ray traversal;
-                         classes already resolve surface-over-free); it only
-                         stops verified surfaces being counted as contested.
+                         exactly that contradiction (note: this part moves the
+                         fsc METRIC only, not classification). The LOAD-BEARING
+                         tier (red-team verified, 2026-06-10): verified hits
+                         qualify a voxel as a CONFIDENT source for the existing
+                         truncation/support levers -- confident :=
+                         (occupied_count >= min_count) OR
+                         (verified_surface_count >= k), k in {1,2} fixed once
+                         from the measured 2.2x verification-accuracy ratio,
+                         never per scene. A verified thin-structure hit then
+                         triggers the existing UNKNOWN-ONLY gravity-support
+                         fill, placing real occupied voxels in the band column.
+                         Verification never creates occupancy from nothing
+                         (the support fill remains unknown-only; free is never
+                         overridden; raw counts are preserved; every tier
+                         decision is reported). Continuous confidence-WEIGHTED
+                         counting was analyzed and REJECTED: it cannot flip any
+                         class (surface already wins at any weight), and it
+                         silently breaks canonical min-count thresholds.
                          Composite artifacts carry verified/<frame_id>.npy masks
                          (tools/run_mvs_depth_backend.py).
 ```
