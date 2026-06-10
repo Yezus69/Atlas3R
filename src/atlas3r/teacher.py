@@ -239,6 +239,17 @@ def _run_track(
     )
     report["visibility_residual_status"] = _strip_private(visibility_report)
 
+    # Independent epipolar pose audit on the candidate (REPORTAGE ONLY: a
+    # different algorithm class audits the reconstruction's relative poses;
+    # abstention is authority loss, never a pass; it does not gate acceptance
+    # until detection-limit calibration assigns it measured authority).
+    report["epipolar_audit_status"] = _stage(
+        blockers, "epipolar_audit",
+        lambda: _epipolar_audit_summary(candidate_packets, asset_id, root)
+        if candidate_packets
+        else {"status": "blocked_no_packets", "authority": "none"},
+    )
+
     # ------------------------------------------------------------------
     # MEASURED BASELINE pipeline FIRST (reference_metric only): the measured
     # RGB-D/pose packets, evaluated for the metric category. This is the ONLY path
@@ -549,6 +560,17 @@ def _load_geometry(asset_id: str, root: Path, artifacts_dir: str | Path) -> dict
 def _visibility(packets: Sequence[Any]) -> dict[str, Any]:
     _graph, report = build_visibility_graph(packets)
     return report
+
+
+def _epipolar_audit_summary(
+    packets: Sequence[Any], asset_id: str, root: Path
+) -> dict[str, Any]:
+    """Compact epipolar-audit block for the teacher report (per-pair rows are
+    dropped; the full audit lives in the standalone CLI output)."""
+    from .epipolar_audit import audit_scene
+
+    report = audit_scene(packets, asset_id, root)
+    return {k: v for k, v in report.items() if k != "pairs"}
 
 
 def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, Any]:

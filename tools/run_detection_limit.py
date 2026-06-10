@@ -29,6 +29,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -117,6 +118,163 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
     }
 
 
+# Thresholded signals the gate consults, with crossing direction.
+GATED_SIGNALS = {
+    "free_space_contradiction_rate": ("above", MAX_CONTRADICTION_RATE_FOR_ACCEPT),
+    "held_out_render_error": ("above", MAX_HELD_OUT_ERROR_FOR_ACCEPT),
+    "median_reprojection_inbounds_ratio": ("below", 0.30),
+    "depth_residual_edge_fraction": ("below", 0.70),
+    "mean_confidence_weight": ("below", 0.30),
+}
+
+
+def compute_detection_limits(runs, clean, seeds) -> dict:
+    """Honest detection limits with two guards the naive min-rule lacks:
+
+    1. MONOTONICITY: a family whose rejected-count is non-monotone in magnitude
+       has no reliable detection limit -- rejections that appear at small
+       magnitudes and vanish at large ones are threshold noise, not detection.
+    2. SOLID CROSSING: a rejection only counts as detection if some gated
+       signal's across-seed MEDIAN crosses its threshold by more than the
+       across-seed half-range at that magnitude. A crossing inside the seed
+       noise band is a knife-edge artifact (measured on this very harness:
+       clean fsc 0.244 vs gate 0.25 -- a 0.006 margin that coin-flips).
+
+    Also records, per gated signal, the clean baseline's margin to threshold --
+    tiny margins mean small-magnitude 'detections' carry no authority.
+    """
+    import numpy as np
+
+    majority = (seeds // 2) + 1
+    clean_signals = clean["signals"]
+    clean_margins = {}
+    for sig, (direction, theta) in GATED_SIGNALS.items():
+        v = clean_signals.get(sig)
+        if isinstance(v, (int, float)):
+            clean_margins[sig] = round(theta - v if direction == "above" else v - theta, 4)
+
+    out: dict[str, Any] = {"_clean_margin_to_threshold": clean_margins}
+    for family in CORRUPTION_FAMILIES:
+        fam_rows = [r for r in runs if r["family"] == family]
+        if not fam_rows:
+            continue
+        mags = sorted({r["magnitude"] for r in fam_rows})
+        per_mag, rejected_counts, solid_by_mag = {}, [], {}
+        for m in mags:
+            rows = [r for r in fam_rows if r["magnitude"] == m]
+            rejected = sum(1 for r in rows if r["suite"]["gate_would_reject"])
+            rejected_counts.append(rejected)
+            solid = False
+            crossings = {}
+            for sig, (direction, theta) in GATED_SIGNALS.items():
+                vals = [r["suite"]["signals"].get(sig) for r in rows]
+                vals = [v for v in vals if isinstance(v, (int, float))]
+                if not vals:
+                    continue
+                med = float(np.median(vals))
+                halfrange = (max(vals) - min(vals)) / 2.0
+                excess = (med - theta) if direction == "above" else (theta - med)
+                if excess > 0:
+                    crossings[sig] = {
+                        "median_excess_over_threshold": round(excess, 4),
+                        "across_seed_halfrange": round(halfrange, 4),
+                        "solid": excess > halfrange,
+                    }
+                    solid = solid or excess > halfrange
+            # Stage 1 is a boolean: floor alignment lost consistently across
+            # seeds is a deterministic solid detection (no noise band to clear).
+            floor_lost = sum(
+                1 for r in rows
+                if r["suite"]["signals"].get("floor_up_alignment_applied") is False
+            )
+            if floor_lost >= majority:
+                crossings["stage1_floor_alignment_lost"] = {
+                    "seeds_lost": f"{floor_lost}/{len(rows)}",
+                    "solid": True,
+                }
+                solid = True
+            solid_by_mag[str(m)] = solid
+            per_mag[str(m)] = {
+                "rejected_seeds": f"{rejected}/{seeds}",
+                "solid_crossing": solid,
+                "crossings": crossings,
+            }
+        # Monotone means: once detection starts, it persists at larger magnitudes.
+        started = False
+        monotone = True
+        for c in rejected_counts:
+            if c >= majority:
+                started = True
+            elif started:
+                monotone = False
+                break
+        dl = None
+        if monotone:
+            for m in mags:
+                entry = per_mag[str(m)]
+                rej = int(entry["rejected_seeds"].split("/")[0])
+                if rej >= majority and entry["solid_crossing"]:
+                    dl = m
+                    break
+        out[family] = {
+            "detection_limit": dl,
+            "units": MAGNITUDE_UNITS[family],
+            "response_monotone": monotone,
+            "per_magnitude": per_mag,
+            "verdict": (
+                "no_reliable_detection_limit_response_non_monotone" if not monotone
+                else ("no_solid_detection_at_any_tested_magnitude" if dl is None
+                      else "detected")
+            ),
+        }
+    return out
+
+
+def tilt_negative_control(runs, clean, seeds) -> dict:
+    """Rigid world tilt is gauge-invisible to multiview consistency; internal
+    signals must not GENUINELY respond. Knife-edge threshold crossings inside
+    the across-seed noise band are counted separately from solid responses."""
+    import numpy as np
+
+    tilt_rows = [r for r in runs if r["family"] == "global_tilt_control"]
+    raw_responses = sum(1 for r in tilt_rows if r["suite"]["internal_signal_reject"])
+    solid_responses = 0
+    for m in sorted({r["magnitude"] for r in tilt_rows}):
+        rows = [r for r in tilt_rows if r["magnitude"] == m]
+        for sig, (direction, theta) in GATED_SIGNALS.items():
+            vals = [r["suite"]["signals"].get(sig) for r in rows]
+            vals = [v for v in vals if isinstance(v, (int, float))]
+            if not vals:
+                continue
+            med = float(np.median(vals))
+            halfrange = (max(vals) - min(vals)) / 2.0
+            excess = (med - theta) if direction == "above" else (theta - med)
+            if excess > 0 and excess > halfrange:
+                solid_responses += 1
+    floor_realigned = sum(
+        1 for r in tilt_rows
+        if r["suite"]["signals"].get("floor_up_alignment_applied")
+    )
+    return {
+        "n_tilt_runs": len(tilt_rows),
+        "raw_internal_rejections": raw_responses,
+        "solid_internal_responses": solid_responses,
+        "floor_realigned_runs": floor_realigned,
+        "note": (
+            "no SOLID internal response to rigid tilt (raw rejections are "
+            "knife-edge threshold noise); the floor RANSAC re-found the tilted "
+            "floor and re-aligned the band in "
+            f"{floor_realigned}/{len(tilt_rows)} runs -- the pipeline is "
+            "tilt-EQUIVARIANT when the floor is reliable, so tilt risk "
+            "concentrates exactly where floor RANSAC is weak, which Stage 1 "
+            "rejects. Tilt coverage rests on the gravity stage alone."
+            if solid_responses == 0
+            else f"UNEXPECTED: {solid_responses} SOLID internal responses to "
+                 "rigid tilt -- investigate before trusting the tilt-coverage claim"
+        ),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--asset", default="reference_metric")
@@ -126,7 +284,25 @@ def main() -> int:
         "--quick", action="store_true",
         help="1 seed, outermost magnitudes only (smoke run)",
     )
+    parser.add_argument(
+        "--reanalyze", default=None, metavar="JSON",
+        help="recompute detection limits from an existing run JSON (no re-run)",
+    )
     args = parser.parse_args()
+
+    if args.reanalyze:
+        path = Path(args.reanalyze)
+        cert = json.loads(path.read_text(encoding="utf-8"))
+        runs = cert["runs"]
+        clean = cert["clean_baseline"]
+        seeds = int(cert.get("seeds", 3))
+        cert["detection_limits"] = compute_detection_limits(runs, clean, seeds)
+        cert["negative_control_tilt"] = tilt_negative_control(runs, clean, seeds)
+        path.write_text(json.dumps(cert, indent=2, default=str), encoding="utf-8")
+        print(json.dumps({k: v for k, v in cert.items() if k != "runs"},
+                         indent=2, default=str))
+        print(f"[detection_limit] reanalyzed -> {path}")
+        return 0
 
     envelope, _ = load_robot_envelope(root=ROOT)
     mono, grep = load_geometry_artifacts(args.asset, ROOT, artifacts_dir=args.artifacts_dir)
@@ -187,43 +363,9 @@ def main() -> int:
                     flush=True,
                 )
 
-    # Detection limit per family: smallest magnitude rejected in >= 2/3 of seeds
-    # (majority; with --quick's single seed it is 1/1 and labeled accordingly).
-    majority = (seeds // 2) + 1
-    detection_limits = {}
-    for family in CORRUPTION_FAMILIES:
-        fam_rows = [r for r in runs if r["family"] == family]
-        mags = sorted({r["magnitude"] for r in fam_rows})
-        dl = None
-        per_mag = {}
-        for m in mags:
-            rejected = sum(
-                1 for r in fam_rows
-                if r["magnitude"] == m and r["suite"]["gate_would_reject"]
-            )
-            per_mag[str(m)] = f"{rejected}/{seeds}"
-            if dl is None and rejected >= majority:
-                dl = m
-        detection_limits[family] = {
-            "detection_limit": dl,
-            "units": MAGNITUDE_UNITS[family],
-            "rejected_seeds_per_magnitude": per_mag,
-            "no_detection_at_any_tested_magnitude": dl is None,
-        }
+    detection_limits = compute_detection_limits(runs, clean, seeds)
 
-    # Negative-control analysis: did INTERNAL signals respond to rigid tilt?
-    tilt_rows = [r for r in runs if r["family"] == "global_tilt_control"]
-    tilt_internal_responses = sum(
-        1 for r in tilt_rows if r["suite"]["internal_signal_reject"]
-    )
-    tilt_note = (
-        "internal signals did not respond to rigid world tilt (gauge-blind, as "
-        "expected); tilt coverage rests on the gravity/floor stage alone"
-        if tilt_internal_responses == 0
-        else f"UNEXPECTED: internal signals responded to rigid tilt in "
-             f"{tilt_internal_responses}/{len(tilt_rows)} runs -- investigate "
-             "before trusting the tilt-coverage claim"
-    )
+    tilt_control = tilt_negative_control(runs, clean, seeds)
 
     # Method validation vs GT (only where measured evidence exists): response
     # monotonicity of true RMSE in injected magnitude, per geometric family.
@@ -271,11 +413,7 @@ def main() -> int:
             "true_sim3_rmse_m": clean_rmse,
         },
         "detection_limits": detection_limits,
-        "negative_control_tilt": {
-            "internal_signal_responses": tilt_internal_responses,
-            "n_tilt_runs": len(tilt_rows),
-            "note": tilt_note,
-        },
+        "negative_control_tilt": tilt_control,
         "method_validation_vs_gt": method_validation,
         "suite_recipe": SUITE_RECIPE,
         "seeds": seeds,

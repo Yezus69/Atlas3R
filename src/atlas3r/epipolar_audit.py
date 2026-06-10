@@ -130,17 +130,53 @@ def _relative_pose_from_reconstruction(packet_i: Any, packet_j: Any, np: Any):
     return R_ji, t_ji
 
 
-def _select_pairs(frame_ids: list[int], max_pairs: int) -> list[tuple[int, int]]:
-    """Deterministic spread over baselines: all (i<j) pairs sorted by frame
-    separation descending, then a uniform stride down to ``max_pairs`` --
-    wide baselines prioritized (drift accumulates there) but mid baselines
-    represented."""
+def _select_pairs(
+    frame_ids: list[int],
+    max_pairs: int,
+    packets: Sequence[Any] | None = None,
+) -> tuple[list[tuple[int, int]], str]:
+    """Pair selection, in order of preference:
+
+    1. CLAIMED-OVERLAP edges from the visibility graph: audit exactly the
+       co-observations the reconstruction asserts. If the claim is true the
+       images share matchable content; matched-but-deviating relative pose is
+       caught drift; unmatched claimed overlap is itself suspicious. (Blind
+       wide-baseline pairs starve the auditor on loop trajectories -- measured:
+       room@48kf got 1/40 valid pairs under blind selection.)
+    2. Fallback (no graph available): all (i<j) pairs sorted by frame
+       separation descending with a uniform stride -- wide baselines
+       prioritized, mid baselines represented.
+    """
+    if packets is not None:
+        try:
+            from .visibility import build_visibility_graph
+
+            graph, _report = build_visibility_graph(packets)
+            edges = list(getattr(graph, "temporal_edges", ()) or ()) + list(
+                getattr(graph, "overlap_edges", ()) or ()
+            )
+            claimed = sorted(
+                {
+                    (min(int(e.source_frame_id), int(e.target_frame_id)),
+                     max(int(e.source_frame_id), int(e.target_frame_id)))
+                    for e in edges
+                    if int(e.source_frame_id) != int(e.target_frame_id)
+                },
+                key=lambda p: (-(p[1] - p[0]), p[0]),
+            )
+            if claimed:
+                if len(claimed) > max_pairs:
+                    stride = len(claimed) / max_pairs
+                    claimed = [claimed[int(k * stride)] for k in range(max_pairs)]
+                return claimed, "visibility_graph_claimed_overlap_edges"
+        except Exception:
+            pass  # fall through to blind selection, recorded as such
     pairs = [(a, b) for ai, a in enumerate(frame_ids) for b in frame_ids[ai + 1:]]
     pairs.sort(key=lambda p: (-(p[1] - p[0]), p[0]))
-    if len(pairs) <= max_pairs:
-        return pairs
-    stride = len(pairs) / max_pairs
-    return [pairs[int(k * stride)] for k in range(max_pairs)]
+    if len(pairs) > max_pairs:
+        stride = len(pairs) / max_pairs
+        pairs = [pairs[int(k * stride)] for k in range(max_pairs)]
+    return pairs, "blind_wide_baseline_stride"
 
 
 def audit_scene(
@@ -208,7 +244,10 @@ def audit_scene(
     abstained = {"too_few_matches": 0, "too_few_inliers": 0, "recover_failed": 0,
                  "missing_features": 0}
 
-    for fid_i, fid_j in _select_pairs(sorted(features), max_pairs):
+    selected_pairs, pair_source = _select_pairs(sorted(features), max_pairs, ordered)
+    base["pair_selection"] = pair_source
+
+    for fid_i, fid_j in selected_pairs:
         if fid_i not in features or fid_j not in features:
             abstained["missing_features"] += 1
             continue

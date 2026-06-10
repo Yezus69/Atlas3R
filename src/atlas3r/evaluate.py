@@ -296,11 +296,66 @@ def extract_acceptance(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_gate_cascade(report: dict[str, Any]) -> dict[str, Any]:
+    """GT-free acceptance cascade verdicts (Stage 0 evidence mass / Stage 1
+    gravity). Absent on pre-cascade reports -> verbatim absence, never zeros."""
+    cascade = _pluck(report, "validation_status", "gate_cascade")
+    if not isinstance(cascade, dict):
+        return {"status": "absent_pre_cascade_report"}
+    s0 = cascade.get("stage0_evidence_mass", {}) or {}
+    s1 = cascade.get("stage1_gravity_alignment", {}) or {}
+    return {
+        "applies_to_this_path": cascade.get("applies_to_this_path"),
+        "stage0_passes": s0.get("passes"),
+        "stage0_median_inbounds_ratio": s0.get("median_reprojection_inbounds_ratio"),
+        "stage0_depth_residual_edge_fraction": s0.get("depth_residual_edge_fraction"),
+        "stage0_mean_confidence_weight": s0.get("mean_confidence_weight"),
+        "stage1_passes": s1.get("passes"),
+        "stage1_up_alignment_applied": s1.get("up_alignment_applied"),
+        "stage1_floor_inlier_ratio": s1.get("floor_inlier_ratio"),
+        "threshold_authority": s0.get("threshold_authority"),
+    }
+
+
+def extract_prerefine_severity(report: dict[str, Any]) -> dict[str, Any]:
+    """Pre-refine cross-frame log-depth residual p90: REPORTAGE severity signal.
+
+    Measured calibration (runs/_diag/signal_calibration_table.json, 2026-06-09):
+    perfect rank correlation with camera-center Sim(3) RMSE over 7 GT-labeled
+    configs spanning 3 scenes x 2 backbones (Spearman 1.0; 1.0 after partialling
+    out coverage). Candidate for gate promotion pending leave-one-scene-out
+    validation -- until then it gates NOTHING."""
+    rb = _pluck(report, "refined_pose_depth_map_status", "residual_summary_before")
+    if not isinstance(rb, dict):
+        return {"status": "absent"}
+    return {
+        "prerefine_p90_log_depth_residual": rb.get("p90_log_depth_residual"),
+        "prerefine_median_log_depth_residual": rb.get("median_log_depth_residual"),
+        "authority": "candidate_pending_loso_validation_gates_nothing",
+    }
+
+
+def extract_epipolar_audit(report: dict[str, Any]) -> dict[str, Any]:
+    """Independent epipolar pose audit (reportage only -- never gates)."""
+    audit = _pluck(report, "epipolar_audit_status")
+    if not isinstance(audit, dict):
+        return {"status": "absent_pre_audit_report"}
+    keep = (
+        "status", "authority", "intrinsics_source", "n_valid_pairs",
+        "rotation_deviation_deg", "translation_direction_deviation_deg",
+        "auditor_cycle_residual_deg", "deviation_authority", "abstained_pairs",
+    )
+    return {k: audit.get(k) for k in keep if k in audit}
+
+
 def extract_track(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "asset_id": _pluck(report, "asset_id"),
         "track_type": _pluck(report, "track_type"),
         "acceptance": extract_acceptance(report),
+        "gate_cascade": extract_gate_cascade(report),
+        "prerefine_severity": extract_prerefine_severity(report),
+        "epipolar_audit": extract_epipolar_audit(report),
         "scale_posterior": extract_scale_posterior(report),
         "camera_center_sim3_error": extract_camera_center_error(report),
         "band3d_agreement": extract_band3d_agreement(report),
@@ -594,6 +649,56 @@ def render_summary(
         lines.append(f"- monocular_candidate_category: {_fmt(acc.get('monocular_candidate_category'))}")
         lines.append(f"- rejection_reasons: {_fmt(acc.get('rejection_reasons'))}")
         lines.append(f"- exact_blockers: {_fmt(acc.get('exact_blockers'))}")
+
+        gc = track.get("gate_cascade", {})
+        lines.append("")
+        lines.append("### gt-free gate cascade (candidate path)")
+        if gc.get("status"):
+            lines.append(f"- status: {_fmt(gc.get('status'))}")
+        else:
+            lines.append(
+                f"- stage0 evidence mass: passes={_fmt(gc.get('stage0_passes'))} "
+                f"(inbounds={_fmt(gc.get('stage0_median_inbounds_ratio'))}, "
+                f"edge_fraction={_fmt(gc.get('stage0_depth_residual_edge_fraction'))}, "
+                f"confidence={_fmt(gc.get('stage0_mean_confidence_weight'))})"
+            )
+            lines.append(
+                f"- stage1 gravity: passes={_fmt(gc.get('stage1_passes'))} "
+                f"(up_alignment_applied={_fmt(gc.get('stage1_up_alignment_applied'))}, "
+                f"floor_inlier={_fmt(gc.get('stage1_floor_inlier_ratio'))})"
+            )
+            lines.append(f"- threshold_authority: {_fmt(gc.get('threshold_authority'))}")
+
+        ps = track.get("prerefine_severity", {})
+        if ps.get("status") != "absent":
+            lines.append(
+                f"- prerefine severity (reportage, gates nothing): "
+                f"p90_log_depth_residual={_fmt(ps.get('prerefine_p90_log_depth_residual'))} "
+                f"({_fmt(ps.get('authority'))})"
+            )
+
+        ea = track.get("epipolar_audit", {})
+        lines.append("")
+        lines.append("### epipolar audit (independent auditor, reportage only)")
+        if ea.get("status") == "audited":
+            rot = ea.get("rotation_deviation_deg") or {}
+            cyc = ea.get("auditor_cycle_residual_deg") or {}
+            lines.append(
+                f"- audited: {_fmt(ea.get('n_valid_pairs'))} valid pairs, "
+                f"authority={_fmt(ea.get('authority'))}, "
+                f"intrinsics={_fmt(ea.get('intrinsics_source'))}"
+            )
+            lines.append(
+                f"- rotation deviation deg: median={_fmt(rot.get('median'))} "
+                f"p90={_fmt(rot.get('p90'))} vs auditor noise floor p90="
+                f"{_fmt(cyc.get('p90') if isinstance(cyc, dict) else None)} "
+                f"-> {_fmt(ea.get('deviation_authority'))}"
+            )
+        else:
+            lines.append(
+                f"- [!] {_fmt(ea.get('status'))} (authority={_fmt(ea.get('authority'))}; "
+                f"abstention is authority loss, never a pass)"
+            )
 
         sp = track.get("scale_posterior", {})
         lines.append("")
