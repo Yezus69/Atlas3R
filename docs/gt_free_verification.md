@@ -148,21 +148,24 @@ measured_calibration`); the backbone-intrinsics fallback is honestly demoted.
 Wired into the teacher report as `epipolar_audit_status` — **reportage only,
 it gates nothing** until detection-limit calibration assigns it authority.
 
+Final teacher-run results (claimed-overlap pair selection, v2):
+
 | scene | result |
 |---|---|
-| xyz | audited: 23 valid pairs (claimed-overlap selection), rotation deviation median 6.8° / p90 16.2° vs auditor cycle-residual noise floor median 8.7° / p90 19.2° → **below_auditor_noise_floor_no_authority** |
+| xyz | audited: 23 valid pairs, rotation deviation median 6.8° / p90 16.2° vs auditor cycle-residual noise floor median 8.7° / p90 19.2° → **below_auditor_noise_floor_no_authority** (honest: cannot certify the fine scale) |
 | desk | abstained (6 valid pairs under BOTH blind and claimed-overlap selection — motion blur genuinely starves ORB exactly where the backbone struggles) |
-| room@13kf | abstained (3 valid pairs) |
+| room@13kf | abstained (6 valid pairs) |
 | room@48kf | abstained (1 valid pair under blind selection) |
-| phone_room | abstained (2 valid pairs; backbone intrinsics → demoted authority anyway) |
+| phone_room | **audited and DEVIATING: 19 valid pairs, rotation deviation median 15.0° / p90 21.2° vs noise floor 2.7° → above_auditor_noise_floor** — the independent auditor corroborates the gate's rejection of the production-class input from a completely different evidence family (caveats recorded in-band: noise floor from 1 triangle; backbone intrinsics → authority demoted) |
 
 Findings: the auditor never false-vouches; abstention is recorded as
 **authority loss, never a pass** (low-texture/blur correlates with backbone
 failure). Its own cycle residual is its self-reported noise floor — ORB-class
 two-view geometry on 640×480 frames cannot certify fine-grained accuracy, only
-gross rotation error (≫ 20°). Pair selection now audits the visibility
-graph's CLAIMED overlap edges (test the reconstruction's own assertions)
-after blind wide-baseline selection starved on loop trajectories.
+gross rotation error. Pair selection audits the visibility graph's CLAIMED
+overlap edges (test the reconstruction's own assertions) after blind
+wide-baseline selection starved on loop trajectories (phone_room: 2 → 19
+valid pairs under the v2 selection, which is what enabled the catch above).
 
 ## What this stack can NEVER certify
 
