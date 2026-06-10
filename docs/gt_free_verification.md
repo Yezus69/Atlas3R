@@ -170,6 +170,44 @@ overlap edges (test the reconstruction's own assertions) after blind
 wide-baseline selection starved on loop trajectories (phone_room: 2 → 19
 valid pairs under the v2 selection, which is what enabled the catch above).
 
+## Plane ledger (rigid-world drift audit)
+
+`python -m atlas3r.plane_ledger --asset <id>` — first-principles instrument
+for the measured blind spot above: pairwise consistency cannot see coherent
+drift (drift moves each camera and its attached depth together), but drift
+cannot preserve the WORLD-FRAME CONSTANCY of revisited rigid structure. Per
+frame, RANSAC planes from the backbone depth (no photometrics — immune to the
+blur that starves ORB); transform through the poses under audit; chain into
+plane TRACKS; audit each track for in-track trends. Offset trend → translation
+drift; normal rotation → rotation drift; |offset| ramp → scale drift. The
+ledger reports its own noise floor, its evidence mass, and its DIRECTION
+authority (conditioning of the tracked-normal span — a track is blind to
+translation perpendicular to its normal; the report names the blind axis).
+
+Measured verdicts (xyz injections, 3 seeds, monotone + beyond-seed-noise
+required; GT calibration table as PURE blind test — thresholds touched no GT):
+
+| gauge | injection response (xyz) | blind GT test (7 configs, 3 scenes × 2 backbones) | verdict |
+|---|---|---|---|
+| scale ramp (`ledger_scale_ramp_p90_abs_log_ratio`) | monotone solid: rate gauge 0.0445 → 0.0744 (@1.5×) → 0.132 (@2.0×); responds BELOW the gate's prior 2.0× detection limit | **Spearman 0.93 vs RMSE, 0.92 after partialling out coverage** (good scenes ~0.10; room@13kf 1.575 — its true failure was 3.5× scale wander) | **authority earned — gate-promotion candidate** |
+| translation drift (offset trend/rate) | non-monotone, swamped by per-track noise (clean p90 0.231 span; ~14 keyframes × 5-frame tracks give no leverage); dominant-vs-blind-axis probes show no separation | negative partial correlation | **no_authority — honestly recorded** |
+| rotation drift (normal p90) | flat under ≤10° end-to-end (within-track share below the ~8° normal noise) | partial 0.83 (suggestive, uncalibrated) | no_authority from injections; cross-scene signal noted, not claimed |
+| tilt negative control | **bit-identical under 15–37° rigid tilt** — planes rotate with the world; gauge-invariant exactly as theory requires | — | clean negative control |
+
+Diagnosis for the failed gauges: track leverage, not concept — 14 keyframes
+with 4–8-frame tracks cannot resolve a ramp against plane-fit noise. The fix
+is denser, overlap-aware keyframing (roadmap #1), which lengthens tracks; the
+direction-resolved authority machinery is already in place for that day.
+Honesty caveat stated in-band everywhere: the ledger shares the backbone's
+depth; its audit axis is temporal coherence through the poses, and its
+authority is the measured response above, never assumed.
+
+Prior-art check (2-agent sweep, 2026-06-10): plane-SLAM uses planes as
+optimization constraints; double-wall detection and GT-free map posteriors
+exist as global scores. The ledger-as-instrument combination — plane tracks
+audited post-hoc with per-DOF gauges, evidence-mass abstention, and
+injection-calibrated, direction-resolved authority — was not found published.
+
 ## What this stack can NEVER certify
 
 1. **Absolute metric scale.** Monocular gauge freedom: every signal verifies

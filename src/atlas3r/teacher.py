@@ -250,6 +250,17 @@ def _run_track(
         else {"status": "blocked_no_packets", "authority": "none"},
     )
 
+    # Plane-ledger rigid-world drift audit (REPORTAGE ONLY: world-frame
+    # constancy of tracked planes through the poses under audit -- the one
+    # axis pairwise consistency cannot see; authority comes from injection
+    # response curves, never assumed).
+    report["plane_ledger_status"] = _stage(
+        blockers, "plane_ledger",
+        lambda: _plane_ledger_summary(candidate_packets)
+        if candidate_packets
+        else {"status": "blocked_no_packets", "authority": "none"},
+    )
+
     # ------------------------------------------------------------------
     # MEASURED BASELINE pipeline FIRST (reference_metric only): the measured
     # RGB-D/pose packets, evaluated for the metric category. This is the ONLY path
@@ -571,6 +582,15 @@ def _epipolar_audit_summary(
 
     report = audit_scene(packets, asset_id, root)
     return {k: v for k, v in report.items() if k != "pairs"}
+
+
+def _plane_ledger_summary(packets: Sequence[Any]) -> dict[str, Any]:
+    """Compact plane-ledger block for the teacher report (per-track rows are
+    dropped; the full ledger lives in the standalone CLI output)."""
+    from .plane_ledger import ledger_for_packets
+
+    report = ledger_for_packets(packets)
+    return {k: v for k, v in report.items() if k != "tracks"}
 
 
 def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, Any]:

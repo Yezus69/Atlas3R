@@ -335,6 +335,22 @@ def extract_prerefine_severity(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_plane_ledger(report: dict[str, Any]) -> dict[str, Any]:
+    """Plane-ledger rigid-world drift audit (reportage only -- never gates)."""
+    ledger = _pluck(report, "plane_ledger_status")
+    if not isinstance(ledger, dict):
+        return {"status": "absent_pre_ledger_report"}
+    keep = ("status", "authority", "n_tracks_qualifying", "n_tracks_total",
+            "signals", "direction_authority")
+    out = {k: ledger.get(k) for k in keep if k in ledger}
+    da = out.get("direction_authority")
+    if isinstance(da, dict):  # compact: drop axis vectors, keep conditioning
+        out["direction_authority"] = {
+            "normal_span_singular_values_relative": da.get("normal_span_singular_values_relative"),
+        }
+    return out
+
+
 def extract_epipolar_audit(report: dict[str, Any]) -> dict[str, Any]:
     """Independent epipolar pose audit (reportage only -- never gates)."""
     audit = _pluck(report, "epipolar_audit_status")
@@ -355,6 +371,7 @@ def extract_track(report: dict[str, Any]) -> dict[str, Any]:
         "acceptance": extract_acceptance(report),
         "gate_cascade": extract_gate_cascade(report),
         "prerefine_severity": extract_prerefine_severity(report),
+        "plane_ledger": extract_plane_ledger(report),
         "epipolar_audit": extract_epipolar_audit(report),
         "scale_posterior": extract_scale_posterior(report),
         "camera_center_sim3_error": extract_camera_center_error(report),
@@ -675,6 +692,29 @@ def render_summary(
                 f"- prerefine severity (reportage, gates nothing): "
                 f"p90_log_depth_residual={_fmt(ps.get('prerefine_p90_log_depth_residual'))} "
                 f"({_fmt(ps.get('authority'))})"
+            )
+
+        pl = track.get("plane_ledger", {})
+        lines.append("")
+        lines.append("### plane ledger (rigid-world drift audit, reportage only)")
+        if pl.get("status") == "audited":
+            sig = pl.get("signals") or {}
+            da = pl.get("direction_authority") or {}
+            lines.append(
+                f"- audited: {_fmt(pl.get('n_tracks_qualifying'))}/{_fmt(pl.get('n_tracks_total'))} "
+                f"qualifying tracks; normal-span conditioning="
+                f"{_fmt(da.get('normal_span_singular_values_relative'))}"
+            )
+            lines.append(
+                f"- offset drift p90 (span fraction): {_fmt(sig.get('ledger_offset_drift_p90_span_fraction'))} "
+                f"(noise floor {_fmt(sig.get('ledger_noise_floor_p90_span_fraction'))}); "
+                f"normal drift p90: {_fmt(sig.get('ledger_normal_drift_p90_deg'))} deg; "
+                f"scale ramp p90 |log ratio|: {_fmt(sig.get('ledger_scale_ramp_p90_abs_log_ratio'))}"
+            )
+        else:
+            lines.append(
+                f"- [!] {_fmt(pl.get('status'))} (authority={_fmt(pl.get('authority'))}; "
+                f"abstention is authority loss, never a pass)"
             )
 
         ea = track.get("epipolar_audit", {})
