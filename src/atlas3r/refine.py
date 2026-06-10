@@ -76,24 +76,48 @@ BETA_BOUND = (-1.0, 1.0)
 GLOBAL_LOG_SCALE_BOUND = (-1.5, 1.5)
 
 
+# Markers in packet provenance['method'] identifying bundle-adjustment-grade
+# pose backends (the artifact manifest method is carried into every packet).
+BA_GRADE_POSE_MARKERS = ("colmap_pose_backend",)
+
+
 def refine_scene(
     packets: Sequence[FrameRayPacket],
     *,
     max_iterations: int = 60,
     sample_per_frame: int = 400,
     fix_global_scale: bool = True,
+    freeze_poses: bool | None = None,
 ) -> tuple[list[FrameRayPacket], dict]:
     """Refine global geometry of ``packets`` over a keyframe graph.
 
     Returns ``(refined_packets, refine_report)``. On any blocking condition or
     when no improvement is found, the ORIGINAL packets are returned unchanged
     with an explicit status, never a fabricated substitute.
+
+    ``freeze_poses``: when poses come from a bundle-adjustment-grade backend
+    (provenance method contains a ``BA_GRADE_POSE_MARKERS`` entry), this heuristic
+    cannot improve them -- measured: it DEGRADED COLMAP poses 3-10x by dragging
+    them toward noisy monocular depth (desk 0.0213 -> 0.243 m). Default
+    ``None`` auto-detects from packet provenance; only the per-frame log-depth
+    affine (and global scale when unfixed) is optimized when frozen.
     """
     ordered = sorted(packets, key=lambda p: int(p.frame_id))
+    if freeze_poses is None:
+        freeze_poses = any(
+            marker in str((getattr(pk, "provenance", {}) or {}).get("method", ""))
+            for pk in ordered
+            for marker in BA_GRADE_POSE_MARKERS
+        )
     base_report: dict[str, Any] = {
         "module": "refine - global geometry refinement",
-        "method": "keyframe_graph_se3_plus_logdepth_affine_soft_l1_least_squares",
+        "method": (
+            "keyframe_graph_logdepth_affine_only_poses_frozen_ba_grade"
+            if freeze_poses
+            else "keyframe_graph_se3_plus_logdepth_affine_soft_l1_least_squares"
+        ),
         "frame_count": len(ordered),
+        "poses_frozen_ba_grade": bool(freeze_poses),
     }
 
     if len(ordered) < 2:
@@ -184,7 +208,7 @@ def refine_scene(
     #       + [global_log_scale] (only if not fix_global_scale)
     # ------------------------------------------------------------------
     use_global_scale = not fix_global_scale
-    n_pose = 6 * (n_frames - 1)
+    n_pose = 0 if freeze_poses else 6 * (n_frames - 1)
     n_affine = 2 * n_frames
     n_params = n_pose + n_affine + (1 if use_global_scale else 0)
 
@@ -215,6 +239,7 @@ def refine_scene(
         "correspondences": correspondences,
         "n_frames": n_frames,
         "n_pose": n_pose,
+        "freeze_poses": bool(freeze_poses),
         "use_global_scale": use_global_scale,
         "np": np,
     }
@@ -311,7 +336,7 @@ def refine_scene(
         packet = frame["packet"]
         alpha = float(x_opt[n_pose + 2 * fi])
         beta = float(x_opt[n_pose + 2 * fi + 1])
-        if fi == 0:
+        if fi == 0 or freeze_poses:
             delta = np.eye(4, dtype=np.float64)
         else:
             twist = x_opt[6 * (fi - 1):6 * fi]
@@ -570,9 +595,12 @@ def _unpack(x: Any, ctx: dict[str, Any]) -> tuple[list[Any], Any, Any, float]:
     n_frames = ctx["n_frames"]
     n_pose = ctx["n_pose"]
     deltas: list[Any] = [np.eye(4, dtype=np.float64)]
-    for fi in range(1, n_frames):
-        twist = x[6 * (fi - 1):6 * fi]
-        deltas.append(_se3_exp(twist, np))
+    if ctx.get("freeze_poses"):
+        deltas = [np.eye(4, dtype=np.float64) for _ in range(n_frames)]
+    else:
+        for fi in range(1, n_frames):
+            twist = x[6 * (fi - 1):6 * fi]
+            deltas.append(_se3_exp(twist, np))
     alphas = np.array([x[n_pose + 2 * fi] for fi in range(n_frames)], dtype=np.float64)
     betas = np.array([x[n_pose + 2 * fi + 1] for fi in range(n_frames)], dtype=np.float64)
     global_scale = float(np.exp(x[-1])) if ctx["use_global_scale"] else 1.0
@@ -673,10 +701,14 @@ def _residuals(x: Any, ctx: dict[str, Any]) -> Any:
     pose_prior = PRIOR_POSE_WEIGHT * np.asarray(x[:n_pose], dtype=np.float64)
 
     # Temporal smoothness on affine + pose deltas (consecutive frames).
+    # Pose-delta smoothness only exists when poses are free parameters.
+    frozen = bool(ctx.get("freeze_poses"))
     smooth: list[float] = []
     for fi_idx in range(n_frames - 1):
         smooth.append(SMOOTH_AFFINE_WEIGHT * (alphas[fi_idx + 1] - alphas[fi_idx]))
         smooth.append(SMOOTH_AFFINE_WEIGHT * (betas[fi_idx + 1] - betas[fi_idx]))
+        if frozen:
+            continue
         xi_a = x[6 * (fi_idx - 1):6 * fi_idx] if fi_idx >= 1 else np.zeros(6)
         xi_b = x[6 * fi_idx:6 * (fi_idx + 1)]
         diff = np.asarray(xi_b, dtype=np.float64) - np.asarray(xi_a, dtype=np.float64)

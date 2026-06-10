@@ -546,3 +546,45 @@ Honest residual: the backbone's thin-structure depth limit (the documented
 measured — fabricating it is the rejected lever. The path remains a stronger
 backbone (pose backend + AMB3R-class depth oracle), now with fusion that will
 not collapse when it arrives.
+
+## Phase 8 — COLMAP pose backend: the pose problem is SOLVED at teacher level
+
+Oracle (BSD COLMAP 4.1, CPU-only, measured fr1 intrinsics pinned, selector
+keyframes, exhaustive matching = loop closure): xyz 0.0115 m, desk 0.0213 m
+(bar was 0.06), room 0.0084 m on a 7-frame fragment; a denser run (375 frames,
+every 4th + keyframes, ~37 min CPU) registered 374/375 and put the full loop
+at 0.148 m (0.197 m at the 48 keyframes).
+
+Hybrid backend (`tools/run_colmap_pose_backend.py`): COLMAP poses + MapAnything
+depth at the artifact seam; COLMAP's gauge-free trajectory rescaled by ONE
+scalar from candidate-only Umeyama against the backbone's camera centers (no
+GT anywhere); unregistered frames dropped, never fabricated;
+`pose_source=colmap_sfm_scaled_to_backbone` stamped end-to-end.
+
+**Measured finding — refine DEGRADES BA-grade poses:** the first hybrid run
+read desk 0.243 m vs the 0.0213 m oracle: `refine_scene`'s 400-sample
+heuristic dragged near-perfect poses toward noisy monocular depth. Fix:
+`freeze_poses` (auto-detected from BA-grade pose provenance; per-frame
+log-depth affine still free; poses bit-identical through refine — verified).
+Two crash iterations on the freeze path (pose-smoothness residuals and the
+rebuild loop still sliced twist params) were caught by smoke checks before
+any scorecard was read.
+
+**Frozen-pose single-shot vs canonical baseline:**
+
+| scene | cam RMSE | scale est | verdict |
+|---|---|---|---|
+| xyz | 0.0779 -> **0.0045 m** (17x) | 1.34 -> **1.028** | stays ACCEPTED (map fsc 0.225) |
+| desk | 0.2784 -> **0.0108 m** (26x) | -> 1.083 | still rejected (fsc 0.497) |
+| room | 0.8229 -> **0.0355 m** (23x) | 0.28 -> 0.902 | still rejected (evidence mass 0.229, was 0.000) |
+
+Pose AND scale are solved at the teacher level by a commercially clean
+backend. NOT ADOPTED as the canonical recipe yet, honestly: with poses
+near-perfect, the depth backbone's thin-structure bias is the only error left
+and it expresses HARDER at 46-view density — xyz's band labels regressed
+(occ_iou 0.114 -> 0.003, recall 0.875 -> 0.382), so the band-law adoption bar
+is not met. The band gate is now PURELY depth-limited: the next and final
+lever for the gate is depth quality (AMB3R-class oracle; and COLMAP's own
+triangulated sparse points are now available as a multi-view-verified depth
+audit/anchor). The hybrid recipe, tools, and artifacts are retained and
+documented for that next step.
