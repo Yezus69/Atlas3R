@@ -1,8 +1,19 @@
 # Atlas3R
 
-Atlas3R is a scale-aware monocular reconstruction teacher for RGB videos. Its job is not to make every video look reconstructed. Its job is to turn a small number of real videos into geometry that is honest enough to train from.
+Atlas3R is the offline TEACHER half of a teacher→student robotics stack:
 
-Core target:
+```text
+internet-scale RGB video
+-> scale-aware offline reconstruction (this repo)
+-> GT-free verification gate: accept / downweight / reject
+-> verified 3D occupancy training data
+-> distilled real-time student (collision-band occupancy on embedded SoCs)
+-> the indoor robots and lawn mowers we will build
+```
+
+We have no robot fleet. Tesla's auto-labeler moat is fleet-scale data; Matic's is an image-to-voxel net shipped on a 4GB Jetson. Ours is **verified yield**: a teacher honest enough that every accepted label carries measured evidence of its own trustworthiness — the acceptance gate is the fleet substitute. The teacher's job is not to make every video look reconstructed; it is to turn real video into geometry honest enough to train from, and to reject the rest. Rejecting bad video is part of the product.
+
+Inside the teacher, one video becomes:
 
 ```text
 RGB video

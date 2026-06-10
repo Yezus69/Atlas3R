@@ -10,7 +10,10 @@ fabricated. Generated artifacts live under gitignored `runs/_diag/`
 ## Why this exists
 
 The teacher's purpose is to pseudo-label internet-scale video, and internet
-video has no ground truth. The acceptance test for any GT-free quality signal
+video has no ground truth. Tesla verifies its auto-labels with fleet-scale
+recurrence; Matic iterates on-device with its own robots. Atlas3R has neither
+— this verification stack is what stands in for the fleet, which is why its
+honesty is the moat rather than a tax. The acceptance test for any GT-free quality signal
 is fixed: **it must reproduce the GT-grounded verdicts on the measured scenes
 where we can check.** The measured failure that forced this work: `phone_room`
 was `accepted_for_metric_training=true` while carrying a 36.9° floor tilt, a

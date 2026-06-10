@@ -2,7 +2,7 @@
 
 This document is the technical source of truth for Atlas3R. The README points to work; this file defines what the work must mean.
 
-Atlas3R is a scale-aware monocular reconstruction teacher for real RGB videos. It should eventually create physically useful 3D maps and floor-cleaner occupancy labels, but it must not pretend that unanchored monocular RGB is measured metric ground truth.
+Atlas3R is the offline TEACHER in a teacher→student robotics stack: it turns real RGB video into scale-aware 3D occupancy labels behind a GT-free verification gate strict enough that accepted labels can train a real-time student (ego-centric collision-band occupancy on embedded SoCs) for commercial robots. There is no robot fleet; the gate is the fleet substitute, and verified yield is the product. The teacher must not pretend that unanchored monocular RGB is measured metric ground truth — and the gate is strengthened only by evidence, never loosened to pass a scene.
 
 ## Truth Boundary
 

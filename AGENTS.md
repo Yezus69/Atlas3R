@@ -2,6 +2,14 @@
 
 Codex/Claude reads this file as durable repository guidance. Keep it short. Put system spec in `ARCHITECTURE.md`; put current state and milestone order in `README.md`.
 
+## Mission Anchor
+
+Every slice serves one chain: strong offline teacher -> GT-free verified pseudo-labels from internet-scale video -> real-time student (collision-band occupancy on embedded SoCs) -> sellable robots. There is no robot fleet; the acceptance gate is the fleet substitute. Strengthen the teacher or the gate's measured authority. Never weaken the gate to pass a scene — `phone_room` must eventually pass because the teacher got stronger.
+
+## Line Economy
+
+The repo must stay small enough for an agent to load and reason about whole. Prefer deletion over abstraction; new code earns its lines with a scorecard win or a contract obligation. Each fact lives in exactly one place: binding spec in `ARCHITECTURE.md`, bounded state in `README.md`, measured evidence in `docs/`, transient artifacts in gitignored `runs/`. Behavior-neutral cleanups are proven by an unchanged scorecard metric diff.
+
 ## Context Load Order
 
 Before non-trivial work:
