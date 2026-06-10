@@ -70,9 +70,11 @@ DEFAULT_OCCUPANCY_CLOSE_VOXELS = 0
 # verification qualify a voxel as a CONFIDENT truncation/support source at
 # this count -- confident := (occ >= occupancy_support_min_count) OR
 # (verified >= verified_surface_min_count). Fixed ONCE from the measured 2.2x
-# verification-accuracy ratio (docs/band_obstacle_recall_evidence.md Phase 8):
-# ceil(occupancy_support_min_count / 2.2) = ceil(3 / 2.2) = 2. Never tuned per
-# scene. Inert when packets carry no verified channel (counts stay zero).
+# verification-accuracy ratio (docs/band_obstacle_recall_evidence.md Phase 8)
+# against the CANONICAL deployed config's occupancy_support_min_count = 3
+# (configs/robot_envelope.json -- NOT the module default of 1 above, under
+# which the tier is simply dead): ceil(3 / 2.2) = 2. Never tuned per scene.
+# Inert when packets carry no verified channel (counts stay zero).
 DEFAULT_VERIFIED_SURFACE_MIN_COUNT = 2
 
 DEFAULT_CONFIG_PATH = Path("configs/robot_envelope.json")

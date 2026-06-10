@@ -755,3 +755,34 @@ for honesty. Mixed is reported as mixed and NOT adopted; the canonical
 artifacts and committed envelope stay; no parameter may be revised in
 response to these GT numbers (revision requires fresh GT-free rationale and
 re-registration).
+
+**Adversarial review round 2 (10-agent workflow, 2026-06-10, BEFORE the
+single shot — both fixes land pre-GT):** two MAJOR defects confirmed in the
+first tier implementation and fixed:
+1. *Exclusion below the confidence bar.* The contested-test exclusion fired
+   at ONE verified hit (`> 0`) while the tier's own measured arithmetic says
+   one hit ≈ 2.2 unverified-equivalents < the 3-count bar — and the excluded
+   rate is the acceptance-gated `free_space_contradiction_rate`, so a
+   sub-confidence threshold could only loosen the gate with no measured
+   provenance. FIX: exclusion requires pooled verified static hits >= the
+   SAME once-fixed k (= verified_surface_min_count = 2).
+2. *Class-blind verified counting.* `verified_surface_count` pooled occupied
+   and movable hits, so 2 verified MOVABLE hits could source the gravity
+   fill and write occupied_STATIC occupancy below a purely-movable surface —
+   a category crossing the canonical lever forbids at any count. FIX:
+   per-class counts (verified_occupied_count / verified_movable_count); the
+   support tier mirrors its lever's occupied-only source predicate; the
+   truncation tier mirrors its lever's per-class (occ|movable) predicate.
+Minors fixed in the same pass: `_load_verified` no longer binarizes
+non-boolean masks (rejected to None, mirroring the shape rule); the k
+derivation comment names the canonical config's min_count=3 as its input
+(the module default of 1 would make the tier dead, not inverted-and-live);
+the tier report counts static samples only and the lever noop paths carry
+the tier keys. Smoke test extended to 9 properties (exclusion-at-k,
+verified-movable class semantics) — ALL PASSED; canonical no-change proof
+re-run after the fixes (empty metric diff re-confirmed below).
+Review residue judged non-defects and left: refine's log-affine warp carries
+the verified flag onto re-warped depth values (spec-sanctioned threading;
+gauge-level warps); inject keeps original-pixel provenance on corrupted
+depth (deliberate — the detection-limit harness must stress the tier);
+verified counts are fusion-transient, not persisted on VoxelMapState.

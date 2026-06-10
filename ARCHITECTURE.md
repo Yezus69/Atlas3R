@@ -487,21 +487,34 @@ verified[H,W]            bool; True where the depth passed MULTI-VIEW GEOMETRIC
                          VERIFICATION (e.g. COLMAP PatchMatch geometric check).
                          Absent on purely learned packets -- never defaulted to
                          True. IMPLEMENTED (measured basis in
-                         docs/band_obstacle_recall_evidence.md Phase 8): the
+                         docs/band_obstacle_recall_evidence.md Phase 8;
+                         amended after a second adversarial review,
+                         2026-06-10, BEFORE the recipe-v2 single shot): the
                          adapter samples verified/<frame_id>.npy at the same
-                         pixels as depth; refine/inject thread + row-filter the
-                         per-ray flags; fusion carries a verified_surface_count
-                         channel; the contested-voxel test (free traversals
-                         outnumber surface hits) EXCLUDES voxels with verified
-                         surface evidence, because multi-view verification is
-                         the resolution of exactly that contradiction (note:
-                         this part moves the fsc METRIC only, not
-                         classification; both rates are reported). The
-                         LOAD-BEARING tier (red-team verified, 2026-06-10):
-                         verified hits qualify a voxel as a CONFIDENT source
-                         for the existing truncation/support levers --
-                         confident := (occupied_count >= min_count) OR
-                         (verified_surface_count >= k), k =
+                         pixels as depth (non-boolean masks rejected, never
+                         binarized); refine/inject thread + row-filter the
+                         per-ray flags; fusion carries PER-CLASS verified
+                         counts (verified_occupied_count /
+                         verified_movable_count -- class-blind counting let
+                         verified MOVABLE hits source the occupied_static
+                         fill, a category crossing the canonical lever forbids
+                         at any count). The contested-voxel test (free
+                         traversals outnumber surface hits) EXCLUDES voxels
+                         whose pooled verified static hits reach THE SAME
+                         once-fixed k -- never a single sub-confidence hit,
+                         because the excluded rate is the acceptance-gated
+                         fsc, so the exclusion bar must carry the same
+                         measured provenance as the lever gates (note: this
+                         part moves the fsc METRIC only, not classification;
+                         both rates are reported). The LOAD-BEARING tier
+                         (red-team verified, 2026-06-10): verified hits
+                         qualify a voxel as a CONFIDENT source for the
+                         existing truncation/support levers, each tier
+                         predicate mirroring its lever's CANONICAL CLASS
+                         semantics -- truncation: (occ >= min_count) OR
+                         (movable >= min_count) OR (verified_occ >= k) OR
+                         (verified_mov >= k); support (occupied-only source):
+                         (occ >= min_count) OR (verified_occ >= k); k =
                          verified_surface_min_count = 2 =
                          ceil(occupancy_support_min_count / 2.2), fixed once
                          from the measured 2.2x verification-accuracy ratio,

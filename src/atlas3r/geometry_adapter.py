@@ -653,8 +653,11 @@ def _load_confidence(path: Path, valid_mask: Any, np: Any) -> Any | None:
 def _load_verified(path: Path, valid_mask: Any, np: Any) -> Any | None:
     """Per-pixel multi-view verification mask, or None when absent/unusable.
 
-    Shape-mismatched or unreadable masks are dropped (None), never coerced --
-    a verification claim that cannot be aligned pixel-for-pixel is no claim.
+    Shape-mismatched, unreadable, or NON-BOOLEAN masks are dropped (None),
+    never coerced -- a verification claim that cannot be aligned
+    pixel-for-pixel is no claim, and a graded/float mask binarized via
+    astype(bool) would manufacture verification from non-boolean data
+    (integer masks are accepted only when strictly 0/1).
     """
     if not path.exists():
         return None
@@ -664,7 +667,11 @@ def _load_verified(path: Path, valid_mask: Any, np: Any) -> Any | None:
         return None
     if mask.shape != valid_mask.shape:
         return None
-    return mask.astype(bool)
+    if mask.dtype == np.bool_:
+        return mask
+    if np.issubdtype(mask.dtype, np.integer) and bool(np.all((mask == 0) | (mask == 1))):
+        return mask.astype(bool)
+    return None
 
 
 def _sample_valid_pixels(valid_mask: Any, max_rays_per_packet: int, np: Any) -> Any:
