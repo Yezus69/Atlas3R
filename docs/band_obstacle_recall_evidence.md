@@ -786,3 +786,69 @@ the verified flag onto re-warped depth values (spec-sanctioned threading;
 gauge-level warps); inject keeps original-pixel provenance on corrupted
 depth (deliberate — the detection-limit harness must stress the tier);
 verified counts are fusion-transient, not persisted on VoxelMapState.
+
+### Phase 9 RESULTS — the single shot ran ONCE (2026-06-10). VERDICT: MIXED → NOT ADOPTED.
+
+Run: `runs/teacher_v2` + `runs/eval_v2/scorecard.json` (composites: xyz 60.2% /
+desk 57.6% / room 51.0% verified pixels; phone_room = canonical copy;
+envelope = configs/robot_envelope_v2.json via env override; canonical
+artifacts and committed envelope never touched — nothing to restore).
+
+| metric (candidate vs measured) | xyz 5cm canonical | xyz 2.5cm v2 | desk canonical | desk v2 | room canonical | room v2 |
+|---|---|---|---|---|---|---|
+| camera Sim(3) RMSE (m) | 0.0779 | **0.0045** | 0.2784 | **0.0108** | 0.8229 | **0.0355** |
+| estimated scale | 1.337 | **1.028** | 1.089 | 1.083 | 0.283 | **0.902** |
+| band coverage | 0.993 | 0.672 | 0.899 | 0.990 | 0.020 | **0.979** |
+| co-observed band voxels | 8,484 | 5,863 | 10,348 | 37,676 | 425 | **91,807** |
+| per_class_agreement | 0.900 | **0.938** | 0.734 | **0.819** | 0.598 | **0.965** |
+| recall(any,10cm) | 0.875 | 0.762 | 0.273 | 0.205 | 0.000 | 0.172 |
+| occupied_static_iou | 0.114 | 0.049 | 0.000 | 0.000 | 0.000 | 0.013 |
+| band_fsc (vote-level) | 0.677 | 0.937 | 1.000 | 1.000 | 0.000 (vacuous) | 0.972 |
+| map fsc (gate, ≤0.25) | 0.244 | **0.251 → REJECTED** | 0.364 | 0.415 | 0.157 | 0.273 |
+| accepted_for_metric_training | TRUE | **FALSE** | FALSE | FALSE | FALSE | FALSE |
+
+Adoption bar (occ_iou up AND per_class held, holding band_fsc): **NOT MET on
+xyz** (occ_iou 0.114→0.049 down, band_fsc 0.677→0.937 worse, acceptance
+LOST). per_class up on all three scenes; pose/scale/coverage transformed
+(room coverage 0.020→0.979, 49×; co-observed voxels 425→91,807, 216×).
+Mixed is mixed: NOT ADOPTED. No parameter is revised in response.
+
+**Honest diagnosis, all pre-registered risks confirmed:**
+1. *Vote-box flood at 2.5 cm (risk #1, confirmed exactly as written):* xyz
+   carries solid evidence within tolerance for 76% of measured-solid voxels
+   while the 9×9×9 majority vote reads occupied for 5% — the box is
+   structurally free-dominated at finer voxels (box volume grows 8×, thin
+   structures don't). The canonical xyz iou 0.114 was additionally inflated
+   by the 1.34× scale super-resolution (Phase 8 diagnosis) that the v2 BA
+   poses honestly remove (scale 1.028).
+2. *Resolution-coupled gate metrics (risk #3, confirmed with numbers):* the
+   internal map fsc ratio test (free traversals > surface hits) reads 0.354
+   raw at 2.5 cm vs 0.244 at 5 cm on the SAME xyz scene class — halved
+   per-voxel counts make "contested" easier; the 0.25 acceptance threshold
+   was calibrated at 5 cm. The verified-tier exclusion AT THE k BAR pulled
+   0.354→0.2511, still 0.0011 over the knife edge → xyz rejected. The gate
+   did not weaken (exclusion bar enforced); the metric is
+   resolution-sensitive BY CONSTRUCTION (a geometry fact, not a tuning
+   target). Same coupling broke desk's Stage 1 at 2.5 cm: floor RANSAC
+   inlier distance = 1.5 voxels = 3.75 cm halves, inlier ratio fell below
+   0.30 (was passing at 5 cm).
+3. *Room axis cap (risk #2, confirmed):* effective_voxel_size_m snapped to
+   0.05 (extent > 6.4 m); room's v2 row is COLMAP-pose + verified-depth
+   composite at 5 cm, not 2.5 cm.
+
+**What the tier did in production (decision record, runs/teacher_v2):** xyz
+18,203 verified-occupied voxels, 2,845 truncation + 2,835 support sources
+confident via verified ONLY, 350 unknown-only fills, 3,304 contested voxels
+excluded at the bar; desk 5,722/5,699 verified-only sources, 2,787 fills;
+room 5,107 verified-only sources, 305 fills. Mechanism live and honest —
+it cannot outvote a 729-voxel free-dominated box.
+
+**Standing read after Phase 9:** the teacher's GEOMETRY is now strong
+(pose 4.5mm–3.6cm, scale 3–10%, coverage ~1.0, per_class 0.82–0.97, verified
+perception within tolerance 0.76 on xyz); the residual wall is the
+RESOLUTION-NON-INVARIANT classification metrics — the tolerance-box majority
+vote and the count-ratio fsc — whose constructions penalize exactly the
+finer grid the physics demands. Any metric-law revision (e.g. a
+resolution-invariant vote or a count-normalized fsc) requires its own
+GT-free pre-registration in a future session; nothing is changed in
+response to these numbers.
