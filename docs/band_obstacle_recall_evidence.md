@@ -460,3 +460,41 @@ measured-anchor frame ids (recorded as `anchor_ids_included`; anchors count
 against the cap; policy frames nearest an anchor are dropped first). No-GT
 scenes pass no anchors — the policy is pure exactly where it will run in
 production. All other parameters unchanged from the pre-registration above.
+
+### Phase 6 RESULTS (single shot, scored against the pre-registration)
+
+Verdict per the pre-registered adoption rule: **MIXED -> NOT ADOPTED.** The
+canonical artifacts stay; no selector parameter is revised in response to
+these numbers (revision requires fresh GT-free rationale + re-registration).
+
+| scene | RMSE (m) | inbounds | band3d occ_iou | band_fsc | ledger tracks |
+|---|---|---|---|---|---|
+| xyz 14->39kf | 0.0779 -> **0.0624** (-20%) | 0.605 -> 0.723 | 0.128 -> **0.000** | 0.727 -> **1.000** | 5/20 -> 7/25 |
+| desk 11->40kf | 0.2784 -> **0.3353** (regressed, AS PRE-REGISTERED) | 0.648 -> 0.709 | 0.000 -> 0.037 | 1.000 -> 0.961 | 5/19 -> 12/62 |
+| room 13->48kf | 0.8229 -> 0.6810 (improved, but BELOW the 0.24-0.46 even-spacing band) | 0.000 -> 0.051 | 0.000 -> 0.021 | 0.000 -> 0.905 | 2/37 -> 12/103 |
+| phone 32->43kf | no GT | 0.035 -> 0.061 | no GT | no GT | 11/56 -> 16/80 |
+
+Prediction scoring:
+- GT-free #1 (room inbounds > 0.30): **FAILED** (0.051). Discovery: the room
+  loop's evidence collapse is NOT sampling density -- frames across a loop do
+  not co-observe without loop closure. Sharpest evidence yet that the pose
+  backend (loop-capable) is the binding fix, not denser selection.
+- GT-free #2 (ledger tracks lengthen/multiply): **CONFIRMED everywhere**
+  (room 6x). The plane-ledger translation/rotation authority path is real.
+- GT-free #3 (phone inbounds rises): partially (0.035 -> 0.061, still far
+  below the gate).
+- GT expectation (room toward 0.24-0.46): improved to 0.681 only -- the
+  flow-adaptive distribution underperforms even spacing on a loop.
+- Pre-registered desk risk: materialized (0.335, matching Phase 4's
+  denser-is-worse).
+- xyz surprise (not predicted): trajectory improved 20% while the BAND
+  collapsed (occ_iou 0.128 -> 0.0, fsc -> 1.0): denser views amplify the known
+  free-carve over-carving of low obstacle bases. Better poses do not imply a
+  better robot map under the current fusion -- a measured fusion-vs-density
+  interaction that must be solved before any dense-selection policy can win
+  the band gate.
+
+Net: the selector is NOT a loss as an instrument finding -- it confirmed the
+ledger leverage path, isolated the loop-closure deficit from sampling
+density, and exposed the density/over-carve interaction. But as a teacher
+change it does not meet the adoption bar. Canonical recipe unchanged.
