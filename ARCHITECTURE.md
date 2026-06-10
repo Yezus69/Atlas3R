@@ -483,6 +483,21 @@ intrinsics
 rolling_shutter_model
 depth_residual_field
 camera_confidence
+verified[H,W]            bool; True where the depth passed MULTI-VIEW GEOMETRIC
+                         VERIFICATION (e.g. COLMAP PatchMatch geometric check).
+                         Absent on purely learned packets -- never defaulted to
+                         True. SPEC (implementation pending, measured basis in
+                         docs/band_obstacle_recall_evidence.md Phase 8): fusion
+                         carries a verified_surface_count channel; the
+                         contested-voxel test (free traversals outnumber surface
+                         hits) EXCLUDES voxels with verified surface evidence,
+                         because multi-view verification is the resolution of
+                         exactly that contradiction. Verification never creates
+                         occupancy (free still comes only from ray traversal;
+                         classes already resolve surface-over-free); it only
+                         stops verified surfaces being counted as contested.
+                         Composite artifacts carry verified/<frame_id>.npy masks
+                         (tools/run_mvs_depth_backend.py).
 ```
 
 ### ScaleEvidence
