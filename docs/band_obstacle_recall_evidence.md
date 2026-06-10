@@ -448,3 +448,15 @@ canonical ones only on a band3d scorecard win; a mixed result is reported as
 mixed and the decision documented. No parameter of the selector may be revised
 in response to these GT results — revisions require new GT-free rationale and
 a fresh pre-registration.
+
+### Phase 6 amendment (before any GT value was observed)
+
+The first selector run could not be scored AT ALL: the flow-adaptive frame ids
+shared too few frames with the M2 measured packets, so every camera/band3d
+comparison returned `insufficient_overlap_for_sim3_band_comparison` /
+`not_computed` — no GT number was ever produced or seen. Amendment
+(measurement plumbing, not GT tuning): the selector unions in the asset's
+measured-anchor frame ids (recorded as `anchor_ids_included`; anchors count
+against the cap; policy frames nearest an anchor are dropped first). No-GT
+scenes pass no anchors — the policy is pure exactly where it will run in
+production. All other parameters unchanged from the pre-registration above.

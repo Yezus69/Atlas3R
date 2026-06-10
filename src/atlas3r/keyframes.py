@@ -110,8 +110,18 @@ def median_flow_per_step(files: Sequence[Path]) -> list[float]:
     return flows
 
 
-def select_keyframes(files: Sequence[Path]) -> dict[str, Any]:
-    """Apply the pre-registered policy. Returns selection + audit trail."""
+def select_keyframes(files: Sequence[Path], anchor_ids: Sequence[int] = ()) -> dict[str, Any]:
+    """Apply the pre-registered policy. Returns selection + audit trail.
+
+    ``anchor_ids`` (comparability amendment, recorded): frame ids that MUST be
+    included so the candidate shares >=3 frames with the measured M2 packets --
+    without them the camera/band3d comparisons cannot compute at all (measured
+    on the first selector run: every comparison returned
+    insufficient_overlap_for_sim3_band_comparison and no GT value was ever
+    observed, so this amendment is measurement plumbing, not GT tuning).
+    Anchors count against the cap; policy frames nearest an anchor are dropped
+    first when over budget. No-GT scenes pass no anchors -- the policy is pure
+    there."""
     n = len(files)
     if n < 2:
         return {"status": "error_too_few_frames", "n_frames": n}
@@ -134,12 +144,21 @@ def select_keyframes(files: Sequence[Path]) -> dict[str, Any]:
             gap_audit.append(round(accumulated, 4))
         else:
             selected[-1] = n - 1
+    anchors = sorted({int(a) for a in anchor_ids if 0 <= int(a) < n})
+    if anchors:
+        selected = sorted(set(selected) | set(anchors))
     over_cap = len(selected) > MAX_KEYFRAMES
     if over_cap:
         import numpy as np
 
-        idx = np.unique(np.rint(np.linspace(0, len(selected) - 1, MAX_KEYFRAMES)).astype(int))
-        selected = [selected[k] for k in idx]
+        keep = set(anchors) | {0, n - 1}
+        policy_only = [s for s in selected if s not in keep]
+        # Drop policy frames nearest to a kept frame until under the cap.
+        while len(keep) + len(policy_only) > MAX_KEYFRAMES and policy_only:
+            kept_arr = np.asarray(sorted(keep))
+            dists = [int(np.min(np.abs(kept_arr - s))) for s in policy_only]
+            policy_only.pop(int(np.argmin(dists)))
+        selected = sorted(keep | set(policy_only))
 
     return {
         "status": "selected",
@@ -156,6 +175,7 @@ def select_keyframes(files: Sequence[Path]) -> dict[str, Any]:
         ),
         "n_frames": n,
         "n_selected": len(selected),
+        "anchor_ids_included": anchors,
         "capped_at_max": over_cap,
         "frame_ids": selected,
         "accumulated_flow_per_gap": gap_audit,
@@ -168,6 +188,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--asset", required=True)
+    parser.add_argument("--anchor-ids", default="",
+                        help="comma-separated frame ids that must be included (measured-comparison anchors)")
     args = parser.parse_args(argv)
 
     root = Path.cwd()
@@ -175,7 +197,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not files:
         print(json.dumps({"status": "error_no_frames", "asset": args.asset}))
         return 1
-    report = select_keyframes(files)
+    anchors = [int(x) for x in args.anchor_ids.split(",") if x.strip()]
+    report = select_keyframes(files, anchor_ids=anchors)
     report["asset_id"] = args.asset
     out = root / "runs/_diag" / f"keyframe_selection_{args.asset}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
