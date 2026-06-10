@@ -784,6 +784,53 @@ posterior). It is absent / `missing_measured_3d_reference` when no measured 3D
 reference exists (e.g. `phone_room`); a too-small overlap yields an explicit
 `insufficient_overlap_for_sim3_band_comparison` status, never a fabricated number.
 
+### GT-Free Acceptance Cascade (Stage 0 / Stage 1)
+
+A reconstruction with no measured evidence carries the burden of proving its own
+trustworthiness from internal evidence. The acceptance gate is a precedence
+cascade built on three principles:
+
+```text
+independence      : auditors must use different evidence than the builder optimized
+evidence mass     : a consistency score over near-zero co-observation is vacuous,
+                    not reassuring -- low evidence mass rejects regardless of scores
+measured authority: a signal only counts where it has been shown it WOULD have
+                    detected an error (detection-limit calibration, see Module 11)
+```
+
+Stages, evaluated before the classic consistency checks; ALL failing stages
+contribute rejection reasons (no early-exit -- every defect is reported):
+
+```text
+Stage 0 - evidence mass (visibility graph, already computed, previously unread):
+  median_reprojection_inbounds_ratio >= 0.30
+  edges_with_depth_residual / edge_count >= 0.70
+  mean_confidence_weight >= 0.30
+  -> failure reasons: evidence_mass_median_inbounds_ratio_too_low:<v>
+                      evidence_mass_depth_residual_edge_fraction_too_low:<v>
+                      evidence_mass_mean_confidence_weight_too_low:<v>
+Stage 1 - gravity alignment (floor estimate, already computed, previously unread):
+  up_alignment_applied must be true (floor RANSAC reliable, band floor-aligned)
+  -> failure reason:  gravity_alignment_unverified_band_not_floor_aligned_inlier:<v>
+Stage 2 - classic consistency (existing): held-out render error, free-space
+  contradiction rate, dynamic leakage.
+```
+
+Scope rule: the cascade applies ONLY to paths whose `ScalePosterior` has no
+measured evidence (`metric_pseudo_label` candidates). A measured baseline's
+authority comes from instruments, not internal consistency; it is the yardstick,
+not the examinee. The cascade outcome is surfaced in a `gate_cascade` block on
+the validation report (per-stage inputs, thresholds, verdict, and whether the
+stage applied).
+
+Threshold honesty: the Stage 0 thresholds sit inside a measured chasm on the
+canonical scenes (inbounds ratio: bad scenes 0.000/0.035 vs good scenes
+0.605/0.648; depth-residual edge fraction: 0.434/0.537 vs 1.000/1.000; mean
+confidence weight: 0.116/0.187 vs 0.532/0.541). Values inside the chasm are
+provisional and carry no calibrated authority between the clusters; they must be
+re-derived from injected-corruption response curves (Module 11 detection-limit
+calibration) before any claim is made about intermediate-quality scenes.
+
 ## Core Modules
 
 ### Module 1: Canonical Asset Registry
@@ -1133,6 +1180,8 @@ Purpose: decide whether the output can enter a training dataset.
 Validation evidence:
 
 ```text
+evidence-mass statistics from the visibility graph (Stage 0 of the cascade)
+gravity/floor alignment reliability (Stage 1 of the cascade)
 held-out render/depth consistency
 free-space contradiction rate
 scale posterior uncertainty
@@ -1142,6 +1191,16 @@ reference metric error when measured evidence exists
 per-voxel band agreement vs the measured 3D field (occupied IoU, free-space
   contradiction, dynamic leakage, coverage) when a measured reference exists
 ```
+
+Detection-limit calibration (planned, the "measured authority" principle): inject
+known corruptions into a finished candidate reconstruction (corruption families
+chosen OUTSIDE the refiner's parametric span, so the refiner cannot simply repair
+them), re-score every GT-free signal, and record per scene which injected
+magnitudes each signal detects. A signal that cannot detect an injected
+corruption has no authority on that scene and its clean reading is reported as
+`no_authority`, never as evidence of correctness. Detection limits are reported
+in scene-relative units (fraction of trajectory span) because absolute scale is
+gauge-free without an anchor.
 
 Final status:
 

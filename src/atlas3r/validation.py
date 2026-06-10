@@ -38,6 +38,18 @@ HIGH_HELD_OUT_ERROR_DEFAULT = 1.0  # used when not computable
 # material residual leakage must block metric-training acceptance.
 MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT = 0.10
 
+# Stage 0 evidence-mass thresholds (GT-free acceptance cascade, ARCHITECTURE.md).
+# A consistency score over near-zero co-observation is vacuous: held-out error and
+# free-space contradiction can read clean simply because the reconstruction barely
+# overlaps itself. These thresholds sit inside a measured chasm on the canonical
+# scenes (inbounds ratio 0.000/0.035 bad vs 0.605/0.648 good; depth-residual edge
+# fraction 0.434/0.537 vs 1.000/1.000; mean confidence weight 0.116/0.187 vs
+# 0.532/0.541). Values between the clusters are PROVISIONAL until detection-limit
+# calibration assigns them measured authority.
+MIN_MEDIAN_INBOUNDS_RATIO_FOR_ACCEPT = 0.30
+MIN_DEPTH_RESIDUAL_EDGE_FRACTION_FOR_ACCEPT = 0.70
+MIN_MEAN_CONFIDENCE_WEIGHT_FOR_ACCEPT = 0.30
+
 
 def validate_and_accept(
     asset_id: str,
@@ -74,6 +86,14 @@ def validate_and_accept(
         map_report, static_dynamic_states
     )
 
+    # GT-free acceptance cascade (ARCHITECTURE.md). The cascade applies ONLY to
+    # paths without measured evidence: a measured baseline's authority comes from
+    # instruments, not internal consistency -- it is the yardstick, not the
+    # examinee. Diagnostics are computed (and surfaced) for every path.
+    cascade_applies = status is MetricAcceptanceStatus.METRIC_PSEUDO_LABEL
+    stage0 = _evidence_mass_stage(visibility_residual_report, cascade_applies)
+    stage1 = _gravity_alignment_stage(map_report, cascade_applies)
+
     validation_passes = (
         held_out_error <= MAX_HELD_OUT_ERROR_FOR_ACCEPT
         and contradiction_rate <= MAX_CONTRADICTION_RATE_FOR_ACCEPT
@@ -100,11 +120,16 @@ def validate_and_accept(
         )
         final_category = "non_metric_pseudo_label"
     elif metric_status:
-        if validation_passes:
+        cascade_passes = stage0["passes"] and stage1["passes"]
+        if validation_passes and cascade_passes:
             accepted = True
             final_category = status_value
         else:
             # Metric posterior but validation failed -> downgrade honestly.
+            # ALL failing stages contribute reasons (no early-exit): every
+            # defect is reported, not just the first one found.
+            rejection_reasons.extend(stage0["rejection_reasons"])
+            rejection_reasons.extend(stage1["rejection_reasons"])
             if contradiction_rate > MAX_CONTRADICTION_RATE_FOR_ACCEPT:
                 rejection_reasons.append(
                     f"free_space_contradiction_rate_too_high:{contradiction_rate:.3f}"
@@ -169,6 +194,15 @@ def validate_and_accept(
         "dynamic_leakage_score": float(dynamic_leakage),
         "dynamic_leakage_note": dynamic_note,
         "validation_passes_metric_gate": bool(validation_passes),
+        "gate_cascade": {
+            "stage0_evidence_mass": {k: v for k, v in stage0.items() if k != "rejection_reasons"},
+            "stage1_gravity_alignment": {k: v for k, v in stage1.items() if k != "rejection_reasons"},
+            "applies_to_this_path": bool(cascade_applies),
+            "scope_rule": (
+                "cascade gates only paths without measured evidence; a measured "
+                "baseline is the yardstick, not the examinee"
+            ),
+        },
         "rejection_reasons": tuple(report.rejection_reasons),
         "band3d_agreement": dict(band3d_agreement) if isinstance(band3d_agreement, Mapping) else band3d_agreement,
         "band3d_agreement_summary": _band3d_summary(band3d_agreement),
@@ -198,6 +232,113 @@ def _band3d_summary(band3d_agreement: Mapping[str, Any] | None) -> dict[str, Any
         "estimated_scale_monocular_to_measured",
     )
     return {"status": status, **{k: band3d_agreement.get(k) for k in keys}}
+
+
+# ---------------------------------------------------------------------------
+# GT-free acceptance cascade stages (ARCHITECTURE.md)
+# ---------------------------------------------------------------------------
+
+
+def _evidence_mass_stage(
+    visibility_residual_report: Mapping[str, Any],
+    applies: bool,
+) -> dict[str, Any]:
+    """Stage 0: does the reconstruction carry enough co-observation evidence for
+    any consistency score to mean anything?
+
+    Reads the visibility graph's overall statistics (already computed by M4,
+    previously unread by the gate). Low evidence mass rejects regardless of how
+    clean the consistency scores look -- a held-out error over near-zero overlap
+    is vacuous, not reassuring. Missing statistics count as zero evidence (never
+    silently pass), matching "unknown is not free" at the gate level.
+    """
+    overall = (
+        visibility_residual_report.get("overall")
+        if isinstance(visibility_residual_report, Mapping)
+        else None
+    )
+    overall = overall if isinstance(overall, Mapping) else {}
+
+    def _ratio(key: str) -> float:
+        value = overall.get(key)
+        if isinstance(value, (int, float)) and value == value:
+            return float(value)
+        return 0.0
+
+    inbounds_ratio = _ratio("median_reprojection_inbounds_ratio")
+    confidence_weight = _ratio("mean_confidence_weight")
+    edge_count = _ratio("edge_count")
+    edges_with_residual = _ratio("edges_with_depth_residual")
+    edge_fraction = (edges_with_residual / edge_count) if edge_count > 0 else 0.0
+
+    reasons: list[str] = []
+    if inbounds_ratio < MIN_MEDIAN_INBOUNDS_RATIO_FOR_ACCEPT:
+        reasons.append(
+            f"evidence_mass_median_inbounds_ratio_too_low:{inbounds_ratio:.3f}"
+        )
+    if edge_fraction < MIN_DEPTH_RESIDUAL_EDGE_FRACTION_FOR_ACCEPT:
+        reasons.append(
+            f"evidence_mass_depth_residual_edge_fraction_too_low:{edge_fraction:.3f}"
+        )
+    if confidence_weight < MIN_MEAN_CONFIDENCE_WEIGHT_FOR_ACCEPT:
+        reasons.append(
+            f"evidence_mass_mean_confidence_weight_too_low:{confidence_weight:.3f}"
+        )
+
+    return {
+        "passes": not reasons if applies else True,
+        "applied": bool(applies),
+        "median_reprojection_inbounds_ratio": inbounds_ratio,
+        "depth_residual_edge_fraction": edge_fraction,
+        "mean_confidence_weight": confidence_weight,
+        "thresholds": {
+            "min_median_inbounds_ratio": MIN_MEDIAN_INBOUNDS_RATIO_FOR_ACCEPT,
+            "min_depth_residual_edge_fraction": MIN_DEPTH_RESIDUAL_EDGE_FRACTION_FOR_ACCEPT,
+            "min_mean_confidence_weight": MIN_MEAN_CONFIDENCE_WEIGHT_FOR_ACCEPT,
+        },
+        "threshold_authority": (
+            "provisional_mid_chasm_pending_detection_limit_calibration"
+        ),
+        "would_reject": bool(reasons),
+        "rejection_reasons": reasons if applies else [],
+    }
+
+
+def _gravity_alignment_stage(
+    map_report: Mapping[str, Any],
+    applies: bool,
+) -> dict[str, Any]:
+    """Stage 1: is the collision band actually floor-aligned?
+
+    Multiview geometry is gauge-blind to global tilt; only the gravity/floor
+    prior covers it. The fuser already measures floor reliability and refuses to
+    fabricate an alignment (``up_alignment_applied=False`` with a loud blocker)
+    -- this stage makes the acceptance gate READ that verdict: a band that is not
+    floor-parallel is a broken training label for a floor-band robot, whatever
+    the consistency scores say.
+    """
+    floor = map_report.get("floor") if isinstance(map_report, Mapping) else None
+    floor = floor if isinstance(floor, Mapping) else {}
+    up_applied = bool(floor.get("up_alignment_applied", False))
+    inlier = floor.get("inlier_ratio")
+    inlier_ratio = float(inlier) if isinstance(inlier, (int, float)) and inlier == inlier else 0.0
+    method = str(floor.get("method", "absent"))
+
+    reasons: list[str] = []
+    if not up_applied:
+        reasons.append(
+            f"gravity_alignment_unverified_band_not_floor_aligned_inlier:{inlier_ratio:.3f}"
+        )
+
+    return {
+        "passes": not reasons if applies else True,
+        "applied": bool(applies),
+        "up_alignment_applied": up_applied,
+        "floor_inlier_ratio": inlier_ratio,
+        "floor_method": method,
+        "would_reject": bool(reasons),
+        "rejection_reasons": reasons if applies else [],
+    }
 
 
 # ---------------------------------------------------------------------------
