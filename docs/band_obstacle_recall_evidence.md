@@ -588,3 +588,52 @@ lever for the gate is depth quality (AMB3R-class oracle; and COLMAP's own
 triangulated sparse points are now available as a multi-view-verified depth
 audit/anchor). The hybrid recipe, tools, and artifacts are retained and
 documented for that next step.
+
+### Phase 8 continuation — depth-gap diagnosis chain (hypotheses tested honestly)
+
+With poses solved, three hypotheses for the band residual were tested in
+sequence; two died:
+
+1. **"Multi-view depth degrades with view count" — REFUTED.** Per-frame depth
+   vs measured TUM depth (diagnostic oracle): 14-view median |log err| 0.036 /
+   edge 0.048; 46-view 0.042 / 0.055 (p90 actually better). The depth is
+   ~4% median, ~5% at depth edges, at both counts.
+2. **"Baseline band score was a scale-inflation artifact" — PARTIALLY true,
+   not the driver.** The baseline fused xyz at 1.34x scale (5 cm voxels ~3.7 cm
+   real, accidentally super-resolving structures); at the hybrid's correct
+   scale (1.03x), re-fusing at 2.5 cm voxels lifts occ_iou 0.000 -> 0.037 but
+   recall DROPS 0.38 -> 0.28: finer voxels do not rescue the band.
+3. **Standing diagnosis:** 60-70% of measured-solid band voxels receive ZERO
+   occupied evidence within 10 cm -- the learned depth genuinely never places
+   thin-structure surfaces (edge error ~5% = 7-15 cm at room distances,
+   larger than the structures themselves). COLMAP-CUDA PatchMatch MVS pilot
+   (geometrically VERIFIED classical depth, BSD) is measuring whether any
+   commercially-clean source sees these structures at all.
+
+### Phase 8 continuation — MVS verified-depth pilot: the perception wall cracks
+
+COLMAP-CUDA PatchMatch with geometric verification (7 min/scene on one 4090,
+BSD): **verified depth is 2.2x more accurate than the learned depth** (median
+|log err| 0.0163 vs 0.036; edge 0.0357 vs 0.048) over 67.6% of pixels.
+
+Composite pilot (COLMAP poses + MVS-verified depth where available +
+MapAnything fill, unit-consistent via the recorded candidate-only scale;
+runs/_diag/mvs_composite_pilot.py):
+
+| config | occ_iou | recall(any,10cm) | band_fsc |
+|---|---|---|---|
+| learned depth @ 2.5cm | 0.037 | 0.282 | 0.948 |
+| composite @ 2.5cm | 0.047 | **0.780** | 0.927 |
+| learned depth @ 5cm | 0.000 | 0.377 | 1.000 |
+| composite @ 5cm | 0.003 | 0.445 | 0.997 |
+
+Honest read: the thin structures ARE now perceived — 78% of measured-solid
+band voxels carry solid evidence within tolerance (was 28%). The remaining
+gap moved INSIDE the fuser: recovered solid hits land 1-2 voxels off (MVS
+edge error ~3.6% = 5-10 cm at range) and free votes still dominate
+classification (fsc 0.93, iou 0.047). Next lever (first move of the next
+session): voxel-level conversion of recovered evidence — conflict resolution
+and confidence floors at 2.5 cm with verified-trust weighting, all
+fusion-side, no fabrication. The depth arc verdict: pose solved, scale
+solved, perception now substantially solved by a commercially clean verified
+source; classification is the last segment of the last mile.
