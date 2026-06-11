@@ -67,4 +67,34 @@ observed):**
    (Phase 10). The documented production staging (every-8th ∪ keyframes ∪
    anchors, sequential video matching) was applied as the frozen recipe.
 
-**Result:** (recorded below after the run; the run happens once.)
+**RESULT (run executed 2026-06-11 at commit `debd2b4`; runs/teacher_vault_canonical + runs/teacher_vault_v3; chain: M2 6 measured packets → selector 48 kf (anchored) → MapAnything → COLMAP 366/366 registered, all 6 anchors, sequential matching → 2-phase MVS + A/B → stability composite 18.2% verified):**
+
+| | canonical-style | v3 |
+|---|---|---|
+| camera Sim(3) RMSE | 1.413 m | 0.825 m |
+| estimated scale | 1.152 | **1.064** |
+| HONEST solid F1@5cm | 0.171 | **0.231** |
+| HONEST solid F1@10cm | 0.367 | **0.564** |
+| HONEST precision@10cm | 0.232 | **0.513** |
+| HONEST median solid distance | 0.037 m | 0.078 m |
+| per_class | 0.791 | 0.736 |
+| gate verdict | REJECTED (floor 0.149, fsc 0.622) | REJECTED (floor 0.156, fsc 0.607) |
+
+**NO ALARMS.**
+- E1 CONFIRMED: v3 dominance generalizes cross-camera (+35% F1@5cm, +54%
+  F1@10cm, 2.2× precision@10cm) — the placement campaign is not fr1
+  overfitting.
+- E2 CONFIRMED: v3 honest median 0.078 m ≤ the pre-registered 0.10 m bound.
+- E3 CONFIRMED — the gate WORKED on an unseen scene: the 2585-frame long
+  sweep drifts under sequential matching without loop closure (RMSE
+  0.83–1.41 m) and the gate rejected BOTH recipes for the right reasons
+  (fsc 0.61–0.62 ≫ 0.25; floor < 0.30). No false accept.
+- Honest dips recorded, not explained away: v3 per_class 0.736 < canonical
+  0.791 on this scene; canonical's median recall-distance is lower while
+  its F1 is far worse (its precision collapses — fewer correct solids).
+- The vault names the next yield wall for LONG videos: pose drift without
+  loop closure. The gate catches it (the moat holds); turning those
+  rejections into accepts needs a loop-closing pose backend (GLOMAP — the
+  standing roadmap item), never a weaker gate.
+Nothing was tuned in response to any number above. The vault scene remains
+sealed and unburned.
