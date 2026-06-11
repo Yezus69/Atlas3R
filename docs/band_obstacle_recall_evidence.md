@@ -1628,3 +1628,56 @@ same in-cone polish loop, with the final inlier count measured on the FINAL
 plane (also fixes an off-by-one: shot-1 code stored the pre-refit plane's
 support). Re-run = shot 2, same expectations and falsifier as the Phase 18
 pre-registration.
+
+### Phase 20 — gate-authority completion: class-A injection certificates + the drift falsifier (pre-registration)
+
+Committed BEFORE the harness upgrade and any run.
+
+**Why the existing certificate cannot be reused:** the one certificate on
+disk (xyz, pre-v3) was measured against the OLD flat gate. The production
+gate is provenance-conditioned (class-A fsc 0.55 / p90 0.66, both
+PROVISIONAL ×1.2 margins) and includes Stage-2b prerefine-p90 — the
+on-disk harness still scores flat fsc 0.25 and computes no p90. A
+certificate against the wrong gate is optimistic exactly where it matters
+(class-A bounds are LOOSER). The harness is upgraded to MIRROR the
+production gate (no new thresholds, all constants imported from
+validation.py):
+- pose-provenance class from the SAME BA_GRADE_POSE_MARKERS logic;
+- class-conditioned fsc and p90 bounds;
+- per-injection prerefine p90 via a measure-only refine pass (residuals
+  measured at x0, NO optimization, NO repair — injections stay unrepaired);
+- dynamic leakage stays out of harness scope (the harness fuses without
+  static/dynamic states; the tested families do not perturb the dynamic
+  channel) — recorded in the certificate as out_of_scope, not as coverage.
+
+**Runs (in order):** xyz-v3 canonical (class A, THE accepted scene), 3
+seeds, full magnitude grid — this is the drift falsifier; then desk-v3,
+room-v3, phone-v3 certificates. Vault: NEVER (sealed).
+
+**The second curve (class-A bound refutation test):** for the pose-drift
+families, per magnitude (1 seed), additionally compute honest F1@5cm
+(rigid SE(3), s=1, vs the measured field). PRE-REGISTERED REFUTATION: any
+magnitude where honest F1@5cm drops more than 0.10 below the clean value
+while NO class-A gated signal crosses its bound refutes the ×1.2
+provisional margins for that family; the family is recorded as
+no_authority and carried in-band into TrainingSample provenance
+(gate_no_authority_families). Detection at or below the damage threshold
+converts the provisional strings to measured citations for that family.
+
+**Wiring (reportage, additive):** the per-scene
+injected_corruption_detection_limit block is attached to the teacher
+report when a certificate exists for the asset (path + summary verdicts +
+no_authority families); absent certificate -> explicit
+no_certificate_for_scene marker. The two UNMARKED bars (held-out 0.50,
+dynamic leakage 0.10) and the Stage-1 floor bar (0.30, mapping.py) gain
+explicit authority tags; their response curves from these runs are
+recorded (report-only; any threshold move would be a separate
+pre-registration).
+
+**Expectations (not targets):** the measured blindness (coherent pose
+drift <=0.4 span, rotation <=10°, focal bias) is expected to PERSIST under
+the class-A bounds (they are looser than the flat gate that was already
+blind); the honest deliverable in that branch is the in-band no_authority
+record, not a forced detection. scale_drift_ramp and regional_depth_bias
+detections are expected to survive the gate upgrade (Stage-1/fsc
+mechanisms unchanged).
