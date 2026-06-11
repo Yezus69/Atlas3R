@@ -899,6 +899,100 @@ provisional and carry no calibrated authority between the clusters; they must be
 re-derived from injected-corruption response curves (Module 11 detection-limit
 calibration) before any claim is made about intermediate-quality scenes.
 
+### TrainingSample
+
+Purpose: the unit the student trainer consumes -- one ACCEPTED scene packaged
+as (label field + per-frame views + trust channels + provenance), emitted by
+the dataset emitter (`python -m atlas3r.dataset`). The student contract (an
+ego-centric local collision-band occupancy net) crops its own training windows
+from the scene-level record; the teacher does not pre-crop.
+
+Binding rules (honesty invariants of the export surface):
+
+- A TrainingSample is emitted ONLY for scenes whose validation report says
+  `accepted_for_metric_training: true`. The emitter REFUSES rejected scenes
+  loudly. There is no force flag.
+- No measured-GT-derived value may appear in any field a trainer could
+  consume (loss weights, masks, confidences) -- GT-derived diagnostics live in
+  the eval records, never here (measured-leak hazard).
+- Unknown is never serialized as free; the label field is carried verbatim
+  from `voxel_occupancy_3d.npz` (the contract-validated primary output).
+- Every trust channel carries an explicit calibration-status marker. Until a
+  reliability-measured confidence channel exists, `confidence_calibration` is
+  `"uncalibrated_heuristic"`; until a data-driven scale posterior exists,
+  `scale_status` is `"per_backbone_constant_prior"`. A consumer that ignores
+  the markers is consuming numbers the teacher never claimed were calibrated.
+- Loss downweighting policy is by ABSOLUTE calibrated threshold (once the
+  calibrated channel exists), never per-clip quantile.
+- A sample with no license record is NOT emitted (named reason, no silent
+  default): one NC source poisons a sellable dataset.
+
+Required fields:
+
+```text
+sample_id                       # <asset_id>@<teacher_commit_short>
+asset_id
+teacher_commit                  # repo commit of the producing teacher run
+recipe                          # production recipe name, e.g. "v3_stability_composite"
+robot_envelope{}                # RobotEnvelopeConfig.to_dict() of the producing run
+acceptance{
+  category                      # measured_metric | metric_pseudo_label | ...
+  accepted_for_metric_training  # must be true (emitter-enforced)
+  gate_provenance_class         # class A (ba_grade_frozen) | class B
+  validation_report_path        # pointer for audit, NOT trainer input
+}
+label_field{
+  path                          # voxel_occupancy_3d.npz (verbatim copy or relative pointer)
+  sha256
+  grid_frame, voxel_size_m, origin_world[3], floor_axis, band_min_m, band_max_m
+  confidence_calibration        # honesty marker (see rules)
+}
+frames[]{                       # every packet frame of the candidate track
+  frame_id
+  rgb_path                      # source keyframe image (relative), with
+  rgb_sha256                    #   content hash (manifest-verified)
+  intrinsics{fx,fy,cx,cy,width_px,height_px}
+  T_grid_camera[4][4]           # camera-to-grid-frame pose: R_up @ T_world_camera
+                                #   (the SAME floor-aligned frame as the label field)
+}
+scale{
+  claimed_scale                 # 1.0 -- labels are consumed at claimed metric scale
+  scale_uncertainty             # RELATIVE band (ScalePosterior.relative_scale_uncertainty)
+  scale_status                  # honesty marker (see rules)
+}
+provenance{
+  source_uri_or_path
+  license{name, source, verified}   # REQUIRED; emitter refuses without it
+  backbone, pose_source, stability{tau, k}
+  domain                        # "indoor" (outdoor enters with its own gate authority)
+}
+```
+
+### DatasetManifest
+
+Purpose: the corpus index a trainer loads -- content-hashed, license-audited,
+with honest accept-rate accounting. Deterministic: re-emitting unchanged
+inputs produces an identical manifest (no timestamps inside hashed content).
+
+Required fields:
+
+```text
+manifest_version
+teacher_commit
+samples[]{sample_id, asset_id, sample_dir, file_sha256{}, acceptance_category,
+          license_name, domain}
+accounting{scenes_attempted, scenes_accepted, scenes_rejected,
+           rejection_reasons_histogram{}}   # honest yield, not just the wins
+splits{}                        # named explicit lists; empty until the corpus
+                                # is large enough that splits mean anything
+```
+
+Verification policy (mutation falsifiers, run as the emitter's smoke suite):
+corrupting any referenced file must fail the manifest hash check; flipping an
+unknown voxel to free in a label copy must fail contract re-validation on
+load; pointing the emitter at a rejected scene must refuse; a sample whose
+license record is missing or NC-flagged must be excluded with a named reason.
+
 ## Core Modules
 
 ### Module 1: Canonical Asset Registry

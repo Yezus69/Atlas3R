@@ -1,62 +1,88 @@
 {
-  "version": 1,
-  "tracks": [
-    {
-      "asset_id": "reference_metric",
-      "track_type": "reference_metric",
-      "source_uri_or_path": "data/reference_metric",
-      "expected_modalities": [
-        "rgb",
-        "measured_metric_evidence"
-      ],
-      "metadata": {
-        "recommended_source": "TUM RGB-D freiburg1_room or another public indoor RGB sequence with measured metric evidence",
-        "asset_kind": "local_path",
-        "frame_glob": "rgb/*.png",
-        "metric_evidence_required_later": true
-      }
-    },
-    {
-      "asset_id": "reference_metric_desk",
-      "track_type": "reference_metric",
-      "source_uri_or_path": "data/reference_metric_desk",
-      "expected_modalities": [
-        "rgb",
-        "measured_metric_evidence"
-      ],
-      "metadata": {
-        "recommended_source": "TUM RGB-D freiburg1_desk \u2014 HARDER trajectory (generalization / realistic-motion gate scene); shares fr1 intrinsics",
-        "asset_kind": "local_path",
-        "frame_glob": "rgb/*.png",
-        "metric_evidence_required_later": true
-      }
-    },
-    {
-      "asset_id": "reference_metric_room",
-      "track_type": "reference_metric",
-      "source_uri_or_path": "data/reference_metric_room",
-      "expected_modalities": [
-        "rgb",
-        "measured_metric_evidence"
-      ],
-      "metadata": {
-        "recommended_source": "TUM RGB-D freiburg1_room \u2014 full room-LOOP gate scene (1362 frames). Fails the band gate (occ_iou~0) for the same depth-limited obstacle-base miss as every scene. NOTE: at the staged 13-keyframe recipe the scorecard looks catastrophic (cam RMSE 0.82m, scale 0.28, coverage 0.019) but that is keyframe UNDER-SAMPLING, not loop-closure: at ~48 keyframes the loop reconstructs near-metric (cam RMSE 0.24-0.46m, coverage 0.58, scale ~0.9), better-posed than desk. The fixed keyframe budget under-samples long trajectories; a motion-aware adaptive selector is the real fix. See docs/band_obstacle_recall_evidence.md Phase 5. Shares fr1 intrinsics.",
-        "asset_kind": "local_path",
-        "frame_glob": "rgb/*.png",
-        "metric_evidence_required_later": true
-      }
-    },
-    {
-      "asset_id": "phone_room",
-      "track_type": "phone_room",
-      "source_uri_or_path": "data/phone_room",
-      "expected_modalities": [
-        "rgb"
-      ],
-      "metadata": {
-        "asset_kind": "decoded_frame_sequence",
-        "frame_glob": "frame_*.jpg"
-      }
+ "version": 1,
+ "tracks": [
+  {
+   "asset_id": "reference_metric",
+   "track_type": "reference_metric",
+   "source_uri_or_path": "data/reference_metric",
+   "expected_modalities": [
+    "rgb",
+    "measured_metric_evidence"
+   ],
+   "metadata": {
+    "recommended_source": "TUM RGB-D freiburg1_room or another public indoor RGB sequence with measured metric evidence",
+    "asset_kind": "local_path",
+    "frame_glob": "rgb/*.png",
+    "metric_evidence_required_later": true,
+    "license": {
+     "name": "CC BY 4.0",
+     "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+     "verified": true,
+     "verification_note": "page fetched 2026-06-11: 'all data in the TUM RGB-D benchmark is licensed under a Creative Commons 4.0 Attribution License (CC BY 4.0)'",
+     "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
     }
-  ]
+   }
+  },
+  {
+   "asset_id": "reference_metric_desk",
+   "track_type": "reference_metric",
+   "source_uri_or_path": "data/reference_metric_desk",
+   "expected_modalities": [
+    "rgb",
+    "measured_metric_evidence"
+   ],
+   "metadata": {
+    "recommended_source": "TUM RGB-D freiburg1_desk \u2014 HARDER trajectory (generalization / realistic-motion gate scene); shares fr1 intrinsics",
+    "asset_kind": "local_path",
+    "frame_glob": "rgb/*.png",
+    "metric_evidence_required_later": true,
+    "license": {
+     "name": "CC BY 4.0",
+     "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+     "verified": true,
+     "verification_note": "page fetched 2026-06-11: 'all data in the TUM RGB-D benchmark is licensed under a Creative Commons 4.0 Attribution License (CC BY 4.0)'",
+     "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+    }
+   }
+  },
+  {
+   "asset_id": "reference_metric_room",
+   "track_type": "reference_metric",
+   "source_uri_or_path": "data/reference_metric_room",
+   "expected_modalities": [
+    "rgb",
+    "measured_metric_evidence"
+   ],
+   "metadata": {
+    "recommended_source": "TUM RGB-D freiburg1_room \u2014 full room-LOOP gate scene (1362 frames). Fails the band gate (occ_iou~0) for the same depth-limited obstacle-base miss as every scene. NOTE: at the staged 13-keyframe recipe the scorecard looks catastrophic (cam RMSE 0.82m, scale 0.28, coverage 0.019) but that is keyframe UNDER-SAMPLING, not loop-closure: at ~48 keyframes the loop reconstructs near-metric (cam RMSE 0.24-0.46m, coverage 0.58, scale ~0.9), better-posed than desk. The fixed keyframe budget under-samples long trajectories; a motion-aware adaptive selector is the real fix. See docs/band_obstacle_recall_evidence.md Phase 5. Shares fr1 intrinsics.",
+    "asset_kind": "local_path",
+    "frame_glob": "rgb/*.png",
+    "metric_evidence_required_later": true,
+    "license": {
+     "name": "CC BY 4.0",
+     "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+     "verified": true,
+     "verification_note": "page fetched 2026-06-11: 'all data in the TUM RGB-D benchmark is licensed under a Creative Commons 4.0 Attribution License (CC BY 4.0)'",
+     "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+    }
+   }
+  },
+  {
+   "asset_id": "phone_room",
+   "track_type": "phone_room",
+   "source_uri_or_path": "data/phone_room",
+   "expected_modalities": [
+    "rgb"
+   ],
+   "metadata": {
+    "asset_kind": "decoded_frame_sequence",
+    "frame_glob": "frame_*.jpg",
+    "license": {
+     "name": "first-party-capture-all-rights-held",
+     "source": "self-captured phone video (project-owned)",
+     "verified": true
+    }
+   }
+  }
+ ]
 }
