@@ -37,8 +37,6 @@ from .m1 import (
 
 DEFAULT_OUTPUT_DIR = Path("runs/m2")
 DEFAULT_M1_REPORT_DIR = Path("runs/m1")
-REFERENCE_ASSET_ID = "reference_metric"
-PHONE_ASSET_ID = "phone_room"
 
 RGB_INDEX_FILE = "rgb.txt"
 DEPTH_INDEX_FILE = "depth.txt"

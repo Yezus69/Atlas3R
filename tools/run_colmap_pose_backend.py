@@ -34,17 +34,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def natural_key(p: Path):
-    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", p.name)]
 
 
 def parse_colmap_images(images_txt: Path) -> dict[str, np.ndarray]:

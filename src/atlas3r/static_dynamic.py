@@ -202,7 +202,7 @@ def infer_static_dynamic(
     states: list[StaticDynamicState] = []
     frame_reports: list[dict[str, Any]] = []
 
-    for i, pf in enumerate(prepared):
+    for pf in prepared:
         neighbours = [prepared[j] for j in neighbour_map[pf["frame_id"]]]
         verdict = _score_frame_against_neighbours(
             pf, neighbours, np, thresholds, families_used
