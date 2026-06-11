@@ -1042,3 +1042,78 @@ blocker: teacher 5m21s for all four tracks (canonical), MVS geometric
 verification ~2 s/keyframe marginal on a photometric substrate (51.0%
 verified coverage identical to the full run; keyframe-only sources lose
 3× coverage and are rejected).
+
+### Phase 12 — PERTURBATION-STABILITY: the placement wall cracks (pilot, 2 measured scenes)
+
+Principle (maintainer, 2026-06-10): *a surface that appears in the same
+place under independent perturbations is more trustworthy than a surface
+that appears only under one recipe.* Not absolute truth — a GT-free signal
+whose authority is earned on measured scenes. Instantiation: per keyframe,
+TWO PatchMatch geometric depths from DISJOINT temporal source halves (A =
+even-ranked 10 of the 20 nearest, B = odd-ranked) on the shared photometric
+substrate (+2.6 min/scene GPU each, marginal). GT-free per-pixel signals:
+witness existence (both A and B verify the pixel) and placement
+disagreement δ = |log dA − log dB|. Pilots:
+`runs/_diag/stability_authority_pilot.py` (per-pixel authority vs measured
+TUM depth) and `runs/_diag/stability_label_pilot.py` (label-level effect at
+2.5 cm under the Phase 11 invariant instrument). A/B workspaces are
+regenerable from the dense workspaces in ~2.6 min each (cfg construction in
+the pilot scripts).
+
+**Stage 1 — per-pixel authority (xyz / desk):**
+- Witness existence has clean authority: single-witness production-verified
+  pixels are 1.6–1.7× worse at median (xyz 0.0212 vs 0.0127; desk 0.0145
+  vs 0.0092) and up to 1.8× at edges (xyz 0.0707 vs 0.0383).
+- δ within both-witness pixels ranks error only weakly (Spearman 0.17/0.16)
+  and the δ-gate moves EDGE error little: the residual edge error is a
+  perturbation-STABLE BIAS (foreground fattening) that both halves
+  reproduce — a consistency-only signal cannot see a shared bias BY
+  CONSTRUCTION. This bounds every consistency-based GT-free signal at
+  edges and is now on record.
+- CONSENSUS averaging of A/B is REFUTED as a placement refiner (xyz edge
+  0.0311 → 0.0329; desk 0.0702 → 0.0704): A/B errors are correlated.
+
+**Stage 2 — label-level effect (verified := geometric AND both-witness AND
+δ ≤ τ; production depth values; fused at 2.5 cm; measured under
+solid_distance_agreement):**
+
+| | xyz v2 (60% verified) | xyz stable τ=.005 (19%) | desk v2 (58%) | desk stable τ=.005 (14%) |
+|---|---|---|---|---|
+| solid_F1@5cm | 0.065 | **0.230** | 0.065 | **0.382** |
+| solid_F1@10cm | 0.310 | 0.483 | 0.200 | **0.762** |
+| solid_precision@10cm | 0.244 | 0.429 | 0.981 | 0.832 |
+| solid_recall@10cm | 0.424 | 0.553 | 0.111 | **0.703** |
+| median solid distance | 0.113 m | 0.089 m | 0.266 m | **0.069 m** |
+
+xyz gated F1@5cm (0.230) BEATS the canonical-5cm labels (0.199) at 2.5 cm —
+the first config to do so; desk improves 5.8× at the collision margin with
+a 7,605-voxel judged sample (not small-sample noise) and is monotone in τ.
+**Why a ~20% per-pixel edge improvement yields 4–6× at the label level:
+per-pixel yield ≠ field-level recall.** Surfaces are over-sampled (2048
+rays × 46 frames), so keeping only the trustworthy ~15–20% of verified
+pixels barely costs field recall, while each dropped untrustworthy pixel
+was painting a misplaced solid voxel that poisoned precision.
+Trustworthy-15% beats everything-60% — the maintainer's principle,
+quantified at the label level.
+
+Honest caveats: (1) τ = 0.005 is the better of TWO swept values, openly
+GT-calibrated on these two scenes — production use must freeze it ONCE with
+this provenance (the Stage-0-threshold pattern), never per scene. (2) The
+xyz τ=0.01 row was anomalously below baseline (desk is monotone; likely
+small-judged-set noise at xyz, 185 voxels) — the τ=0.005 conclusion rests
+on both scenes. (3) The VOTED metrics still read terribly on the gated
+fields (xyz occ_iou 0.016) — the voted instrument diverges under
+refinement (Phase 9/11); any spine adoption FIRST requires the
+pre-registered metric-law amendment promoting the distance instruments,
+else the scorecard law would reject the largest label improvement on
+record because of its own broken meter.
+
+**Next steps (each pre-registered before its run):** (1) metric-law
+amendment — adoption bar moves to solid_F1@5cm up + per_class held +
+free-precision held; (2) tool integration — A/B stability masks in
+`tools/run_mvs_depth_backend.py` (or a sibling stability tool) writing
+`verified/` as geometric AND stable@τ=0.005 (frozen, provenance recorded);
+(3) ONE spine single-shot at the v2 recipe + stability tier across all
+tracks; (4) phone_room production rerun — stability needs no GT, so the
+gate's Stage-0/Stage-2 signals see the same trust tightening on no-GT
+scenes.
