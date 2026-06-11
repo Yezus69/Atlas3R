@@ -50,6 +50,25 @@ MIN_MEDIAN_INBOUNDS_RATIO_FOR_ACCEPT = 0.30
 MIN_DEPTH_RESIDUAL_EDGE_FRACTION_FOR_ACCEPT = 0.70
 MIN_MEAN_CONFIDENCE_WEIGHT_FOR_ACCEPT = 0.30
 
+# PROVENANCE-CONDITIONED Stage-2 bounds (calibration table:
+# docs/gt_free_verification.md, 2026-06-11). Neither fsc nor the prerefine
+# p90 residual ranks label quality ACROSS pose-provenance classes (fsc is
+# clutter-confounded; p90 conflates depth difficulty with geometric error),
+# but each separates cleanly WITHIN a class. Class membership is GT-free
+# (the same BA-grade marker refine's freeze auto-detection uses).
+# Class B (backbone/refined poses): fsc keeps its original calibrated 0.25;
+# p90 <= 0.35 promotes the long-pending Stage-2b signal at its mid-chasm
+# value (good 0.126 vs bad 0.553/0.833 within class) -- on the canonical
+# population it only ADDS reasons to already-rejected configs.
+# Class A (BA-grade frozen poses): good-cluster max x 1.2 provisional
+# margin (fsc 0.461 -> 0.55, p90 0.548 -> 0.66), the vault EXCLUDED from
+# calibration and serving as validation (vault_v3 reads fsc 0.607 / p90
+# 0.785 -- above both bounds). Provisional until injection detection-limit
+# calibration assigns measured authority (the Stage-0 precedent).
+MAX_CONTRADICTION_RATE_BA_FROZEN = 0.55
+MAX_PREREFINE_P90_BACKBONE = 0.35
+MAX_PREREFINE_P90_BA_FROZEN = 0.66
+
 
 def validate_and_accept(
     asset_id: str,
@@ -60,6 +79,7 @@ def validate_and_accept(
     measured_reference: Sequence[FrameRayPacket] | None = None,
     static_dynamic_states: Sequence[Any] | None = None,
     band3d_agreement: Mapping[str, Any] | None = None,
+    prerefine_p90_log_depth_residual: float | None = None,
 ) -> tuple[ValidationReport, str, dict[str, Any]]:
     """Return ``(ValidationReport, final_category, validation_report_dict)``.
 
@@ -94,10 +114,26 @@ def validate_and_accept(
     stage0 = _evidence_mass_stage(visibility_residual_report, cascade_applies)
     stage1 = _gravity_alignment_stage(map_report, cascade_applies)
 
+    # Provenance class (GT-free pipeline fact): BA-grade frozen poses carry
+    # the same method marker refine's freeze auto-detection keys on.
+    from .refine import BA_GRADE_POSE_MARKERS  # single source of the marker
+
+    ba_grade = any(
+        marker in str(p.provenance.get("method", ""))
+        for p in packets
+        for marker in BA_GRADE_POSE_MARKERS
+    )
+    fsc_bound = MAX_CONTRADICTION_RATE_BA_FROZEN if ba_grade else MAX_CONTRADICTION_RATE_FOR_ACCEPT
+    p90_bound = MAX_PREREFINE_P90_BA_FROZEN if ba_grade else MAX_PREREFINE_P90_BACKBONE
+    p90 = prerefine_p90_log_depth_residual
+    # Missing p90 on a gated path is a missing signal, never a silent pass.
+    stage2b_passes = p90 is not None and p90 <= p90_bound
+
     validation_passes = (
         held_out_error <= MAX_HELD_OUT_ERROR_FOR_ACCEPT
-        and contradiction_rate <= MAX_CONTRADICTION_RATE_FOR_ACCEPT
+        and contradiction_rate <= fsc_bound
         and dynamic_leakage <= MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT
+        and (stage2b_passes or not cascade_applies)
     )
 
     rejection_reasons: list[str] = []
@@ -130,9 +166,14 @@ def validate_and_accept(
             # defect is reported, not just the first one found.
             rejection_reasons.extend(stage0["rejection_reasons"])
             rejection_reasons.extend(stage1["rejection_reasons"])
-            if contradiction_rate > MAX_CONTRADICTION_RATE_FOR_ACCEPT:
+            if contradiction_rate > fsc_bound:
                 rejection_reasons.append(
                     f"free_space_contradiction_rate_too_high:{contradiction_rate:.3f}"
+                )
+            if cascade_applies and not stage2b_passes:
+                rejection_reasons.append(
+                    "prerefine_residual_unavailable" if p90 is None else
+                    f"prerefine_p90_log_depth_residual_too_high:{p90:.3f}"
                 )
             if held_out_error > MAX_HELD_OUT_ERROR_FOR_ACCEPT:
                 rejection_reasons.append(
@@ -197,6 +238,18 @@ def validate_and_accept(
         "gate_cascade": {
             "stage0_evidence_mass": {k: v for k, v in stage0.items() if k != "rejection_reasons"},
             "stage1_gravity_alignment": {k: v for k, v in stage1.items() if k != "rejection_reasons"},
+            "stage2b_prerefine_residual": {
+                "applied": bool(cascade_applies),
+                "passes": bool(stage2b_passes),
+                "prerefine_p90_log_depth_residual": p90,
+                "bound": float(p90_bound),
+                "pose_provenance_class": "ba_grade_frozen" if ba_grade else "backbone_refined",
+                "fsc_bound_for_class": float(fsc_bound),
+                "threshold_authority": (
+                    "provisional_good_cluster_margin_pending_injection_calibration"
+                    if ba_grade else "mid_chasm_expanded_population_2026_06_11"
+                ),
+            },
             "applies_to_this_path": bool(cascade_applies),
             "scope_rule": (
                 "cascade gates only paths without measured evidence; a measured "

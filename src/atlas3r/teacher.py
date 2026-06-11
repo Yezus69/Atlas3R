@@ -307,6 +307,7 @@ def _run_track(
         blockers=blockers,
         label="monocular_candidate",
         envelope=envelope,
+        prerefine_p90=_prerefine_p90(refine_report),
         measured_comparison_field=measured_comparison_field,
         measured_packets_for_band=(measured_packets if (is_reference and measured_packets) else None),
     )
@@ -394,6 +395,7 @@ def _run_pipeline(
     blockers: list[str],
     label: str,
     envelope: RobotEnvelopeConfig,
+    prerefine_p90: float | None = None,
     measured_comparison_field: Any = None,
     measured_packets_for_band: Sequence[Any] | None = None,
 ) -> dict[str, Any]:
@@ -508,6 +510,7 @@ def _run_pipeline(
             measured_reference,
             static_dynamic_states,
             band3d_agreement,
+            prerefine_p90,
         ),
     )
     final_category = validation_result.get("final_category", "rejected") if isinstance(validation_result, Mapping) else "rejected"
@@ -654,6 +657,14 @@ def _map(
     }
 
 
+def _prerefine_p90(refine_report: Mapping[str, Any]) -> float | None:
+    """Pre-refine p90 log-depth residual (the gated Stage-2b signal); None
+    when refine never ran (the measured baseline path)."""
+    summary = refine_report.get("residual_summary_before")
+    value = summary.get("p90_log_depth_residual") if isinstance(summary, Mapping) else None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def _refine(packets: Sequence[Any], *, fix_global_scale: bool) -> dict[str, Any]:
     refined, report = refine_scene(packets, fix_global_scale=fix_global_scale)
     return {**report, "_packets": refined}
@@ -752,11 +763,13 @@ def _validate(
     measured_reference: Sequence[Any] | None,
     static_dynamic_states: Sequence[Any] | None = None,
     band3d_agreement: Mapping[str, Any] | None = None,
+    prerefine_p90: float | None = None,
 ) -> dict[str, Any]:
     _report, final_category, validation_dict = validate_and_accept(
         asset_id, packets, scale_posterior, visibility_report, map_report,
         measured_reference, static_dynamic_states,
         band3d_agreement=band3d_agreement,
+        prerefine_p90_log_depth_residual=prerefine_p90,
     )
     return {**validation_dict, "final_category": final_category}
 
