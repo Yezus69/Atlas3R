@@ -1808,3 +1808,40 @@ Operational lesson recorded: dense workspaces are ~2–11 GB EACH; the
 pipeline tool should check free disk before the dense stage and the
 workspace-retention policy (extract composites, drop stereo maps) needs a
 cleanup pass at the end of every campaign run.
+
+### Phase 20 RESULTS (part 1) — the xyz-v3 class-A certificate: the drift blind spot PARTIALLY CLOSES
+
+Full 3-seed grid against the GATE-MIRRORED harness (class A: fsc 0.55, p90
+0.66, measure-only p90 per injection), runs/_diag/detection_limit_reference_metric.json:
+
+| family | detection limit | verdict |
+|---|---|---|
+| pose_drift_translation | **0.4 × span, monotone, solid** | **DETECTED — the historic blind spot partially closes** |
+| scale_drift_ramp | **1.2× end-to-end** (was 2.0× pre-v3) | DETECTED |
+| pose_drift_rotation (≤10°) | none | no_authority (expected) |
+| regional_depth_bias | none | no_authority — the OLD 0.2 "detection" rode the flat-gate 0.006 fsc knife edge; the class-A bound honestly does not fire |
+| ray_field_focal_bias | none | no_authority (expected) |
+| global_tilt_control | none | clean negative control |
+
+Headline findings:
+1. **Coherent translation drift at 0.4 span is now DETECTED** (Stage-1
+   gravity fires: the v3 composite's denser verified floor geometry breaks
+   under drift where the old sparse recipe bent). The certified blindness
+   shrinks from "blind ≤0.4 span" to "blind below 0.4, detected at 0.4".
+2. **Clean margins are healthy, no knife edges**: fsc margin 0.287, p90
+   margin 0.560 on the accepted scene (the pre-v3 certificate's fsc margin
+   was 0.006 — every small detection was coin-flip noise).
+3. Scale-ramp detection sharpened 2.0× → 1.2×.
+4. Method validation: injected magnitude tracks TRUE induced RMSE
+   (Spearman 0.94 translation / 0.71 rotation / 1.0 scale) — the harness
+   measures real damage, not artifacts.
+5. Honest no_authority families for class A: rotation ≤10°, regional depth
+   bias, focal bias — carried in-band by the teacher-report certificate
+   block (wired this session; attaches on the next canonical rerun).
+
+STILL OPEN for the formal provisional→measured conversion of the ×1.2
+class-A bounds: the F1@5cm damage second curve (per pre-registration: a
+family damaging labels past the margin while signals stay quiet refutes
+the bounds) and the desk/room/phone certificates. The xyz-v3 certificate
+alone already replaces "blind to drift, knife-edge margins" with measured
+margins and a measured partial detection.
