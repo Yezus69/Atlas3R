@@ -78,6 +78,16 @@ RANSAC_INLIER_DIST_FACTOR = 1.5  # in voxel units
 # axis-aligned (NOT floor-aligned) with a loud blocker -- never a fabricated
 # alignment that merely makes the band look correct.
 MIN_FLOOR_INLIER_RATIO_FOR_ALIGN = 0.30
+# Reference physical scale for the resolution-invariant contested-voxel rate.
+# The 0.25 acceptance threshold was calibrated on 5 cm grids; the raw ratio
+# test (free traversals > surface hits) is NOT invariant under grid
+# refinement (per-voxel counts halve per axis, so "contested" fires more
+# easily at finer voxels -- measured in Phase 9: 0.354@2.5cm vs 0.244@5cm on
+# the same scene class). Pooling counts back to the calibration scale before
+# the test makes the rate comparable across grid resolutions BY CONSTRUCTION
+# (counts are re-binned, never reweighted). Reportage today; promotion to the
+# gated metric requires its own pre-registration.
+REFERENCE_FSC_SCALE_M = 0.05
 # Camera-up PRIOR (candidate-only, supplied by the caller from the camera
 # poses under the handheld/upright-capture ASSUMPTION): when the unconstrained
 # dominant-plane RANSAC is unreliable (e.g. walls out-vote a tilted floor),
@@ -352,6 +362,30 @@ def fuse_static_map(
     contradiction_rate = float(max(0.0, min(1.0, contradiction_rate)))
     contradiction_rate_raw = float(max(0.0, min(1.0, contradiction_rate_raw)))
 
+    # Resolution-invariant companion: the SAME contested test evaluated at the
+    # reference physical scale (counts pooled to REFERENCE_FSC_SCALE_M blocks,
+    # verified exclusion at the same once-fixed k on pooled counts). At a 5 cm
+    # grid the pool factor is 1 and this equals the headline rate exactly.
+    pool = max(1, int(round(REFERENCE_FSC_SCALE_M / effective_voxel)))
+    if pool > 1:
+        def _pool(a: Any) -> Any:
+            pads = [(0, (-d) % pool) for d in a.shape]
+            ap = np.pad(a, pads)
+            s0, s1, s2 = (ap.shape[0] // pool, ap.shape[1] // pool, ap.shape[2] // pool)
+            return ap.reshape(s0, pool, s1, pool, s2, pool).sum(axis=(1, 3, 5))
+
+        free_p = _pool(free_count)
+        surf_p = _pool(surface_count)
+        ver_p = _pool(verified_occupied_count) + _pool(verified_movable_count)
+        contested_p = (free_p > surf_p) & (surf_p > 0.0)
+        conflict_p = int(np.count_nonzero(contested_p & ~(ver_p >= k_verified_excl)))
+        occupied_p = int(np.count_nonzero(surf_p > 0.0))
+        contradiction_rate_ref = float(
+            max(0.0, min(1.0, conflict_p / occupied_p if occupied_p else 0.0))
+        )
+    else:
+        contradiction_rate_ref = contradiction_rate
+
     report = {
         **base_report,
         "status": "fused",
@@ -370,6 +404,9 @@ def fuse_static_map(
         "unknown_fraction": unknown_voxels / total_voxels if total_voxels else 0.0,
         "free_occupied_conflict_voxel_count": conflict_voxels,
         "free_space_contradiction_rate": contradiction_rate,
+        "free_space_contradiction_rate_at_reference_scale": contradiction_rate_ref,
+        "reference_scale_m": float(REFERENCE_FSC_SCALE_M),
+        "reference_scale_pool_factor": pool,
         "free_space_contradiction_basis": "free_traversals_outnumber_surface_hits_over_occupied_voxels_excluding_verified_surfaces",
         "verified_tier": {
             "channel_present": bool(verified_channel_present),
@@ -571,7 +608,6 @@ def _fuse_rays(
 ):
     nx, ny, nz = dims
     inv_voxel = 1.0 / voxel
-    n = surfaces.shape[0]
     # No global subsample: the per-packet ray cap upstream (<=2048/frame) bounds
     # the budget, and it scales WITH frame count so denser-view runs fuse the
     # same per-frame evidence density as sparse runs. (The previous fixed 20k
@@ -584,70 +620,114 @@ def _fuse_rays(
         & (surf_idx[:, 1] >= 0) & (surf_idx[:, 1] < ny)
         & (surf_idx[:, 2] >= 0) & (surf_idx[:, 2] < nz)
     )
-    # PASS 1 -- integrate ALL surface evidence first. The carve pass below skips
-    # voxels with surface evidence; two passes make that skip a function of the
-    # COMPLETE surface field instead of the ray processing order (the previous
-    # interleaved pass made fusion output depend on sample order).
-    for k in range(n):
-        if not in_bounds[k]:
-            continue
-        cls = int(classes[k])
-        ix, iy, iz = int(surf_idx[k, 0]), int(surf_idx[k, 1]), int(surf_idx[k, 2])
-        if cls == CLASS_DYNAMIC:
-            # Dynamic surface hit: paint ONLY the dynamic channel. Never added
-            # to static surface_count / TSDF / occupancy (dynamic is not static).
-            dynamic_count[ix, iy, iz] += 1.0
-        else:
-            surface_count[ix, iy, iz] += 1.0
-            tsdf_value[ix, iy, iz] = 0.0
-            tsdf_weight[ix, iy, iz] += 1.0
-            log_odds[ix, iy, iz] = float(np.clip(log_odds[ix, iy, iz] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
-            uncertainty[ix, iy, iz] += rel_unc
-            # Raw per-class provenance counts: how many fused hits of each
-            # static class passed multi-view geometric verification. Counts
-            # only; the tier acts on GATES downstream, never on these counts.
-            if cls == CLASS_MOVABLE_STATIC:
-                movable_count[ix, iy, iz] += 1.0
-                if bool(verified[k]):
-                    verified_movable_count[ix, iy, iz] += 1.0
-            else:
-                occupied_static_count[ix, iy, iz] += 1.0
-                if bool(verified[k]):
-                    verified_occupied_count[ix, iy, iz] += 1.0
+    # Both passes are fully vectorized (the previous per-sample python loops
+    # dominated the teacher's wall clock -- an internet-scale throughput
+    # requirement, not a style choice). Evidence COUNTS are bitwise identical
+    # to the loop form: every increment is +1.0 (exact in float64), so
+    # accumulation order cannot change any count. log_odds is reproduced
+    # EXACTLY by bounded per-voxel sequential simulation (see below); only
+    # ``uncertainty`` (hits * rel_unc, no consumer in any gated metric) may
+    # differ from repeated addition in final-ULP rounding.
+    flat_strides = np.array([ny * nz, nz, 1], dtype=np.int64)
+
+    # PASS 1 -- integrate ALL surface evidence first. The carve pass below is
+    # computed against the complete surface field, so fusion output does not
+    # depend on sample order (the determinism fix of Phase 7 is preserved).
+    valid = in_bounds
+    is_dyn = classes == CLASS_DYNAMIC
+    is_mov = classes == CLASS_MOVABLE_STATIC
+    flat = surf_idx @ flat_strides
+
+    def _scatter(target_grid, mask):
+        if bool(np.any(mask)):
+            np.add.at(target_grid.reshape(-1), flat[mask], 1.0)
+
+    _scatter(dynamic_count, valid & is_dyn)
+    static_mask = valid & ~is_dyn
+    _scatter(surface_count, static_mask)
+    _scatter(tsdf_weight, static_mask)
+    _scatter(movable_count, static_mask & is_mov)
+    _scatter(occupied_static_count, static_mask & ~is_mov)
+    # Raw per-class provenance counts: how many fused hits of each static
+    # class passed multi-view geometric verification. Counts only; the tier
+    # acts on GATES downstream, never on these counts.
+    ver = np.asarray(verified, dtype=bool)
+    _scatter(verified_movable_count, static_mask & is_mov & ver)
+    _scatter(verified_occupied_count, static_mask & ~is_mov & ver)
+
+    hits = np.zeros(nx * ny * nz, dtype=np.int64)
+    np.add.at(hits, flat[static_mask], 1)
+    hit_voxels = hits > 0
+    tsdf_value.reshape(-1)[hit_voxels] = 0.0
+    uncertainty.reshape(-1)[hit_voxels] += hits[hit_voxels] * rel_unc
+
+    # log_odds pass 1, EXACT: every event is the same +LOG_ODDS_HIT followed by
+    # the same clip, so a voxel with k hits lands on a value determined only by
+    # k -- precompute that trajectory once and look it up. The trajectory
+    # saturates at the clamp, so it is finite by construction.
+    max_hits = int(hits.max()) if hits.size else 0
+    traj = [0.0]
+    while len(traj) <= max_hits and traj[-1] < LOG_ODDS_CLAMP:
+        traj.append(float(np.clip(traj[-1] + LOG_ODDS_HIT, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP)))
+    hit_table = np.array(traj + [traj[-1]] * max(0, max_hits - len(traj) + 1))
+    lo_flat = log_odds.reshape(-1)
+    lo_flat[hit_voxels] = hit_table[np.minimum(hits[hit_voxels], len(hit_table) - 1)]
 
     # PASS 2 -- carve free space along static/movable rays against the complete
     # surface field. Dynamic rays do NOT carve free space: a moving object
-    # gives unreliable free evidence.
-    for k in range(n):
-        if int(classes[k]) == CLASS_DYNAMIC:
-            continue
-        origin = origins[k]
-        target = surfaces[k]
-        seg = target - origin
-        dist = float(np.linalg.norm(seg))
-        if dist <= voxel:
-            continue
-        n_steps = int(dist * inv_voxel)
-        if n_steps <= 1:
-            continue
-        # Sample free voxels along the ray, excluding the final surface voxel.
-        ts = np.linspace(0.0, 1.0, num=min(n_steps, 64), endpoint=False)
-        pts = origin[None, :] + ts[:, None] * seg[None, :]
-        free_idx = np.floor((pts - grid_min[None, :]) * inv_voxel).astype(np.int64)
-        for m in range(free_idx.shape[0] - 1):  # last sample is near surface
-            fx, fy, fz = int(free_idx[m, 0]), int(free_idx[m, 1]), int(free_idx[m, 2])
-            if 0 <= fx < nx and 0 <= fy < ny and 0 <= fz < nz:
-                # Carve UNCONDITIONALLY. Surface priority lives in the class /
-                # probability construction (surface always beats free), so this
-                # does not change classes -- it makes the free-vs-surface
-                # CONFLICT signal (free_space_contradiction_rate) deterministic
-                # and COMPLETE: every traversal of a surface voxel is counted,
-                # instead of the order-dependent undercount of the old
-                # interleaved skip (output depended on sample order; and a
-                # complete-field skip would structurally zero the metric and
-                # silently un-gate the desk failure class).
-                free_count[fx, fy, fz] += 1.0
-                log_odds[fx, fy, fz] = float(np.clip(log_odds[fx, fy, fz] + LOG_ODDS_MISS, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP))
+    # gives unreliable free evidence. Free is carved UNCONDITIONALLY through
+    # surface voxels: surface priority lives in the class construction, and the
+    # complete count keeps the free-vs-surface CONFLICT signal
+    # (free_space_contradiction_rate) deterministic and complete (Phase 7).
+    seg = surfaces - origins
+    dist = np.sqrt(np.einsum("ij,ij->i", seg, seg))
+    n_steps = (dist * inv_voxel).astype(np.int64)
+    carve = (~is_dyn) & (dist > voxel) & (n_steps > 1)
+    num = np.minimum(n_steps, 64)
+
+    misses = np.zeros(nx * ny * nz, dtype=np.int64)
+    _CHUNK_POINTS = 2_000_000  # bounds transient memory (~100 MB) per slab
+    for num_value in np.unique(num[carve]):
+        rows = np.nonzero(carve & (num == num_value))[0]
+        # Same sample points as the loop form: linspace over [0,1) with the
+        # final (near-surface) sample EXCLUDED -- identical floats, identical
+        # floor indices.
+        ts = np.linspace(0.0, 1.0, num=int(num_value), endpoint=False)[:-1]
+        chunk_rows = max(1, _CHUNK_POINTS // max(1, ts.shape[0]))
+        for start in range(0, rows.shape[0], chunk_rows):
+            sel = rows[start:start + chunk_rows]
+            pts = origins[sel][:, None, :] + ts[None, :, None] * seg[sel][:, None, :]
+            free_idx = np.floor((pts - grid_min[None, None, :]) * inv_voxel).astype(np.int64)
+            ok = (
+                (free_idx[..., 0] >= 0) & (free_idx[..., 0] < nx)
+                & (free_idx[..., 1] >= 0) & (free_idx[..., 1] < ny)
+                & (free_idx[..., 2] >= 0) & (free_idx[..., 2] < nz)
+            )
+            flat_free = (free_idx @ flat_strides)[ok]
+            np.add.at(free_count.reshape(-1), flat_free, 1.0)
+            np.add.at(misses, flat_free, 1)
+
+    # log_odds pass 2, EXACT: per voxel, m equal -LOG_ODDS_MISS decrements with
+    # per-step clipping, replayed as a bounded vectorized loop. Saturation at
+    # the lower clamp makes further steps exact no-ops, so the replay needs at
+    # most ceil((2*CLAMP)/|MISS|)+1 iterations regardless of m.
+    active = misses > 0
+    if bool(np.any(active)):
+        idx_active = np.nonzero(active)[0]
+        m_left = misses[idx_active]
+        vals = lo_flat[idx_active]
+        step = 0
+        while True:
+            todo = m_left > step
+            if not bool(np.any(todo)):
+                break
+            vals[todo] = np.clip(vals[todo] + LOG_ODDS_MISS, -LOG_ODDS_CLAMP, LOG_ODDS_CLAMP)
+            step += 1
+            if bool(np.all(vals[todo] <= -LOG_ODDS_CLAMP)):
+                # Everything still pending sits exactly on the lower clamp;
+                # every remaining step is an exact no-op (clip(-C + miss) = -C).
+                break
+        lo_flat[idx_active] = vals
 
 
 def _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):

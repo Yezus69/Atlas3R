@@ -923,3 +923,69 @@ got stronger; the verdict-with-reasons is exactly the honest number the
 data engine needs. Remaining blockers point at coverage (register fragment
 B → more floor views; or denser ray budget on floor-rich frames), not at
 the gate.
+
+### Phase 11 — internet-scale throughput + resolution-invariant instruments (pre-registration first)
+
+Motivation (maintainer directive, 2026-06-10): no scene may cost an hour if
+the teacher is to label internet-scale video, and the Phase 9 standing read
+("the wall is the instrument, not the labels") must be TESTED, not assumed.
+
+**Throughput (measured, equivalence-proven):**
+- `_fuse_rays` vectorized: 30.3 s → 0.93 s per track on the heavy 2.5 cm
+  composite (32×), with EVERY evidence grid bitwise identical to the loop
+  form (counts trivially: all increments are exact +1.0; log_odds via exact
+  bounded replay of the clipped trajectory; only `uncertainty` — consumed by
+  no gated metric — differs in final-ULP rounding). Proof:
+  `runs/_diag/fuse_vectorize_equivalence.py` on the real xyz+desk composite
+  packets.
+- band3d tolerance-box vote vectorized via per-class 3D prefix sums
+  (`teacher._box_majority_vote`): 2.8 s → 0.6 s at production scale
+  (200×120×200 grid, 90k queries, rad=4), bitwise-equal outputs on
+  randomized fields including all-empty/all-touched edge cases. Proof:
+  `runs/_diag/box_vote_equivalence.py`.
+- Keyframe-restricted PatchMatch: the room dense run computed depth for all
+  375 staged images when only the 47 keyframes feed the composite;
+  restricting patch-match.cfg to keyframe references with the 20 temporally
+  nearest keyframes as explicit sources cuts the MVS stage ~8× (measured
+  below when the run completes).
+
+**Resolution-invariant instruments (definitions pre-registered HERE, before
+observing their values on the v2 artifacts):**
+1. `solid_distance_agreement` (band3d reportage): metric-distance recall /
+   precision / F1 over solid voxels at physical tolerances τ ∈ {2.5 cm,
+   5 cm, 10 cm}. 5 cm = the robot's own collision margin (`margin_m`): a
+   label is collision-correct when its solid surface lies within the safety
+   margin of the true surface. recall@τ = fraction of measured-solid band
+   voxels (inside candidate bounds) within τ of an observed candidate-solid
+   voxel; precision@τ = fraction of candidate-solid voxels mapping into the
+   co-observed measured band within τ of a measured-solid voxel; distances
+   in meters through the Sim(3) scale — no votes, no counts, so grid
+   refinement converges instead of diverging.
+2. `free_space_contradiction_rate_at_reference_scale` (map reportage): the
+   SAME contested ratio test with counts POOLED to the 5 cm calibration
+   scale (re-binned, never reweighted; pool factor 1 ⇒ exactly the headline
+   rate). Removes the measured resolution-coupling (0.354@2.5cm vs
+   0.244@5cm) by construction.
+   Both are REPORTAGE: the voted metrics and the gated headline fsc remain
+   the law; promotion requires a future pre-registration.
+
+**Deposition variant REJECTED without a run (recorded so it is not
+re-litigated):** spreading verified hits over their ±σ along-ray support was
+considered for the vote gap and rejected on structural grounds — the box
+vote is unwinnable for thin structures at fine resolution regardless (box
+volume grows cubically, thin-structure voxels linearly: ~90 free vs ≤5 occ
+even with spreading), and multiplying deposits per measurement inflates
+evidence counts, breaking the min-count lever semantics exactly as the
+red-teamed weighting rejection warned. Under a correct (distance-based)
+instrument, point deposits + the unknown-only support fill already express
+the recovered evidence.
+
+**Pre-registered EXPECTATIONS for the v2-artifact observation (the
+falsifier of Phase 9's standing read):** if the labels are good and the
+voted instrument was the wall, xyz composite @2.5cm should show
+solid_recall@10cm ≈ recall-any (~0.76) and solid_precision@5–10cm HIGH
+(>0.5), with F1@5cm far above what voted occ_iou (0.049) implies. If
+instead precision@τ comes back LOW, the labels genuinely contain false
+solids, Phase 9's interpretation is WRONG, and the verdict will say so.
+One observation run (`runs/teacher_v2b`), no parameter revisions in
+response.

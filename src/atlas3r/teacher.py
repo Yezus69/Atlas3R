@@ -1154,37 +1154,9 @@ def _band3d_agreement(
     )
     in_bounds_count = int(np.count_nonzero(in_b))
     rad = max(1, int(round(BAND_MATCH_TOLERANCE_M / cf_v)))
-    n = pts_meas.shape[0]
-    cand_at = np.full(n, -1, dtype=np.int64)
-    matched = np.zeros(n, dtype=bool)
-    exact = 0
-    occ_any = np.zeros(n, dtype=bool)
-    for k in range(n):
-        if not bool(in_b[k]):
-            continue
-        i, j, kz = int(ci[k, 0]), int(ci[k, 1]), int(ci[k, 2])
-        i0, i1 = max(i - rad, 0), min(i + rad + 1, cd0)
-        j0, j1 = max(j - rad, 0), min(j + rad + 1, cd1)
-        l0, l1 = max(kz - rad, 0), min(kz + rad + 1, cd2)
-        sub_t = cf_touched[i0:i1, j0:j1, l0:l1]
-        if not sub_t.any():
-            continue
-        # Majority class among OBSERVED candidate voxels in the tolerance box.
-        # Majority (not nearest-single) is robust to a thin floor surface sheet
-        # bridging to free-above-floor samples in two sparse fields.
-        sub_c = cf_cls[i0:i1, j0:j1, l0:l1][sub_t].astype(np.int64)
-        counts = np.bincount(sub_c, minlength=5)
-        cand_at[k] = int(np.argmax(counts))
-        # Count-level companion (no majority vote): does the tolerance box
-        # contain ANY observed occupied/movable candidate voxel? The majority
-        # vote can flip en masse as views densify (a few free-touched box
-        # neighbours outvote one solid leg voxel), so the gate-facing IoU can
-        # cliff to 0 while solid evidence still exists at count level. This
-        # recall separates "field degraded" from "vote flipped". Reportage.
-        occ_any[k] = bool(np.any((sub_c == OCC) | (sub_c == MOV)))
-        matched[k] = True
-        if bool(cf_touched[i, j, kz]):
-            exact += 1
+    cand_at, matched, occ_any, exact = _box_majority_vote(
+        cf_cls, cf_touched, ci, in_b, rad, np
+    )
     co = matched
     n_co = int(np.count_nonzero(co))
     if n_co == 0:
@@ -1236,8 +1208,70 @@ def _band3d_agreement(
         if n_meas_solid else 0.0
     )
 
+    # RESOLUTION-INVARIANT solid agreement (reportage; the voted metrics above
+    # stay the law until a pre-registered promotion). The tolerance-box
+    # majority vote is NOT invariant under grid refinement: the box volume
+    # grows cubically while thin-structure voxels grow linearly, so free
+    # outvotes real legs ever harder at finer voxels (measured, Phase 9).
+    # These metrics use METRIC DISTANCES instead of votes, so refinement
+    # converges instead of diverging. Tolerances are physical: 0.05 m = the
+    # robot's own collision margin (margin_m -- a label is collision-correct
+    # when its solid surface lies within the safety margin of the true
+    # surface), 0.10 m = the legacy box tolerance, 0.025 m = one fine voxel.
+    # recall@tau: fraction of measured-solid band voxels (inside the candidate
+    # grid bounds, so the candidate had the chance) within tau of an observed
+    # candidate-solid voxel. precision@tau: fraction of candidate-solid voxels
+    # that map into the CO-OBSERVED measured band region (within 0.10 m of an
+    # observed measured voxel -- GT is silent elsewhere) within tau of a
+    # measured-solid voxel. Distances in meters via the Sim(3) scale.
+    solid_distance: dict[str, Any] = {"status": "computed"}
+    try:
+        from scipy.spatial import cKDTree  # lazy; scipy is a refine dependency
+
+        meas_solid_all = ((meas_sel == OCC) | (meas_sel == MOV)) & in_b
+        cand_solid_idx = np.argwhere(cf_touched & ((cf_cls == OCC) | (cf_cls == MOV)))
+        taus = (0.025, 0.05, 0.10)
+        if int(np.count_nonzero(meas_solid_all)) == 0 or cand_solid_idx.shape[0] == 0:
+            solid_distance = {
+                "status": "no_solid_voxels_on_one_side",
+                "measured_solid_in_bounds": int(np.count_nonzero(meas_solid_all)),
+                "candidate_solid_observed": int(cand_solid_idx.shape[0]),
+            }
+        else:
+            cand_solid_centers = cf_org[None, :] + (cand_solid_idx + 0.5) * cf_v
+            d_recall = cKDTree(cand_solid_centers).query(p_cand[meas_solid_all])[0]
+            d_recall_m = d_recall * s  # candidate-frame units -> meters
+            # forward-map candidate solids to the measured (metric) frame
+            q_meas = (s * (R @ cand_solid_centers.T)).T + t[None, :]
+            in_slab = (q_meas[:, m_fa] >= bmin) & (q_meas[:, m_fa] < bmax)
+            d_obs = cKDTree(pts_meas).query(q_meas)[0]
+            judged = in_slab & (d_obs <= 0.10)
+            meas_solid_pts = pts_meas[(meas_sel == OCC) | (meas_sel == MOV)]
+            prec_base = q_meas[judged]
+            solid_distance["measured_solid_in_bounds"] = int(np.count_nonzero(meas_solid_all))
+            solid_distance["candidate_solid_judged"] = int(np.count_nonzero(judged))
+            solid_distance["candidate_solid_observed"] = int(cand_solid_idx.shape[0])
+            if meas_solid_pts.shape[0] and prec_base.shape[0]:
+                d_prec_m = cKDTree(meas_solid_pts).query(prec_base)[0]
+            else:
+                d_prec_m = np.full(max(prec_base.shape[0], 1), np.inf)
+            for tau in taus:
+                r_tau = float(np.mean(d_recall_m <= tau))
+                p_tau = (
+                    float(np.mean(d_prec_m <= tau)) if prec_base.shape[0] else 0.0
+                )
+                f1 = 2 * p_tau * r_tau / (p_tau + r_tau) if (p_tau + r_tau) > 0 else 0.0
+                key = f"{tau:0.3f}".rstrip("0").rstrip(".")
+                solid_distance[f"solid_recall_at_{key}m"] = r_tau
+                solid_distance[f"solid_precision_at_{key}m"] = p_tau
+                solid_distance[f"solid_f1_at_{key}m"] = float(f1)
+            solid_distance["median_solid_distance_m"] = float(np.median(d_recall_m))
+    except Exception as exc:  # honest miss, never fabricated numbers
+        solid_distance = {"status": "not_computed", "error": str(exc)}
+
     return {
         "status": "computed",
+        "solid_distance_agreement": solid_distance,
         "method": "camera_sim3_plus_floor_normal_refine_inverse_sample_candidate_full_at_measured_band",
         "common_frame_count": len(common),
         "estimated_scale_monocular_to_measured": float(s),
@@ -1266,6 +1300,60 @@ def _band3d_agreement(
             "calls free where the measured GT sees an obstacle (robot-critical)."
         ),
     }
+
+
+def _box_majority_vote(cf_cls, cf_touched, ci, in_b, rad, np):
+    """Tolerance-box majority vote, vectorized via per-class 3D prefix sums.
+
+    For each query voxel index ``ci[k]`` (skipping ``~in_b``), counts the
+    OBSERVED candidate voxels of each class inside the (2*rad+1)^3 box clamped
+    to the grid, then takes the majority class (argmax = lowest class wins
+    ties, identical to bincount+argmax). Majority (not nearest-single) is
+    robust to a thin floor surface sheet bridging to free-above-floor samples
+    in two sparse fields.
+
+    Returns ``(cand_at, matched, occ_any, exact)``:
+    - ``cand_at[k]`` majority class or -1 when the box holds no observed voxel;
+    - ``matched[k]`` box holds at least one observed voxel;
+    - ``occ_any[k]`` box holds ANY observed occupied/movable voxel -- the
+      count-level companion: the majority vote can flip en masse as views
+      densify (a few free-touched box neighbours outvote one solid leg voxel),
+      so the gate-facing IoU can cliff to 0 while solid evidence still exists
+      at count level; this recall separates "field degraded" from "vote
+      flipped" (reportage);
+    - ``exact`` count of matched queries whose CENTER voxel is observed.
+
+    O(volume * classes) prefix sums + O(queries) lookups -- replaces a python
+    loop that dominated eval wall-clock at fine voxels (9x9x9 boxes).
+    """
+    occ_cls, mov_cls = 1, 2  # class codes: 0=free,1=occ,2=movable,3=dynamic,4=unknown
+    cd0, cd1, cd2 = cf_touched.shape
+    n = ci.shape[0]
+    counts = np.zeros((n, 5), dtype=np.int64)
+    q = ci[in_b]
+    i0 = np.clip(q[:, 0] - rad, 0, cd0)
+    i1 = np.minimum(q[:, 0] + rad + 1, cd0)
+    j0 = np.clip(q[:, 1] - rad, 0, cd1)
+    j1 = np.minimum(q[:, 1] + rad + 1, cd1)
+    l0 = np.clip(q[:, 2] - rad, 0, cd2)
+    l1 = np.minimum(q[:, 2] + rad + 1, cd2)
+    for cls_code in range(5):
+        vol = (cf_touched & (cf_cls == cls_code)).astype(np.int64)
+        prefix = np.zeros((cd0 + 1, cd1 + 1, cd2 + 1), dtype=np.int64)
+        prefix[1:, 1:, 1:] = vol.cumsum(0).cumsum(1).cumsum(2)
+        counts[in_b, cls_code] = (
+            prefix[i1, j1, l1] - prefix[i0, j1, l1] - prefix[i1, j0, l1]
+            - prefix[i1, j1, l0] + prefix[i0, j0, l1] + prefix[i0, j1, l0]
+            + prefix[i1, j0, l0] - prefix[i0, j0, l0]
+        )
+    total = counts.sum(axis=1)
+    matched = total > 0
+    cand_at = np.where(matched, np.argmax(counts, axis=1), -1).astype(np.int64)
+    occ_any = (counts[:, occ_cls] + counts[:, mov_cls]) > 0
+    center_touched = np.zeros(n, dtype=bool)
+    center_touched[in_b] = cf_touched[q[:, 0], q[:, 1], q[:, 2]]
+    exact = int(np.count_nonzero(matched & center_touched))
+    return cand_at, matched, occ_any, exact
 
 
 def _umeyama_align(src, dst, np):

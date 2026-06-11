@@ -238,6 +238,9 @@ def extract_band3d_agreement(report: dict[str, Any]) -> dict[str, Any]:
         "coverage_of_measured_band": _pluck(summary, "coverage_of_measured_band"),
         "estimated_scale_monocular_to_measured": _pluck(summary, "estimated_scale_monocular_to_measured"),
         "co_observed_band_voxels": _pluck(summary, "co_observed_band_voxels"),
+        # Resolution-invariant metric-distance agreement (reportage; not in
+        # the numeric diff law until a pre-registered promotion).
+        "solid_distance_agreement": _pluck(full, "solid_distance_agreement"),
     }
 
 
@@ -261,6 +264,10 @@ def extract_map(report: dict[str, Any]) -> dict[str, Any]:
             "unknown_fraction": _pluck(mos, "unknown_fraction"),
         },
         "free_space_contradiction_rate": _pluck(mos, "free_space_contradiction_rate"),
+        # Resolution-invariant companion at the calibration scale (reportage).
+        "free_space_contradiction_rate_at_reference_scale": _pluck(
+            mos, "free_space_contradiction_rate_at_reference_scale"
+        ),
         "free_space_contradiction_basis": _pluck(mos, "free_space_contradiction_basis"),
         "mean_map_confidence": _pluck(field_summary, "mean_map_confidence"),
     }
