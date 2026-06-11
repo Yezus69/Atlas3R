@@ -1547,3 +1547,65 @@ alignment tilt ≈ 0 by construction, camera centers above the plane
 A rung-3 plane that clears 0.30 but degrades per_class/F1 on the measured
 comparison is a FAILED estimator (wrong plane with popular support), the
 change is reverted, and the failure is recorded here.
+
+**Phase 17 interim finding (GT-free, before any teacher run):** the frozen
+default staging (stage-divisor 8 → 210 staged frames) FRAGMENTS the room
+loop: 4 models, largest 114/210 registered. The Phase 14 parity result was
+measured on a ~375-frame staging (≈ divisor 4); sequential matching over
+every-8th frames cannot track fr1_room's fast motion between samples.
+Production lesson recorded: long fast-motion loops need divisor 4 (the same
+class of staging-density lesson phone taught at Phase 10). Deviation from
+the pre-registered "tool defaults": ONE re-run at --stage-divisor 4,
+justified purely by the tool's own registration/fragment counts (no GT
+consulted); everything else stays frozen.
+
+### Phase 19 — data-driven per-scene scale_std + GT coverage falsifier (pre-registration)
+
+Committed BEFORE implementation and observation.
+
+**The gap (verified at HEAD):** `scale_std` is a per-BACKBONE constant —
+0.168 byte-identical across all four tracks (= 0.12·(1+(1−0.6)) from
+MapAnything's hardcoded evidence confidence). "Per-sample scale uncertainty"
+is currently a category label plus a constant. Meanwhile a DISCRIMINATING
+per-scene candidate-only signal is computed and dies in provenance:
+`pose_provenance.scale_alignment.residual_rmse_backbone_units` ranks
+xyz 0.0271 (accepted) < desk 0.0559 < phone 0.4576 < room 0.9132 — the
+trajectory-shape disagreement between the BA poses and the backbone centers
+the borrowed scalar was fit on. A scale borrowed across a misfitting shape
+is exactly as untrustworthy as that misfit.
+
+**Construction (GT-free, no tunables, class-A tracks only):**
+- thread `scale_alignment.residual_rmse_backbone_units` into the existing
+  `ScaleEvidence.residual_after_optimization` field (schema complete, zero
+  producers today) in the geometry adapter;
+- `residual_norm` = residual / span, span = bounding-box diagonal of the
+  candidate packet camera centers (same backbone units; both candidate-only;
+  dimensionless, scene-relative per the honesty rule);
+- `relative_scale_std` = sqrt(band² + residual_norm²) where band is the
+  existing evidence-confidence soft band (independent-error combination; no
+  free constant). Class-B tracks (backbone poses, no alignment record) keep
+  the constant band — with `scale_status` marking it a prior, never a
+  measurement.
+
+**Expected single-shot diff (pre-registered):** numeric deltas ONLY in
+scale_posterior.scale_std / relative_scale_uncertainty and the exported
+scale_uncertainty fields, on class-A tracks; ZERO categorical changes, ZERO
+verdict changes (the gate does not read scale_std). Any verdict flip is a
+bug, not a win.
+
+**Coverage falsifier (single observation on the on-disk GT population;
+vault EXCLUDED, sealed):** for each GT config, true scale error
+e = |estimated_scale_monocular_to_measured − 1| (Sim(3) reportage) vs the
+claimed σ. Bars, stated in advance:
+1. gate-ACCEPTED configs (today: xyz-v3): e ≤ 1σ — a claimed band that does
+   not cover the accepted scene's true error is refuted outright;
+2. class-A GT configs (v2/v3 × xyz/desk/room, n=6): ≥5/6 within 2σ;
+3. rank: Spearman(σ, e) > 0.5 over all GT configs (the σ must order scenes
+   by actual scale trustworthiness, not just inflate);
+4. class-B (canonical × 3): REPORTED, no bar — no data-driven signal exists
+   for backbone-pose tracks; pre-stated fallback: they keep the constant
+   prior with scale_status='per_backbone_constant_prior' and class-B
+   coverage results recorded verbatim.
+FAILURE of bar 1 or 2 refutes the construction: it is reverted, the
+constant prior stays, and the failure is recorded here. No widening,
+re-weighting, or re-fitting in response to the observed coverage.
