@@ -1758,3 +1758,34 @@ runs/_diag/scale_coverage_falsifier_results.json):
   `conservative_band_2sigma_validated_rank_unvalidated_phase19` for class-A
   samples; class-B keeps `per_backbone_constant_prior` (and class-B never
   ships — its coverage failures above are the measured reason why).
+
+### Phase 17 RESULTS — loop closes at divisor 4; NO adoption (labels worse than canonical)
+
+Shot at divisor 4 (after the pre-registered divisor-8 fragmentation finding):
+SfM registered 360/375 staged frames in ONE model (the loop closes). The
+chain ran end-to-end (pose backend → MVS + A/B stability → teacher side-run,
+runs/teacher_room_loopdet; first production artifact carrying the
+stability_delta continuous-residual maps). Gate verdict exactly as
+pre-registered — STILL REJECTED, all evidence-class reasons (inbounds
+0.152→0.195, edge 0.618→0.629, conf 0.267→0.275, floor 0.092; verified
+fraction 0.041 — the loop's thin-evidence reality persists).
+
+The adoption question answers itself, negatively:
+
+| | canonical room (room_dense, exhaustive O(N²)) | loopdet d4 (sequential+loopdet O(N)) |
+|---|---|---|
+| band3d camera RMSE | **0.126 m** | 0.382 m |
+| HONEST F1@5cm | **0.163** | 0.031 |
+| HONEST F1@10cm | **0.407** | 0.077 |
+| coverage of measured band | **0.84** | 0.56 |
+| scale-borrow residual | 0.913 | 0.985 |
+
+NOT adopted: verdict-coherent (both rejected) but the loopdet model's
+keyframe-level quality is ~3× worse. HONEST AMENDMENT to the Phase 14
+standing read: sequential+loop-detection parity was measured on FULL-LOOP
+Sim(3) RMSE; at the KEYFRAME subset feeding the teacher, this d4 rebuild
+reads materially worse than the exhaustive model. The O(N) recipe remains
+the production matching policy for INGESTION COST, but on long fast loops
+the exhaustive model (where affordable) still sets the quality bar — the
+GLOMAP-class global-BA option returns to the roadmap for long-video
+quality, not just scale. Canonical room track unchanged.
