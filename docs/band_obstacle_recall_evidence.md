@@ -989,3 +989,56 @@ instead precision@τ comes back LOW, the labels genuinely contain false
 solids, Phase 9's interpretation is WRONG, and the verdict will say so.
 One observation run (`runs/teacher_v2b`), no parameter revisions in
 response.
+
+### Phase 11 RESULTS — the falsifier REFUTED the strong "instrument is the wall" read
+
+Measured (runs/teacher_v2b, one observation, 9m20s wall for the heavy
+2.5 cm config — was ~20 min pre-vectorization):
+
+| metric | xyz canonical 5cm | xyz v2 2.5cm | desk canonical | desk v2 | room canonical | room v2 |
+|---|---|---|---|---|---|---|
+| solid_recall@10cm | 0.444 | 0.424 | 0.088 | 0.111 | 0.0 (13 solids) | 0.100 |
+| solid_precision@10cm | 0.352 | 0.244 | 0.441 | **0.981** | 0.0 | 0.132 |
+| solid_F1@10cm | **0.393** | 0.310 | 0.147 | 0.200 | 0.0 | 0.114 |
+| solid_F1@5cm | **0.199** | 0.065 | 0.031 | 0.065 | 0.0 | 0.029 |
+| median solid distance | 0.113 m | 0.113 m | 0.213 m | 0.266 m | 0.243 m | 0.367 m |
+
+**Honest findings, in order of importance:**
+1. *The pre-registered failure branch fired:* xyz v2 precision@5cm = 0.049
+   (expected >0.5 under the "labels are good" hypothesis). The recovered
+   thin-structure solids are REAL but PLACED outside the robot's 5 cm
+   collision margin — the median solid-to-GT distance (11.3 cm) is
+   UNCHANGED by the composite. The MVS edge displacement (~3.6% ≈ 5–10 cm
+   at range) lives in the labels, not merely in the vote. Phase 9's
+   NOT-ADOPTED stands for deeper reasons than vote mechanics: at the
+   collision tolerance, the canonical 5 cm labels (F1@5cm 0.199) beat the
+   v2 2.5 cm labels (0.065).
+2. *The voted instrument WAS still misleading, just not decisive:* voted
+   occ_iou 0.049 vs F1@10cm 0.310 on the same field — the vote understates
+   label quality ~6× at fine resolution. Both things are true: the
+   instrument exaggerates the wall AND the wall is real at the 5 cm margin.
+   (The recall-any 0.76 vs solid_recall@10cm 0.42 gap is box geometry, not
+   contradiction: the vote box is an L-infinity ball with ~17 cm corners;
+   the distance metric is an L2 ball at 10 cm.)
+3. *Instrument #2 is an honest PARTIAL:* pooled-to-5cm fsc on xyz v2 reads
+   0.2753 vs the native-5cm 0.244 — pooling removes the BINNING component
+   of resolution coupling but not the RAY-SAMPLING density component (finer
+   grids accumulate more free traversals per ray; re-binning cannot undo
+   that). A true fix must normalize free evidence per meter of traversal —
+   a fusion-law change requiring its own pre-registration.
+4. *Per-scene heterogeneity is large:* desk v2 places solids almost
+   perfectly (precision@10cm 0.981) but sees few of the cluttered scene's
+   6,821 measured solids (recall 0.111); room remains coverage-limited.
+
+**Standing diagnosis after Phase 11:** the last technical wall for
+collision-margin-accurate labels is VERIFIED-SURFACE PLACEMENT ACCURACY
+(~5–10 cm edge displacement at range), not fusion, not pose, not scale,
+and only partially the eval instrument. Candidate levers (each needs
+GT-free rationale + pre-registration): multi-view consensus refinement of
+verified depth at surface elements; an AMB3R-class oracle to bound
+achievable placement; per-pixel MVS uncertainty (COLMAP outputs it) to
+gate which verified pixels enter the band. Throughput is no longer a
+blocker: teacher 5m21s for all four tracks (canonical), MVS geometric
+verification ~2 s/keyframe marginal on a photometric substrate (51.0%
+verified coverage identical to the full run; keyframe-only sources lose
+3× coverage and are rejected).
