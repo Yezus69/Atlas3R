@@ -1230,3 +1230,43 @@ degrade severely there, in which case ABSOLUTE SCALE (not placement)
 becomes the measured next wall. The instrument reports whatever it
 reports; no recipe parameter changes in response. One observation pass
 (canonical rerun + v3 rerun, metrics-identical code with additive keys).
+
+**Phase 13 OBSERVED (one pass each):**
+
+| scene | recipe | scale | Sim3 F1@5cm | HONEST F1@5cm | HONEST F1@10cm | HONEST med dist |
+|---|---|---|---|---|---|---|
+| xyz | canonical | 1.337 | 0.199 | **0.046** | 0.158 | 0.137 m |
+| xyz | v3 | 1.028 | 0.158 | **0.358** | 0.688 | **0.056 m** |
+| desk | canonical | 1.089 | 0.031 | 0.093 | 0.338 | 0.156 m |
+| desk | v3 | 1.083 | 0.278 | **0.432** | 0.811 | **0.060 m** |
+| room | canonical | 0.283 | 0.000 | 0.000 | 0.000 | 0.190 m |
+| room | v3 | 0.902 | 0.124 | **0.163** | 0.407 | 0.114 m |
+
+1. *Prediction CONFIRMED:* canonical xyz collapses (0.199 → 0.046) — the
+   Sim(3) scale-forgiveness confound that decided Phase 12's xyz bar is now
+   proven by measurement, not argued.
+2. *Surprise, favorable:* v3 reads BETTER under the honest metric than under
+   Sim(3) (xyz 0.158 → 0.358; desk 0.278 → 0.432): the Umeyama scale
+   estimate from few shared centers is itself noisy, and forcing it onto
+   BA-grade near-metric geometry HURT v3 in the Sim(3) view. The v3 labels
+   place solids at 5.6–6.0 cm median in their OWN claimed metric frame —
+   collision-margin-accurate as the robot would consume them.
+3. *The desk/room scale fear did not materialize* (band surfaces sit close
+   enough to the trajectory that 8–10% scale ≈ the measured ~6 cm medians).
+4. **Under the robot-honest instrument, v3 DOMINATES canonical on every
+   measured scene (4.6–7.8×).**
+
+**Standing decision point (NOT resolved in this phase — recorded for the
+next pre-registration):** adopting v3 as canonical is blocked by one honest
+fact: xyz under v3 is NOT accepted (internal map fsc 0.2532 vs the 0.25
+gate — the same resolution-coupled knife edge measured in Phase 9; fewer
+stable-verified voxels ⇒ fewer contested-test exclusions). A canonical
+recipe with ZERO accepted scenes would contradict the moat (verified
+yield). Therefore the adoption sequence is: FIRST resolve the gate
+metric's resolution coupling with the full calibration discipline (e.g.
+promote `free_space_contradiction_rate_at_reference_scale` — or a
+traversal-normalized variant — to the gated metric, threshold re-calibrated
+against the frozen GT-grounded verdicts: xyz accept, desk reject, room
+reject, phone reject-for-evidence), THEN re-judge v3 adoption under an
+adversarially reviewed pre-registration. Neither step may be tuned against
+the numbers above.
