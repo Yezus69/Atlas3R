@@ -1487,3 +1487,63 @@ claims, not just solid claims). Any free→unknown policy lever is a
 SEPARATE future pre-registration and must never fabricate occupancy
 (occupancy_support_overrides_free stays rejected). dangerous_free@5cm
 becomes a tracked scorecard-adjacent number for every future recipe change.
+
+### Phase 18 — floor ESTIMATOR rung 3: height-mode seeded fit (pre-registration)
+
+Committed BEFORE implementation and the single shot.
+
+**Diagnosis (measured, Phase-15 desk report):** the floor stage names a
+blocker in ALL FIVE current rejections, and on desk it is the SOLE blocker.
+Desk's unconstrained dominant plane (0.268 inliers) is tilted 41.63° from
+the band axis — it is the desk surface, not the floor. The camera-up
+CONSTRAINED retry reads 0.162 — but that number is a SEARCH ARTIFACT, not a
+measured ceiling: with floor fraction f≈0.16, the probability a random
+RANSAC triplet lands entirely on the floor is f³≈0.4%, so 200 iterations
+expect <1 clean floor sample. The constrained search returns the best plane
+it stumbled into, not the best floor fit the evidence supports.
+
+**Mechanism (estimator change ONLY; every bar unchanged):** a third rung in
+the existing candidate-only search ladder, reachable ONLY when rung 1
+(unconstrained RANSAC) and rung 2 (camera-up-cone RANSAC) both fail the
+0.30 reliability bar AND a camera-up prior exists (candidate tracks only —
+the measured baseline never receives the prior, so measured tracks are
+bit-identical by construction):
+
+- project static surfaces onto the prior axis; histogram heights with bin =
+  the existing RANSAC inlier distance (1.5 × voxel);
+- seed plane = the LOWEST height bin with support ≥ the existing RANSAC
+  minimum-support rule max(3, 0.05·n) — the floor is the lowest plane with
+  real support; static structure does not live below the floor;
+- polish: ≤3 least-squares refits on the current inliers, constrained to
+  the prior cone (30°, unchanged) — stop at the last in-cone fit;
+- measure inlier_ratio on the FINAL plane over ALL static points (same
+  denominator, same 0.30 bar, same honest refusal below it).
+
+All parameters are existing frozen constants — nothing is tunable against
+this run. The post-alignment floor search gets the same ladder (wrapper),
+so the band crop uses the same plane family that won the alignment.
+
+**Pre-registered expectations (not targets):**
+- xyz candidate and ALL measured tracks: bit-identical (rungs 1–2 outcomes
+  unchanged; rung 3 unreachable). The scorecard diff for xyz must be EMPTY.
+- desk: rung 3 fires. If the true floor's support ≥ 0.30, alignment applies
+  (tilt after ≈ 0), the band becomes floor-parallel, and the gate re-judges
+  — a possible acceptance FLIP (floor was the sole blocker; fsc 0.461 ≤
+  class-A 0.55, p90 0.368 ≤ 0.66), audited: the flip must trace to the
+  floor stage alone. If support < 0.30, desk keeps failing honestly and the
+  clutter-denominator of the floor metric becomes a documented finding for
+  a future pre-registration — never a bar move.
+- room candidate (floor 0.095) and phone (0.104): rung 3 fires; floor
+  evidence is genuinely thin on both (loop coverage / textureless carpet);
+  may stay < 0.30 — informative either way.
+- GUARDRAILS on any desk change: per_class and honest F1@5cm must hold or
+  improve (alignment to the true floor improves the band comparison; a
+  wrong plane tanks per_class); dangerous_free@5cm (Phase 16 instrument)
+  re-read after the change.
+
+**Falsifier:** on desk the rung-3 plane must be floor-plausible — post-
+alignment tilt ≈ 0 by construction, camera centers above the plane
+(checked post-hoc from the report), and the no-regress guardrails above.
+A rung-3 plane that clears 0.30 but degrades per_class/F1 on the measured
+comparison is a FAILED estimator (wrong plane with popular support), the
+change is reverted, and the failure is recorded here.
