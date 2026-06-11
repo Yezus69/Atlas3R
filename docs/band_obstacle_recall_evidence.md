@@ -1323,3 +1323,72 @@ against the frozen GT-grounded verdicts: xyz accept, desk reject, room
 reject, phone reject-for-evidence), THEN re-judge v3 adoption under an
 adversarially reviewed pre-registration. Neither step may be tuned against
 the numbers above.
+
+### Phase 16 — TRAINABILITY / COLLISION-SAFETY falsifier (pre-registration)
+
+Committed BEFORE the observation run; the commit timestamp is the proof.
+
+**Question (the gap analysis's run-first experiment,
+docs/complete_teacher_gap_analysis.md):** is the accepted-label error
+(xyz-v3: honest F1@5cm 0.358, median solid placement 5.6 cm,
+solid_recall@5cm 0.455) averageable VARIANCE a student would smooth out, or
+a systematic BIAS a student would distill into collision behavior — and how
+much of the miss is in the DANGER direction (the label reads free at a real
+obstacle) vs survivable coverage loss (unknown — the planner stays
+conservative under unknown-is-never-free)? Phase 12 measured the residual
+edge error as a perturbation-STABLE foreground-fattening bias both disjoint
+halves reproduce; whether a consumer averages it or learns it is measured
+nowhere.
+
+**Instruments (definitions pre-registered here, before observing their
+values).** Both run at the SCALE-HONEST alignment (rigid SE(3), scale fixed
+at 1, same rotation path as the existing band3d method) on the canonical
+accepted scene (xyz, v3 composites). Desk-v3 is run as REPORTAGE only (it
+is rejected today on its floor blocker; it is the realistic-motion class
+whose labels enter the corpus once the floor estimator lands). Decision
+authority rests on xyz alone.
+
+1. *Consumption-semantics split* over measured-solid band voxels inside the
+   candidate grid bounds (the same population the solid_recall instruments
+   read). Each voxel is classified by what a planner would read from the
+   label within the robot's own collision margin (5 cm), with protective
+   precedence:
+   - `solid_within_margin` — an observed candidate-solid voxel lies within
+     5 cm (collision-correct: an inflating planner avoids it);
+   - `dangerous_free` — NO candidate solid within 5 cm AND an observed
+     candidate-FREE voxel lies within 5 cm (the label actively shapes a
+     path through a real obstacle);
+   - `coverage_loss` — neither solid nor free observed within 5 cm
+     (unknown; survivable by the unknown-is-never-free invariant).
+   Rates over the population at 5 cm (decision tolerance) and 10 cm
+   (reportage). Materiality bar, stated in advance: a dangerous_free@5cm
+   rate above 0.10 is collision-shaping at a level that must be carried
+   into the trainability verdict regardless of the bias outcome.
+2. *Signed displacement decomposition* over candidate-solid voxels in the
+   judged (co-observed) region, each matched to its nearest measured-solid
+   voxel within 0.20 m. The displacement (label minus truth, metric frame)
+   is decomposed along the VIEWING direction (unit vector from the nearest
+   candidate camera center to the label voxel): the RADIAL component is
+   signed (positive = the label sits beyond the true surface along the
+   view ray; negative = pulled toward the camera — the foreground-fattening
+   direction), the LATERAL magnitude is the residual. Reported: mean signed
+   radial (BIAS), std (VARIANCE), median |radial|, median lateral, match
+   rate.
+
+**Pre-registered decision bars (xyz):**
+- BIAS-LIMITED (Outcome B presumptive): |mean signed radial| >= 0.025 m
+  (one voxel; half the collision margin). A systematic shift of that size
+  is exactly what a distillation target teaches; the placement campaign
+  re-opens BEFORE any dataset scale-out.
+- VARIANCE-DOMINATED (Outcome A presumptive): |mean signed radial| <
+  0.025 m AND std >= 2x|mean|. The error is averageable in expectation;
+  the proxy-student confirmation proceeds.
+- The dangerous_free@5cm rate is reported with its materiality bar above;
+  it can force the danger conclusion under EITHER outcome.
+
+**What this phase does NOT do:** no parameter moves in response to these
+numbers; the proxy-student distillation (part c of the falsifier) is GATED
+on this outcome and gets its own pre-registration (architecture, training
+views, GT-eval-only protocol) — it is the confirmation step, not this
+measurement. Script: `runs/_diag/trainability_falsifier.py`; results
+committed to this file as Phase 16 RESULTS.
