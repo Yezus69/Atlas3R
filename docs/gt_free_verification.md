@@ -239,6 +239,19 @@ injection-calibrated, direction-resolved authority — was not found published.
    teacher report/scorecard once per-scene runs exist (today it lives in
    `runs/_diag/`).
 
+Production data point (2026-06-10): the gate's verdict on `phone_room` under
+the full v2 production recipe — self-calibrated COLMAP poses + multi-view
+verified depth — moved from 4 rejection reasons to 2 (Stage-0 inbounds and
+edge-fraction now PASS; confidence weight misses by 0.005; Stage-1 floor
+support genuinely 0.082, prior-assisted search included). Full record with
+every stage's numbers: `docs/band_obstacle_recall_evidence.md` Phase 10.
+The Stage-1 path gained a candidate-only camera-up PRIOR this session: it
+redirects the floor RANSAC search when the dominant-plane search is
+unreliable, under the recorded handheld-upright assumption — the acceptance
+bar (0.30 inlier) is unchanged, so it cannot weaken the gate (measured:
+canonical scorecard diff empty; on canonical phone the prior fires, reads
+0.123 < 0.30, and the refusal stands).
+
 ## Vault protocol (anti-overfitting safeguard)
 
 The gravest failure mode for a fleet-less teacher is silent overfitting to the

@@ -852,3 +852,74 @@ finer grid the physics demands. Any metric-law revision (e.g. a
 resolution-invariant vote or a count-normalized fsc) requires its own
 GT-free pre-registration in a future session; nothing is changed in
 response to these numbers.
+
+### Phase 10 — THE PRODUCTION PATH: phone_room, unknown intrinsics, full v2 recipe (2026-06-10)
+
+This is what internet video looks like: 800 handheld 1280×720 frames, no
+intrinsics, no IMU, no GT. Everything below is the teacher's own output;
+no measured reference exists for this scene.
+
+**Self-calibration (COLMAP SIMPLE_RADIAL, sequential video matching):**
+- The 43 selector keyframes alone FAIL SfM outright (114/903 pairs with any
+  two-view geometry, no initial pair — sparse keyframes starve matching,
+  the same lesson the room loop taught at the pose stage). Production
+  staging = every-4th + keyframes (235→314 frames incl. a bridge densify).
+- The video fragments at a genuine visual break (frames ~493–501): two
+  models, never bridgeable even by exhaustive matching. Fragment A: 175
+  imgs (frames 1–492, 27/43 keyframes); fragment B: 130 imgs (502–800,
+  15/43). THE CROSS-CHECK: three independent self-calibrations (fragment A,
+  fragment B, and A's second extraction batch) agree on the camera to
+  within 0.7% — f = 1086.4 / 1079.3 / 1089.4 px, SIMPLE_RADIAL k = 0.028 /
+  0.022 / 0.031. Self-calibration on phone video WORKS; fragmentation, not
+  calibration, is the production reality. The teacher proceeds on the
+  larger fragment; 16 unregistered keyframes are DROPPED, never fabricated.
+- Distortion matters at this seam: k=0.028 ⇒ up to ~9 px corner
+  misregistration between the distorted originals and the undistorted MVS
+  grid — `tools/run_mvs_depth_backend.py --source-sparse-model` now remaps
+  verified depth through the lens model (depth VALUES transfer unchanged;
+  optical_z is shared; only the sampling location moves). 27/27 registered
+  frames carry MVS, 51.1% verified pixels.
+
+**THE GATE'S VERDICT (runs/teacher_phone_v2, v2 recipe end-to-end:
+COLMAP poses [frozen in refine] + remapped MVS verified depth + verified
+tier + 2.5 cm envelope — effective voxel HELD at 0.025):**
+
+| stage | signal | canonical recipe | v2 production recipe | bar | verdict |
+|---|---|---|---|---|---|
+| 0 evidence mass | median inbounds ratio | 0.035 | **0.309** | ≥0.30 | **now PASSES** |
+| 0 evidence mass | depth-residual edge fraction | 0.537 | **0.711** | ≥0.70 | **now PASSES** |
+| 0 evidence mass | mean confidence weight | 0.187 | 0.295 | ≥0.30 | fails by 0.005 |
+| 1 gravity | floor inlier ratio | 0.127 | 0.082 | ≥0.30 | fails |
+| 2 consistency | held-out render error | (pass) | 0.178 | ≤0.50 | passes |
+| 2 consistency | map fsc | 0.199 | 0.138 | ≤0.25 | passes |
+| 2 consistency | dynamic leakage | 0.0 | 0.0 | ≤0.10 | passes |
+| | **accepted_for_metric_training** | **False (4 reasons)** | **False (2 reasons)** | | **REJECTED, honestly** |
+
+`final_category` stays `metric_pseudo_label` (COLMAP scale is borrowed from
+the backbone's learned prior via candidate-only Umeyama — soft evidence,
+scale 0.329 with residual 0.458 backbone-units against the backbone's own
+drifted centers, recorded verbatim).
+
+**The floor finding (README priority 4, landed this session):** the
+candidate-only camera-up prior (handheld-upright assumption, soft evidence,
+recorded) redirects the floor SEARCH when the dominant-plane RANSAC is
+unreliable; the acceptance bar is unchanged. On phone it fired and
+RESOLVED THE DIAGNOSIS: the dominant plane already lies inside the prior's
+30° cone (constrained == unconstrained == 0.082), so the failure is NOT
+wall-vs-floor confusion — the floor plane genuinely holds only 8.2% of
+static surface points in this 27-frame fragment (floor sparsely seen /
+fails the MVS geometric check on textureless carpet). No search trick can
+conjure that evidence; the gate's refusal is correct. Canonical scorecard
+under the prior code: diff EMPTY on all four tracks (on canonical phone the
+prior fires, reads 0.123 < 0.30, refusal stands).
+
+**Honest summary of the production path:** the v2 teacher moved phone_room
+from "evidence collapse on every Stage-0 signal + unverifiable gravity"
+(4 reasons) to "two named blockers: a 0.005 confidence-weight knife edge
+and a real floor-evidence shortfall" — with Stage 2 fully passing and
+51% of its depth multi-view verified. The gate got NO weaker (every change
+this session was bar-preserving and adversarially reviewed); the teacher
+got stronger; the verdict-with-reasons is exactly the honest number the
+data engine needs. Remaining blockers point at coverage (register fragment
+B → more floor views; or denser ray budget on floor-rich frames), not at
+the gate.
