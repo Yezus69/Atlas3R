@@ -1681,3 +1681,40 @@ blind); the honest deliverable in that branch is the in-band no_authority
 record, not a forced detection. scale_drift_ramp and regional_depth_bias
 detections are expected to survive the gate upgrade (Stage-1/fsc
 mechanisms unchanged).
+
+### Phase 18 RESULTS — the estimator hypothesis is REFUTED; desk's floor shortfall is GENUINE
+
+Shot 2 (quantile-band PCA seeding) ran once: scorecard diff EMPTY on all
+four tracks; on desk rung 3 fitted a plane with support 0.0244 (the lowest
+heights are a long sub-floor MVS noise tail, not floor). A GT-free probe of
+desk's own static cloud (runs/_diag/desk_floor_probe.py; 89,616 static
+points, candidate geometry only, no measured data touched) then bounded
+what ANY estimator could achieve:
+
+| probe | best support | character |
+|---|---|---|
+| height scan, prior-perpendicular planes + LS polish | **0.079** | tilt 2.0° to prior |
+| 20k-iteration in-cone RANSAC (low-region triplets) + polish | **0.179** | tilt **29.6°** -- at the cone EDGE, not a floor |
+| height distribution along prior | no low mode | smooth noise tail: p1 -1.26 / p2 -1.10 / p5 -0.83 |
+
+**Verdict (the pre-registered informative branch):** there is NO
+floor-plausible in-cone plane with support anywhere near the 0.30 bar in
+desk's candidate cloud. The Phase 18 search-starvation hypothesis is
+REFUTED for the canonical population: the constrained 0.162 was an honest
+ceiling-class reading, not an artifact. Desk's capture barely sees the
+floor (cameras orbit the desk); its Stage-1 rejection is GENUINE EVIDENCE
+SHORTFALL. Rung 3 produced zero scorecard change in two shots and is
+REVERTED per the no-slop rule (the probe + this record guide any future
+re-introduction on a scene with a visible-minority floor).
+
+**The sharpened follow-up (named, NOT designed here -- needs its own
+pre-registered calibration campaign against the 12-config table):** Stage 1
+as constructed demands the floor be a >=0.30 plane of the WHOLE static
+cloud -- a clutter-coupled denominator. Desk (BA poses near-perfect, honest
+F1@5cm 0.432, sole blocker floor) and phone (textureless carpet) both fail
+exactly there while carrying good geometry. The honest question for the
+next gate-design pre-registration: a floor-evidence statistic that
+verifies the BAND AXIS without demanding floor dominance (e.g. absolute
+floor-support count + camera-up agreement + low-region concentration),
+calibrated per the negative-table discipline, never per scene. Until then
+desk stays rejected and the yield cost is carried honestly.
