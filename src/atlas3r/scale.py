@@ -90,8 +90,16 @@ def estimate_scale_posterior(
 
     if evidence:
         # Soft (or measured-but-non-measured-packet) evidence supports a metric
-        # pseudo-label only. Uncertainty driven by evidence confidence.
-        relative = _soft_relative_uncertainty(evidence)
+        # pseudo-label only. Uncertainty: the evidence-confidence band combined
+        # with the measured scale-borrow misfit where one exists (Phase 19) --
+        # a scalar borrowed across a misfitting trajectory shape is exactly as
+        # untrustworthy as that misfit. Class-B tracks (no alignment record)
+        # keep the confidence band: a prior, not a measurement.
+        band = _soft_relative_uncertainty(evidence)
+        residual_norm, scale_report_extra = _scale_borrow_residual_norm(
+            evidence, packets
+        )
+        relative = float((band**2 + residual_norm**2) ** 0.5)
         posterior = _build_posterior(
             scale_mean=1.0,
             scale_std=relative,
@@ -104,6 +112,12 @@ def estimate_scale_posterior(
             "status": "metric_pseudo_label",
             "decision": "soft_scale_evidence_present",
             "relative_scale_uncertainty": posterior.relative_scale_uncertainty,
+            "scale_std_construction": {
+                "evidence_confidence_band": band,
+                "scale_borrow_residual_norm": residual_norm,
+                "rule": "sqrt(band^2 + residual_norm^2)",
+                **scale_report_extra,
+            },
             "blockers": (),
         }
 
@@ -162,6 +176,40 @@ def _soft_relative_uncertainty(evidence: Sequence[ScaleEvidence]) -> float:
     # Higher confidence -> tighter band, floored to keep it a pseudo-label.
     band = METRIC_PSEUDO_RELATIVE_UNCERTAINTY * (1.0 + (1.0 - mean_conf))
     return max(0.02, band)
+
+
+def _scale_borrow_residual_norm(
+    evidence: Sequence[ScaleEvidence],
+    packets: Sequence[FrameRayPacket],
+) -> tuple[float, dict[str, Any]]:
+    """Scene-relative scale-borrow misfit (Phase 19): the largest
+    ``residual_after_optimization`` carried by the soft evidence (the Umeyama
+    RMSE between BA camera centers and the backbone centers the borrowed
+    scalar was fit on, backbone units) divided by the trajectory span
+    (bounding-box diagonal of packet camera centers, same units). Both
+    candidate-only; dimensionless. Returns ``(0.0, {...})`` when no evidence
+    carries a residual (class-B backbone poses -- a prior, not a measurement).
+    """
+    residuals = _anchor_residuals(evidence)
+    if not residuals or len(packets) < 2:
+        return 0.0, {"basis": "no_scale_borrow_residual_recorded"}
+    import numpy as np  # lazy
+
+    centers = np.asarray(
+        [
+            np.asarray(p.T_world_camera, dtype=np.float64).reshape(4, 4)[:3, 3]
+            for p in packets
+        ]
+    )
+    span = float(np.linalg.norm(centers.max(axis=0) - centers.min(axis=0)))
+    if span <= 1e-9:
+        return 0.0, {"basis": "degenerate_zero_trajectory_span"}
+    residual = max(residuals)
+    return float(residual / span), {
+        "basis": "max_evidence_residual_over_trajectory_bbox_diagonal",
+        "residual_backbone_units": float(residual),
+        "trajectory_span_backbone_units": span,
+    }
 
 
 def _anchor_residuals(evidence: Sequence[ScaleEvidence]) -> tuple[float, ...]:

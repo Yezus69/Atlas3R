@@ -336,6 +336,17 @@ def load_geometry_artifacts(
         from .contracts import ScaleEvidence, ScaleEvidenceType
 
         soft_conf = _clamp01(float(manifest.get("scale_evidence_confidence", 0.5)))
+        # Scale-borrow misfit (Phase 19): when the poses carry a candidate-only
+        # scale_alignment record (BA poses rescaled to backbone units via
+        # Umeyama), its residual is the measured trajectory-shape disagreement
+        # the borrowed scalar was fit ACROSS -- thread it into the evidence's
+        # residual_after_optimization so the scale posterior can widen its band
+        # from data instead of a per-backbone constant. Candidate-only; absent
+        # record -> None (class-B backbone poses carry no such measurement).
+        scale_alignment = (
+            (poses_payload.get("pose_provenance") or {}).get("scale_alignment") or {}
+        )
+        borrow_residual = scale_alignment.get("residual_rmse_backbone_units")
         try:
             scale_evidence_objects.append(
                 ScaleEvidence(
@@ -345,12 +356,27 @@ def load_geometry_artifacts(
                     source=f"learned_metric_depth:{backbone_name}",
                     frame_ids=tuple(p.frame_id for p in packets),
                     confidence=soft_conf,
+                    residual_after_optimization=(
+                        float(borrow_residual) if borrow_residual is not None else None
+                    ),
                     provenance={
                         "backbone_name": backbone_name,
                         "method": method,
                         "model_name": str(manifest.get("model_name") or backbone_name),
                         "units": "meters",
                         "evidence_class": "soft_learned_metric_prior_not_measured",
+                        **(
+                            {
+                                "scale_borrow_residual_rmse_backbone_units": float(
+                                    borrow_residual
+                                ),
+                                "scale_borrow_common_frames": scale_alignment.get(
+                                    "common_frames"
+                                ),
+                            }
+                            if borrow_residual is not None
+                            else {}
+                        ),
                     },
                 )
             )

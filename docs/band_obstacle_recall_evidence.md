@@ -1718,3 +1718,43 @@ verifies the BAND AXIS without demanding floor dominance (e.g. absolute
 floor-support count + camera-up agreement + low-region concentration),
 calibrated per the negative-table discipline, never per scene. Until then
 desk stays rejected and the yield cost is carried honestly.
+
+### Phase 19 RESULTS — conservative band VALIDATED; the rank claim FAILED honestly
+
+Single shot: scorecard diff carried EXACTLY the pre-registered signature —
+numeric deltas ONLY in scale_posterior.scale_std / relative_scale_uncertainty
+on all four tracks, ZERO categorical changes, zero verdict flips. New
+per-scene bands: xyz 0.1703, desk 0.1694, phone 0.2114, room 0.2947 (the
+loop's trajectory-shape misfit honestly widens its band 1.75×).
+
+Coverage falsifier (one observation, 9 GT configs, vault excluded;
+runs/_diag/scale_coverage_falsifier_results.json):
+
+| config | class | σ claimed | true err | ≤1σ | ≤2σ |
+|---|---|---|---|---|---|
+| v3/xyz (ACCEPTED) | A | 0.1703 | 0.028 | Y | Y |
+| v3/desk | A | 0.1694 | 0.083 | Y | Y |
+| v3/room | A | 0.2947 | 0.098 | Y | Y |
+| v2/{xyz,desk,room} | A | (same) | (same) | Y | Y |
+| pre_v3/xyz (old accepted) | B | 0.1680 | **0.337** | N | **N** |
+| pre_v3/desk | B | 0.1680 | 0.089 | Y | Y |
+| pre_v3/room | B | 0.1680 | **0.717** | N | **N** |
+
+- Bar 1 PASS: the accepted scene's true scale error sits inside 1σ.
+- Bar 2 PASS: 6/6 class-A configs within 2σ. The refutation clause (bars
+  1–2) does NOT fire; the construction stands.
+- Bar 3 FAIL, recorded loudly: Spearman(σ, e) = **−0.283** over the mixed
+  population. Cause is structural: class-B has NO data-driven signal (its
+  constant 0.168 under-covers its large true errors — the old accepted
+  canonical shipped a 0.337 scale error against a 0.168 band, exactly the
+  dishonesty the class-A construction fixes), and its σ-ties at low values
+  against high errors invert the rank. Within class A (3 scenes) the band
+  separates room from xyz/desk but does not resolve xyz vs desk (σ 0.0009
+  apart — no claim made).
+- CONSEQUENCE (no re-scoping): scale_std for class-A tracks is a VALIDATED
+  CONSERVATIVE BAND (2σ coverage on the population, 1σ on the accepted
+  scene) whose cross-scene RANK authority is NOT established. The
+  TrainingSample scale_status marker now reads
+  `conservative_band_2sigma_validated_rank_unvalidated_phase19` for class-A
+  samples; class-B keeps `per_backbone_constant_prior` (and class-B never
+  ships — its coverage failures above are the measured reason why).

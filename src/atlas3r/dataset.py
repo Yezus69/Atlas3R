@@ -235,7 +235,14 @@ def _emit_sample(
         "scale": {
             "claimed_scale": 1.0,
             "scale_uncertainty": label_summary["scale_uncertainty"],
-            "scale_status": "per_backbone_constant_prior",
+            "scale_status": (
+                # Phase 19: class-A bands are coverage-validated (2-sigma on
+                # the GT population, 1-sigma on the accepted scene); the rank
+                # claim FAILED and is not made. Class B keeps the prior.
+                "conservative_band_2sigma_validated_rank_unvalidated_phase19"
+                if gate.get("pose_provenance_class") == "ba_grade_frozen"
+                else "per_backbone_constant_prior"
+            ),
         },
         "provenance": {
             "source_uri_or_path": track.get("source_uri_or_path"),
