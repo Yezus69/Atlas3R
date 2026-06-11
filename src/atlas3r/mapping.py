@@ -78,6 +78,15 @@ RANSAC_INLIER_DIST_FACTOR = 1.5  # in voxel units
 # axis-aligned (NOT floor-aligned) with a loud blocker -- never a fabricated
 # alignment that merely makes the band look correct.
 MIN_FLOOR_INLIER_RATIO_FOR_ALIGN = 0.30
+# Camera-up PRIOR (candidate-only, supplied by the caller from the camera
+# poses under the handheld/upright-capture ASSUMPTION): when the unconstrained
+# dominant-plane RANSAC is unreliable (e.g. walls out-vote a tilted floor),
+# the search is RETRIED restricted to planes whose normal lies within this
+# angle of the prior. The prior redirects the SEARCH only -- the acceptance
+# bar (MIN_FLOOR_INLIER_RATIO_FOR_ALIGN, measured on real geometry) is
+# unchanged, so a scene with no actual floor support still fails loudly. The
+# assumption is recorded in the report (soft evidence, not a measurement).
+CAMERA_UP_PRIOR_MAX_ANGLE_DEG = 30.0
 
 
 def fuse_static_map(
@@ -88,6 +97,7 @@ def fuse_static_map(
     static_dynamic_states: Sequence[StaticDynamicState] | None = None,
     envelope: RobotEnvelopeConfig | None = None,
     apply_fusion_policy: bool = False,
+    camera_up_prior: Sequence[float] | None = None,
 ) -> tuple[
     VoxelMapState | None,
     OccupancyGrid2D | None,
@@ -167,7 +177,7 @@ def fuse_static_map(
     # lands on its dominant axis. Then the axis-aligned band crop below is a true
     # floor-parallel slab (not an oblique cut through a tilted floor). Weak floor
     # RANSAC -> IDENTITY + loud blocker (honest unaligned band, never fabricated).
-    align = _up_alignment(static_surfaces, voxel, np)
+    align = _up_alignment(static_surfaces, voxel, np, camera_up_prior=camera_up_prior)
     R_up = np.asarray(align["R_up"], dtype=np.float64)
     if align["applied"]:
         surfaces = surfaces @ R_up.T
@@ -257,7 +267,16 @@ def fuse_static_map(
     # normal sits on the band axis, so this tilt collapses toward ~0; the BEFORE
     # tilt (in the original frame) is carried from the alignment step. Both are
     # reported so the residual floor tilt before/after alignment is visible.
-    floor_info = _estimate_floor(static_surfaces, effective_voxel, np)
+    # When the alignment came from the camera-up prior, the post-alignment
+    # floor search keeps the same constraint (now centred on the aligned
+    # axis), so the band-crop floor cannot re-lock onto the wall plane the
+    # prior just out-ruled. Canonical (no-prior) behavior is unchanged.
+    post_hint = None
+    if align["applied"] and align.get("prior", {}).get("camera_up_prior_used"):
+        axis_vec = np.zeros(3, dtype=np.float64)
+        axis_vec[int(align["target_axis"])] = 1.0
+        post_hint = (axis_vec, CAMERA_UP_PRIOR_MAX_ANGLE_DEG)
+    floor_info = _estimate_floor(static_surfaces, effective_voxel, np, up_hint=post_hint)
     tilt_after = _normal_axis_tilt_deg(
         floor_info["normal"], int(floor_info["floor_axis"]), np
     )
@@ -382,6 +401,7 @@ def fuse_static_map(
             "floor_inlier_ratio": float(align["inlier_ratio"]),
             "min_inlier_ratio_for_alignment": float(MIN_FLOOR_INLIER_RATIO_FOR_ALIGN),
             "floor_method": align["method"],
+            "camera_up_prior": align.get("prior", {"camera_up_prior_used": False}),
             "grid_frame": coordinate_frame,
             "blockers": list(align["blockers"]),
         },
@@ -860,8 +880,14 @@ def _apply_occupancy_completion(
     return occ, movable_count, report
 
 
-def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
-    """RANSAC a horizontal-ish floor plane; fall back to lowest-Z heuristic."""
+def _estimate_floor(surfaces, voxel, np, up_hint=None) -> dict[str, Any]:
+    """RANSAC a horizontal-ish floor plane; fall back to lowest-Z heuristic.
+
+    ``up_hint`` = (unit up vector, max_angle_deg): when given, candidate planes
+    whose (sign-corrected) normal deviates from the hint by more than the
+    angle are skipped -- the hint constrains the SEARCH; the inlier ratio is
+    still measured on the real geometry, never assumed.
+    """
     n = surfaces.shape[0]
     if n < 3:
         z_floor = float(np.min(surfaces[:, 2])) if n else 0.0
@@ -873,6 +899,15 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
             "report": {"method": "lowest_z_heuristic", "floor_value": z_floor, "inlier_ratio": 0.0},
             "blockers": ("floor_ransac_insufficient_points_used_lowest_z",),
         }
+
+    hint_vec = None
+    min_cos = 0.0
+    method_name = "ransac"
+    if up_hint is not None:
+        hint_vec = np.asarray(up_hint[0], dtype=np.float64)
+        hint_vec = hint_vec / (np.linalg.norm(hint_vec) + 1e-12)
+        min_cos = float(np.cos(np.radians(float(up_hint[1]))))
+        method_name = "ransac_camera_up_prior_constrained"
 
     rng = np.random.default_rng(0)
     inlier_dist = RANSAC_INLIER_DIST_FACTOR * voxel
@@ -887,6 +922,8 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
         if norm < 1e-9:
             continue
         normal = normal / norm
+        if hint_vec is not None and abs(float(normal @ hint_vec)) < min_cos:
+            continue  # outside the prior cone (sign-agnostic; sign fixed below)
         d = -float(normal @ sample[0])
         dist = np.abs(surfaces @ normal + d)
         inliers = int(np.count_nonzero(dist < inlier_dist))
@@ -911,6 +948,10 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
     if (normal @ centroid + d) < 0:
         normal = -normal
         d = -d
+    # The prior's up wins a sign disagreement (it exists to resolve exactly
+    # this ambiguity); canonical (no-hint) behavior is untouched.
+    if hint_vec is not None and float(normal @ hint_vec) < 0:
+        normal, d = -normal, -d
     inlier_ratio = best_inliers / n
     # Determine the dominant axis of the plane normal for the 2D projection.
     floor_axis = int(np.argmax(np.abs(normal)))
@@ -920,9 +961,9 @@ def _estimate_floor(surfaces, voxel, np) -> dict[str, Any]:
         "floor_value": floor_value,
         "normal": tuple(float(v) for v in normal),
         "plane_d": float(d),
-        "method": "ransac",
+        "method": method_name,
         "report": {
-            "method": "ransac",
+            "method": method_name,
             "inlier_ratio": float(inlier_ratio),
             "normal": tuple(float(v) for v in normal),
             "floor_axis": floor_axis,
@@ -965,7 +1006,7 @@ def _normal_axis_tilt_deg(normal, axis, np) -> float:
     return float(np.degrees(np.arccos(cos)))
 
 
-def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
+def _up_alignment(static_surfaces, voxel, np, camera_up_prior=None) -> dict[str, Any]:
     """Derive a robust per-reconstruction up-alignment rotation ``R_up``.
 
     Estimate the floor, then build ``R_up`` mapping the floor NORMAL onto the +unit
@@ -974,14 +1015,40 @@ def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
     ``MIN_FLOOR_INLIER_RATIO_FOR_ALIGN``) or did not run, the up vector is
     unreliable -> IDENTITY + a loud blocker; the band is left axis-aligned and
     reported as unaligned, never fabricated into looking correct.
+
+    ``camera_up_prior`` (candidate-only, soft evidence): when the UNCONSTRAINED
+    search is unreliable, it is retried restricted to the prior's cone
+    (``CAMERA_UP_PRIOR_MAX_ANGLE_DEG``). The acceptance bar is the SAME -- the
+    prior redirects the search, never lowers the evidence required.
     """
     floor0 = _estimate_floor(static_surfaces, voxel, np)
     normal = np.asarray(floor0["normal"], dtype=np.float64)
     floor_axis = int(floor0["floor_axis"])
     method = str(floor0.get("method", ""))
     inlier_ratio = float(floor0.get("report", {}).get("inlier_ratio", 0.0))
-    tilt_before = _normal_axis_tilt_deg(normal, floor_axis, np)
     reliable = method == "ransac" and inlier_ratio >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN
+    prior_record: dict[str, Any] = {"camera_up_prior_used": False}
+    if not reliable and camera_up_prior is not None:
+        floor1 = _estimate_floor(
+            static_surfaces, voxel, np,
+            up_hint=(camera_up_prior, CAMERA_UP_PRIOR_MAX_ANGLE_DEG),
+        )
+        method1 = str(floor1.get("method", ""))
+        inlier1 = float(floor1.get("report", {}).get("inlier_ratio", 0.0))
+        prior_record = {
+            "camera_up_prior_used": True,
+            "camera_up_prior": [float(v) for v in np.asarray(camera_up_prior, dtype=np.float64)],
+            "max_angle_deg": float(CAMERA_UP_PRIOR_MAX_ANGLE_DEG),
+            "assumption": "handheld_upright_capture_prior_soft_evidence_not_a_measurement",
+            "unconstrained_inlier_ratio": inlier_ratio,
+            "constrained_inlier_ratio": inlier1,
+        }
+        if method1.startswith("ransac") and inlier1 >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN:
+            floor0, method, inlier_ratio = floor1, method1, inlier1
+            normal = np.asarray(floor1["normal"], dtype=np.float64)
+            floor_axis = int(floor1["floor_axis"])
+            reliable = True
+    tilt_before = _normal_axis_tilt_deg(normal, floor_axis, np)
     if not reliable:
         return {
             "applied": False,
@@ -990,6 +1057,7 @@ def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
             "tilt_before_deg": tilt_before,
             "inlier_ratio": inlier_ratio,
             "method": method,
+            "prior": prior_record,
             "blockers": ("floor_normal_unreliable_band_not_floor_aligned",),
         }
     target = np.zeros(3, dtype=np.float64)
@@ -1002,6 +1070,7 @@ def _up_alignment(static_surfaces, voxel, np) -> dict[str, Any]:
         "tilt_before_deg": tilt_before,
         "inlier_ratio": inlier_ratio,
         "method": method,
+        "prior": prior_record,
         "blockers": (),
     }
 

@@ -446,9 +446,17 @@ def _run_pipeline(
     # is applied ONLY to the monocular candidate -- never to the measured GT
     # baseline, which stays a raw yardstick.
     apply_fusion_policy = label == "monocular_candidate"
+    # Candidate-only camera-up PRIOR (handheld/upright-capture assumption,
+    # soft evidence): lets the floor search recover when walls out-vote a
+    # tilted floor. Never supplied to the measured baseline -- its floor
+    # must stand on measurement alone.
+    camera_up_prior = _camera_up_prior(packets) if apply_fusion_policy else None
     map_result = _stage(
         local_blockers, f"{label}_map_occupancy",
-        lambda: _map(packets, scale_posterior, static_dynamic_states, envelope, apply_fusion_policy),
+        lambda: _map(
+            packets, scale_posterior, static_dynamic_states, envelope,
+            apply_fusion_policy, camera_up_prior,
+        ),
     )
     voxel_map = map_result.get("_voxel_map") if isinstance(map_result, Mapping) else None
     occupancy_grid = map_result.get("_grid") if isinstance(map_result, Mapping) else None
@@ -598,18 +606,40 @@ def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, A
     return {**report, "_posterior": posterior}
 
 
+def _camera_up_prior(packets: Sequence[Any]) -> list[float] | None:
+    """World-frame UP estimate from the camera poses: the median of each
+    frame's camera +y axis (image down) in world coords, negated. Rests on
+    the handheld/upright-capture ASSUMPTION -- soft evidence, recorded as
+    such by the fuser; it constrains the floor search, never the gate bar."""
+    import numpy as np  # type: ignore
+
+    downs = []
+    for packet in packets:
+        T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
+        downs.append(T[:3, 1])  # R @ e_y = column 1
+    if not downs:
+        return None
+    up = -np.median(np.stack(downs, axis=0), axis=0)
+    norm = float(np.linalg.norm(up))
+    if norm < 1e-9:
+        return None
+    return [float(v) for v in up / norm]
+
+
 def _map(
     packets: Sequence[Any],
     scale_posterior: Any,
     static_dynamic_states: Sequence[Any] | None = None,
     envelope: RobotEnvelopeConfig | None = None,
     apply_fusion_policy: bool = False,
+    camera_up_prior: Sequence[float] | None = None,
 ) -> dict[str, Any]:
     voxel_map, grid, voxel_3d, comparison_field, report = fuse_static_map(
         packets, scale_posterior,
         static_dynamic_states=static_dynamic_states,
         envelope=envelope,
         apply_fusion_policy=apply_fusion_policy,
+        camera_up_prior=camera_up_prior,
     )
     return {
         **report,
