@@ -256,6 +256,29 @@ def validate_and_accept(
                 "baseline is the yardstick, not the examinee"
             ),
         },
+        # COMPLETE enumeration of every gated bar with its authority class
+        # (Phase 20): "thresholds carry measured authority" is checkable only
+        # against a complete list -- the provisional/measured framing missed a
+        # third class (unmarked) and a bar living outside this module.
+        "threshold_authority_enumeration": {
+            "stage0_inbounds_0.30": "provisional_mid_chasm_pending_detection_limit_calibration",
+            "stage0_edge_fraction_0.70": "provisional_mid_chasm_pending_detection_limit_calibration",
+            "stage0_confidence_0.30": "provisional_mid_chasm_pending_detection_limit_calibration",
+            "stage1_floor_inlier_0.30": (
+                "lives_in_mapping.MIN_FLOOR_INLIER_RATIO_FOR_ALIGN -- "
+                "uncalibrated_unmarked_pending_injection_calibration"
+            ),
+            f"stage2_fsc_{fsc_bound}": (
+                "provisional_good_cluster_margin_pending_injection_calibration"
+                if ba_grade else "calibrated_5cm_grids_2026_06_canonical"
+            ),
+            f"stage2b_p90_{p90_bound}": (
+                "provisional_good_cluster_margin_pending_injection_calibration"
+                if ba_grade else "mid_chasm_expanded_population_2026_06_11"
+            ),
+            "held_out_render_error_0.50": "uncalibrated_unmarked_pending_injection_calibration",
+            "dynamic_leakage_0.10": "uncalibrated_unmarked_pending_injection_calibration",
+        },
         "rejection_reasons": tuple(report.rejection_reasons),
         "band3d_agreement": dict(band3d_agreement) if isinstance(band3d_agreement, Mapping) else band3d_agreement,
         "band3d_agreement_summary": _band3d_summary(band3d_agreement),

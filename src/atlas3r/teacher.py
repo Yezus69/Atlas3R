@@ -261,6 +261,15 @@ def _run_track(
         else {"status": "blocked_no_packets", "authority": "none"},
     )
 
+    # Per-scene injected-corruption detection-limit certificate (REPORTAGE,
+    # Phase 20): an accepted label names the corruption families its gate was
+    # proven to catch AND the families where it has no authority. Absent
+    # certificate is an explicit marker, never a silent pass.
+    report["injected_corruption_detection_limit"] = _stage(
+        blockers, "detection_limit_certificate",
+        lambda: _detection_limit_summary(asset_id, root),
+    )
+
     # ------------------------------------------------------------------
     # MEASURED BASELINE pipeline FIRST (reference_metric only): the measured
     # RGB-D/pose packets, evaluated for the metric category. This is the ONLY path
@@ -602,6 +611,62 @@ def _plane_ledger_summary(packets: Sequence[Any]) -> dict[str, Any]:
 
     report = ledger_for_packets(packets)
     return {k: v for k, v in report.items() if k != "tracks"}
+
+
+def _detection_limit_summary(asset_id: str, root: Path) -> dict[str, Any]:
+    """Per-scene injected-corruption detection-limit certificate summary
+    (Phase 20, reportage). Names the families the gate was PROVEN to catch
+    and the families where it has no authority; an absent certificate is an
+    explicit marker, never a silent pass. The full certificate (runs/_diag)
+    stays the artifact of record."""
+    cert_path = Path(root) / "runs/_diag" / f"detection_limit_{asset_id}.json"
+    if not cert_path.exists():
+        return {
+            "status": "no_certificate_for_scene",
+            "expected_path": str(cert_path),
+            "note": (
+                "gate threshold authority on this scene rests on its class "
+                "calibration only; per-scene injected-corruption coverage is "
+                "unmeasured until the harness runs here"
+            ),
+        }
+    try:
+        cert = json.loads(cert_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {"status": "certificate_unreadable", "error": str(exc),
+                "path": str(cert_path)}
+    if "gate_mirror" not in cert:
+        # A certificate measured against a PRE-provenance-conditioned gate
+        # would misstate coverage of the current gate -- marked stale, never
+        # silently attached.
+        return {
+            "status": "certificate_predates_gate_mirror_stale",
+            "path": str(cert_path),
+            "note": "re-run tools/run_detection_limit.py to certify the current gate",
+        }
+    limits = cert.get("detection_limits") or {}
+    families = {
+        fam: {
+            "verdict": entry.get("verdict"),
+            "detection_limit": entry.get("detection_limit"),
+            "units": entry.get("units"),
+        }
+        for fam, entry in limits.items()
+        if isinstance(entry, Mapping)
+    }
+    no_authority = sorted(
+        fam for fam, entry in families.items()
+        if entry["verdict"] != "detected"
+    )
+    return {
+        "status": "certificate_attached",
+        "path": str(cert_path),
+        "gate_mirror": cert.get("gate_mirror"),
+        "families": families,
+        "gate_no_authority_families": no_authority,
+        "negative_control_tilt": (cert.get("negative_control_tilt") or {}).get("verdict"),
+        "coverage_disclaimer": cert.get("coverage_disclaimer"),
+    }
 
 
 def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, Any]:

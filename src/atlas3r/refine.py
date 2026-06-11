@@ -88,6 +88,7 @@ def refine_scene(
     sample_per_frame: int = 400,
     fix_global_scale: bool = True,
     freeze_poses: bool | None = None,
+    measure_only: bool = False,
 ) -> tuple[list[FrameRayPacket], dict]:
     """Refine global geometry of ``packets`` over a keyframe graph.
 
@@ -251,6 +252,21 @@ def refine_scene(
     r0 = residual_fn(x0)
     cost_before = float(0.5 * np.sum(_soft_l1(r0, ROBUST_F_SCALE, np)))
     resid_before = _logdepth_residual_summary(x0, ctx)
+
+    if measure_only:
+        # Measurement-only pass (Phase 20): the gated prerefine residual
+        # summary at x0, with NO optimization -- so the detection-limit
+        # harness can score Stage-2b on injected reconstructions without a
+        # repair pass leaking in. Packets returned UNCHANGED.
+        return list(ordered), {
+            **base_report,
+            "status": "measured_only_no_optimization",
+            "frames_used": n_frames,
+            "edges_used": len(edges),
+            "cost_before": cost_before,
+            "residual_summary_before": resid_before,
+            "provenance": _provenance_label(ordered),
+        }
 
     result = least_squares(
         residual_fn,

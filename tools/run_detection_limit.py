@@ -48,11 +48,14 @@ from atlas3r.inject import (  # noqa: E402
     trajectory_span_m,
 )
 from atlas3r.mapping import fuse_static_map  # noqa: E402
-from atlas3r.refine import refine_scene  # noqa: E402
+from atlas3r.refine import BA_GRADE_POSE_MARKERS, refine_scene  # noqa: E402
 from atlas3r.scale import estimate_scale_posterior  # noqa: E402
 from atlas3r.validation import (  # noqa: E402
+    MAX_CONTRADICTION_RATE_BA_FROZEN,
     MAX_CONTRADICTION_RATE_FOR_ACCEPT,
     MAX_HELD_OUT_ERROR_FOR_ACCEPT,
+    MAX_PREREFINE_P90_BA_FROZEN,
+    MAX_PREREFINE_P90_BACKBONE,
     _evidence_mass_stage,
     _gravity_alignment_stage,
     _held_out_render_error,
@@ -80,8 +83,38 @@ LEDGER_SIGNALS = (
 )
 
 
-def score_suite(packets, soft_evidence, envelope) -> dict:
-    """The GT-free signal suite + current-gate verdict for one packet set."""
+def ba_grade_of(packets) -> bool:
+    """GT-free pose-provenance class -- the SAME marker logic the production
+    gate and refine's freeze auto-detection key on (validation.py)."""
+    return any(
+        marker in str((getattr(p, "provenance", {}) or {}).get("method", ""))
+        for p in packets
+        for marker in BA_GRADE_POSE_MARKERS
+    )
+
+
+def gated_signals_for(ba_grade: bool) -> dict:
+    """The PRODUCTION gate's thresholded signals for this provenance class
+    (Phase 20 gate mirror). All constants imported from validation.py --
+    nothing is invented here. Dynamic leakage is out of harness scope (the
+    suite fuses without static/dynamic states and the tested families do not
+    perturb the dynamic channel) -- recorded as out_of_scope, never coverage."""
+    fsc_bound = MAX_CONTRADICTION_RATE_BA_FROZEN if ba_grade else MAX_CONTRADICTION_RATE_FOR_ACCEPT
+    p90_bound = MAX_PREREFINE_P90_BA_FROZEN if ba_grade else MAX_PREREFINE_P90_BACKBONE
+    return {
+        "free_space_contradiction_rate": ("above", fsc_bound),
+        "held_out_render_error": ("above", MAX_HELD_OUT_ERROR_FOR_ACCEPT),
+        "prerefine_p90_log_depth_residual": ("above", p90_bound),
+        "median_reprojection_inbounds_ratio": ("below", 0.30),
+        "depth_residual_edge_fraction": ("below", 0.70),
+        "mean_confidence_weight": ("below", 0.30),
+    }
+
+
+def score_suite(packets, soft_evidence, envelope, gated_signals) -> dict:
+    """The GT-free signal suite + PRODUCTION-gate-mirrored verdict for one
+    packet set (class-conditioned bounds; Stage-2b p90 via a measure-only
+    refine pass -- residuals at x0, no optimization, no repair)."""
     from atlas3r.plane_ledger import ledger_for_packets
 
     _, vis_report = build_visibility_graph(packets)
@@ -95,14 +128,28 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
     stage1 = _gravity_alignment_stage(map_report, True)
     fsc = map_report.get("free_space_contradiction_rate")
     fsc = float(fsc) if isinstance(fsc, (int, float)) else 0.5
+    _, measure_report = refine_scene(
+        packets, fix_global_scale=bool(soft_evidence), measure_only=True
+    )
+    p90 = (measure_report.get("residual_summary_before") or {}).get(
+        "p90_log_depth_residual"
+    )
 
     reject_reasons = []
     reject_reasons += stage0["rejection_reasons"]
     reject_reasons += stage1["rejection_reasons"]
-    if fsc > MAX_CONTRADICTION_RATE_FOR_ACCEPT:
+    fsc_dir, fsc_bound = gated_signals["free_space_contradiction_rate"]
+    p90_dir, p90_bound = gated_signals["prerefine_p90_log_depth_residual"]
+    if fsc > fsc_bound:
         reject_reasons.append(f"free_space_contradiction_rate_too_high:{fsc:.3f}")
     if held_out > MAX_HELD_OUT_ERROR_FOR_ACCEPT:
         reject_reasons.append(f"held_out_render_error_too_high:{held_out:.3f}")
+    if p90 is None or float(p90) > p90_bound:
+        # Missing p90 on a gated path is a missing signal, never a silent pass
+        # (production rule, validation.py).
+        reject_reasons.append(
+            f"prerefine_residual_p90_too_high:{'missing' if p90 is None else f'{p90:.3f}'}"
+        )
 
     ledger = ledger_for_packets(packets)
     ledger_signals = ledger.get("signals", {}) if ledger.get("status") == "audited" else {}
@@ -115,6 +162,9 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
             "mean_confidence_weight": stage0["mean_confidence_weight"],
             "held_out_render_error": held_out,
             "free_space_contradiction_rate": fsc,
+            "prerefine_p90_log_depth_residual": (
+                float(p90) if isinstance(p90, (int, float)) else None
+            ),
             "unknown_fraction": map_report.get("unknown_fraction"),
             "floor_inlier_ratio": floor.get("inlier_ratio"),
             "floor_up_alignment_applied": floor.get("up_alignment_applied"),
@@ -124,8 +174,9 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
         "ledger_direction_authority": ledger.get("direction_authority"),
         "internal_signal_reject": bool(
             stage0["would_reject"]
-            or fsc > MAX_CONTRADICTION_RATE_FOR_ACCEPT
+            or fsc > fsc_bound
             or held_out > MAX_HELD_OUT_ERROR_FOR_ACCEPT
+            or p90 is None or float(p90) > p90_bound
         ),
         "gravity_stage_reject": bool(stage1["would_reject"]),
         "gate_would_reject": bool(reject_reasons),
@@ -134,17 +185,7 @@ def score_suite(packets, soft_evidence, envelope) -> dict:
     }
 
 
-# Thresholded signals the gate consults, with crossing direction.
-GATED_SIGNALS = {
-    "free_space_contradiction_rate": ("above", MAX_CONTRADICTION_RATE_FOR_ACCEPT),
-    "held_out_render_error": ("above", MAX_HELD_OUT_ERROR_FOR_ACCEPT),
-    "median_reprojection_inbounds_ratio": ("below", 0.30),
-    "depth_residual_edge_fraction": ("below", 0.70),
-    "mean_confidence_weight": ("below", 0.30),
-}
-
-
-def compute_detection_limits(runs, clean, seeds) -> dict:
+def compute_detection_limits(runs, clean, seeds, gated_signals) -> dict:
     """Honest detection limits with two guards the naive min-rule lacks:
 
     1. MONOTONICITY: a family whose rejected-count is non-monotone in magnitude
@@ -164,7 +205,7 @@ def compute_detection_limits(runs, clean, seeds) -> dict:
     majority = (seeds // 2) + 1
     clean_signals = clean["signals"]
     clean_margins = {}
-    for sig, (direction, theta) in GATED_SIGNALS.items():
+    for sig, (direction, theta) in gated_signals.items():
         v = clean_signals.get(sig)
         if isinstance(v, (int, float)):
             clean_margins[sig] = round(theta - v if direction == "above" else v - theta, 4)
@@ -182,7 +223,7 @@ def compute_detection_limits(runs, clean, seeds) -> dict:
             rejected_counts.append(rejected)
             solid = False
             crossings = {}
-            for sig, (direction, theta) in GATED_SIGNALS.items():
+            for sig, (direction, theta) in gated_signals.items():
                 vals = [r["suite"]["signals"].get(sig) for r in rows]
                 vals = [v for v in vals if isinstance(v, (int, float))]
                 if not vals:
@@ -286,7 +327,7 @@ def compute_ungated_responses(runs, clean, signal_names) -> dict:
     return out
 
 
-def tilt_negative_control(runs, clean, seeds) -> dict:
+def tilt_negative_control(runs, clean, seeds, gated_signals) -> dict:
     """Rigid world tilt is gauge-invisible to multiview consistency; internal
     signals must not GENUINELY respond. Knife-edge threshold crossings inside
     the across-seed noise band are counted separately from solid responses."""
@@ -297,7 +338,7 @@ def tilt_negative_control(runs, clean, seeds) -> dict:
     solid_responses = 0
     for m in sorted({r["magnitude"] for r in tilt_rows}):
         rows = [r for r in tilt_rows if r["magnitude"] == m]
-        for sig, (direction, theta) in GATED_SIGNALS.items():
+        for sig, (direction, theta) in gated_signals.items():
             vals = [r["suite"]["signals"].get(sig) for r in rows]
             vals = [v for v in vals if isinstance(v, (int, float))]
             if not vals:
@@ -352,8 +393,10 @@ def main() -> int:
         runs = cert["runs"]
         clean = cert["clean_baseline"]
         seeds = int(cert.get("seeds", 3))
-        cert["detection_limits"] = compute_detection_limits(runs, clean, seeds)
-        cert["negative_control_tilt"] = tilt_negative_control(runs, clean, seeds)
+        gm = cert.get("gate_mirror") or {}
+        gated = gated_signals_for(bool(gm.get("ba_grade", False)))
+        cert["detection_limits"] = compute_detection_limits(runs, clean, seeds, gated)
+        cert["negative_control_tilt"] = tilt_negative_control(runs, clean, seeds, gated)
         path.write_text(json.dumps(cert, indent=2, default=str), encoding="utf-8")
         print(json.dumps({k: v for k, v in cert.items() if k != "runs"},
                          indent=2, default=str))
@@ -365,6 +408,15 @@ def main() -> int:
     soft = grep.get("_scale_evidence", [])
     refined, _refine_report = refine_scene(mono, fix_global_scale=bool(soft))
     span = trajectory_span_m(refined)
+    ba_grade = ba_grade_of(refined)
+    gated = gated_signals_for(ba_grade)
+    gate_mirror = {
+        "ba_grade": ba_grade,
+        "pose_provenance_class": "ba_grade_frozen" if ba_grade else "backbone_refined",
+        "gated_signals": {k: {"direction": d, "threshold": t} for k, (d, t) in gated.items()},
+        "p90_basis": "measure_only_refine_on_suite_packets_not_identical_to_production_prerefine",
+        "dynamic_leakage": "out_of_scope_suite_fuses_without_states",
+    }
 
     measured = None
     if args.asset in MEASURED_SCENES:
@@ -380,7 +432,7 @@ def main() -> int:
           f"trajectory span {span:.3f} (reconstruction units)", flush=True)
 
     t0 = time.time()
-    clean = score_suite(refined, soft, envelope)
+    clean = score_suite(refined, soft, envelope, gated)
     clean.pop("_cand_field", None)
     clean_rmse = true_rmse(refined)
     print(f"[detection_limit] clean baseline: gate_would_reject="
@@ -397,7 +449,7 @@ def main() -> int:
             for seed in range(seeds):
                 t1 = time.time()
                 corrupted, record = inject_corruption(refined, family, magnitude, seed)
-                suite = score_suite(corrupted, soft, envelope)
+                suite = score_suite(corrupted, soft, envelope, gated)
                 suite.pop("_cand_field", None)
                 row = {
                     "family": family,
@@ -419,7 +471,7 @@ def main() -> int:
                     flush=True,
                 )
 
-    detection_limits = compute_detection_limits(runs, clean, seeds)
+    detection_limits = compute_detection_limits(runs, clean, seeds, gated)
     ledger_response = compute_ungated_responses(runs, clean, LEDGER_SIGNALS)
 
     # Direction-resolved authority probe (red-team requirement): a plane track
@@ -438,7 +490,7 @@ def main() -> int:
                 corrupted, record = inject_corruption(
                     refined, "pose_drift_translation", magnitude, 0, direction=axis,
                 )
-                suite = score_suite(corrupted, soft, envelope)
+                suite = score_suite(corrupted, soft, envelope, gated)
                 suite.pop("_cand_field", None)
                 probe_rows.append({
                     "axis": axis_name,
@@ -459,7 +511,7 @@ def main() -> int:
             "rows": probe_rows,
         }
 
-    tilt_control = tilt_negative_control(runs, clean, seeds)
+    tilt_control = tilt_negative_control(runs, clean, seeds, gated)
 
     # Method validation vs GT (only where measured evidence exists): response
     # monotonicity of true RMSE in injected magnitude, per geometric family.
@@ -499,6 +551,7 @@ def main() -> int:
         "artifacts_dir": args.artifacts_dir,
         "n_keyframes": len(refined),
         "trajectory_span_reconstruction_units": span,
+        "gate_mirror": gate_mirror,
         "gauge": "up_to_similarity -- magnitudes are scene-relative, never cm",
         "clean_baseline": {
             "gate_would_reject": clean["gate_would_reject"],
