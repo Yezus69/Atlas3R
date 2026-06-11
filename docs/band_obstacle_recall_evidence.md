@@ -1165,3 +1165,46 @@ runs/teacher_v3 --eval-dir runs/eval_v3`.
 recipe) only if the AMENDED bar is met on xyz AND desk improves or holds;
 mixed is reported as mixed and NOT adopted; no parameter (including τ) may
 be revised in response to these GT numbers.
+
+### Phase 12 RESULTS — the v3 single shot ran ONCE. VERDICT: MIXED → NOT ADOPTED (xyz bar unmet).
+
+(runs/teacher_v3 + runs/eval_v3; composites external/_composite_v3 with
+stable-verified fractions xyz 0.195 / desk 0.141 / room 0.038 / phone 0.077.)
+
+| solid_distance (amended law) | xyz can. | xyz v3 | desk can. | desk v3 | room can. | room v3 |
+|---|---|---|---|---|---|---|
+| F1@5cm (THE BAR) | **0.199** | 0.158 | 0.031 | **0.278** | 0.000 | **0.124** |
+| F1@10cm | 0.393 | 0.430 | 0.147 | **0.622** | 0.000 | 0.368 |
+| precision@10cm (guardrail) | 0.352 | 0.366 | 0.441 | **0.849** | 0.000 | 0.286 |
+| median solid distance (m) | 0.113 | 0.098 | 0.213 | **0.102** | 0.243 | **0.097** |
+| per_class (guardrail) | 0.900 | 0.925 | 0.734 | 0.817 | 0.598 | **0.965** |
+
+- Pre-registered bar: solid_f1_at_5cm UP on xyz — **NOT MET** (0.199 → 0.158)
+  → NOT ADOPTED, canonical recipe stays, no parameter revised. desk improved
+  9× at the collision margin and room went from zero to real; every guardrail
+  held or improved on every scene; xyz also lost acceptance again at the map
+  fsc knife edge (0.2532 vs 0.25 — fewer verified voxels ⇒ fewer exclusions).
+- *Pilot-vs-spine attribution (honest):* the xyz pilot read F1@5cm 0.230;
+  the spine reads 0.158 — the pilot fused without static/dynamic states, so
+  pilot and spine populations differ; spine-vs-spine is the comparison the
+  law reads (v2 0.065 → v3 0.158, 2.4×). Recorded so pilot numbers are never
+  quoted as spine numbers again.
+- *Observation, NOT a revision:* xyz-canonical's 0.199 is measured on labels
+  fused at the 1.34× scale-inflation artifact (effective ~3.7 cm voxels;
+  Phase 8 diagnosis) and gentle motion — the one configuration class where
+  learned depth at wrong scale flatters the distance metric. The v3 number
+  is measured at true scale. Whether the bar should compare at matched scale
+  honesty is a QUESTION FOR A FUTURE PRE-REGISTRATION; under the law as
+  written, v3 is not adopted.
+- phone_room v3 gate (reportage): floor inlier IMPROVED 0.082 → 0.104 (still
+  < 0.30), inbounds 0.309 → 0.297 and confidence 0.295 → 0.284 (both dipped
+  with the smaller verified set) — three reasons named, still honestly
+  rejected.
+
+**Standing read:** the perturbation-stability tier is the largest measured
+placement win on the realistic-motion scene class (desk 9×, room 0→0.124 at
+the margin; medians halved) — exactly the scene class internet video lives
+in — while the gentle-scene comparison is confounded by the canonical
+baseline's scale artifact. The next session's decision point (fresh
+pre-registration, never tuned on these numbers): a matched-scale-honesty
+bar, or a multi-scene aggregate bar, for re-judging the stability tier.
