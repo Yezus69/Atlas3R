@@ -1789,3 +1789,22 @@ the production matching policy for INGESTION COST, but on long fast loops
 the exhaustive model (where affordable) still sets the quality bar — the
 GLOMAP-class global-BA option returns to the roadmap for long-video
 quality, not just scale. Canonical room track unchanged.
+
+### Phase 21 — phone fragment B: SfM milestone (interim record)
+
+Fragment-native ingestion step 1 ran (frames 502–800 staged as their own
+workspace; 15 keyframes derived from the full-video selection by id shift,
+provenance recorded in the derived selector JSON). Self-calibrated SfM:
+**83 frames registered in ONE model, 0.80 px mean reprojection, f = 1098.4 /
+k = 0.0373** — within 1.8% of the three independent Phase-10 calibrations
+(1086.4 / 1079.3 / 1089.4): the camera cross-check holds a FOURTH time.
+Fragment B reconstructs coherently. The MVS + backbone + teacher chain (the
+floor-coverage falsifier: does fragment B's floor-rich coverage lift floor
+inlier toward 0.30?) is staged but BLOCKED this session by disk exhaustion
+(the run died at undistortion on ENOSPC; ~13 GB of superseded dense
+workspaces were deleted — divisor-8 room, desk smoke, d4 dense triple,
+fragment-B partial dense — all regenerable from documented commands).
+Operational lesson recorded: dense workspaces are ~2–11 GB EACH; the
+pipeline tool should check free disk before the dense stage and the
+workspace-retention policy (extract composites, drop stereo maps) needs a
+cleanup pass at the end of every campaign run.
