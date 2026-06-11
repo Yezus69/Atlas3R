@@ -1609,3 +1609,22 @@ claimed σ. Bars, stated in advance:
 FAILURE of bar 1 or 2 refutes the construction: it is reverted, the
 constant prior stays, and the failure is recorded here. No widening,
 re-weighting, or re-fitting in response to the observed coverage.
+
+**Phase 18 shot 1 result + GT-free amendment:** the single shot ran; the
+scorecard diff was EMPTY on ALL FOUR tracks — rung 3 fired on desk and
+returned NO plane (height_mode_inlier_ratio 0.0 = no height bin reached the
+max(3, 0.05·n) significance bar). Diagnosis (geometric, no GT consulted):
+the height histogram runs along the CAMERA-UP PRIOR axis, and a prior
+tilted by θ from the true floor normal smears a floor of extent L across
+L·sin(θ) of height — desk's ~4 m floor at ~15° ≈ 1 m ≈ 27 bins (~0.6%
+per bin), never significant. Histogram seeding structurally fails under
+exactly the prior tilt that makes rung 3 necessary. AMENDMENT (seeding
+mechanism only; cone, polish, bar, denominator all unchanged): seed from
+the LOWEST QUANTILE BAND — drop the bottom 2% of heights as outliers, then
+grow a band upward from the 2nd percentile until it holds ≥ max(3, 0.05·n)
+points (width set by the data, no new constant), PCA-fit a plane to the
+band (the fit recovers the true normal regardless of prior tilt), then the
+same in-cone polish loop, with the final inlier count measured on the FINAL
+plane (also fixes an off-by-one: shot-1 code stored the pre-refit plane's
+support). Re-run = shot 2, same expectations and falsifier as the Phase 18
+pre-registration.
