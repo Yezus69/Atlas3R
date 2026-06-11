@@ -79,11 +79,18 @@ def load_canonical_assets(
         seen_ids.add(asset.asset_id)
         assets.append(asset)
 
-    missing_ids = [asset_id for asset_id in CANONICAL_ASSET_IDS if asset_id not in seen_ids]
-    if missing_ids:
-        raise ContractValidationError(
-            f"canonical manifest must register {', '.join(missing_ids)}"
-        )
+    # The canonical-completeness check guards the DEFAULT manifest only: the
+    # canonical evidence loop must never silently lose a gate track. Alternate
+    # manifests (the sealed vault, config/vault_assets.json) legitimately
+    # register OTHER tracks -- the vault protocol depends on running them
+    # standalone (found broken at Vault Run 1, docs/vault_runs.md A3: the
+    # documented vault invocation had never been runnable).
+    if path.resolve() == _resolve_path(Path(DEFAULT_MANIFEST_PATH), root).resolve():
+        missing_ids = [asset_id for asset_id in CANONICAL_ASSET_IDS if asset_id not in seen_ids]
+        if missing_ids:
+            raise ContractValidationError(
+                f"canonical manifest must register {', '.join(missing_ids)}"
+            )
     return tuple(assets)
 
 

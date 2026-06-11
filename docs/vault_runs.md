@@ -49,4 +49,22 @@ observed):**
   recorded as a generalization defect (allowed to fix mechanically, never
   tuned to improve vault METRICS).
 
+**A3 generalization defects found (mechanical fixes only, recorded):**
+1. The documented vault invocation had NEVER been runnable: M1's manifest
+   validation hard-required the canonical asset ids for ANY manifest. Fixed
+   mechanically (the canonical-completeness check now guards only the
+   default manifest). The vault protocol was committed without exercising
+   its own entry point.
+2. The vault's metadata sidecar was staged with a non-M2 schema
+   (`camera.*` / `gt_match_tolerance_s` instead of
+   `m2_reference.intrinsics.*` / `timestamp_tolerance_s` /
+   `pose_translation_units`) — M2 honestly produced zero measured packets.
+   Sidecar rewritten to the proven fr1 schema with the published fr3
+   calibration values (data staging correction; gitignored data, recorded
+   here).
+3. Keyframe-only COLMAP staging registered 26/48 keyframes with only 1 of 6
+   measured anchors — the SAME production reality phone_room taught
+   (Phase 10). The documented production staging (every-8th ∪ keyframes ∪
+   anchors, sequential video matching) was applied as the frozen recipe.
+
 **Result:** (recorded below after the run; the run happens once.)
