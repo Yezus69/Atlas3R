@@ -1224,33 +1224,35 @@ def _band3d_agreement(
     # that map into the CO-OBSERVED measured band region (within 0.10 m of an
     # observed measured voxel -- GT is silent elsewhere) within tau of a
     # measured-solid voxel. Distances in meters via the Sim(3) scale.
-    solid_distance: dict[str, Any] = {"status": "computed"}
-    try:
-        from scipy.spatial import cKDTree  # lazy; scipy is a refine dependency
+    def _solid_distance(s_used: float, t_used: Any, alignment: str) -> dict[str, Any]:
+        try:
+            from scipy.spatial import cKDTree  # lazy; scipy is a refine dependency
 
-        meas_solid_all = ((meas_sel == OCC) | (meas_sel == MOV)) & in_b
-        cand_solid_idx = np.argwhere(cf_touched & ((cf_cls == OCC) | (cf_cls == MOV)))
-        taus = (0.025, 0.05, 0.10)
-        if int(np.count_nonzero(meas_solid_all)) == 0 or cand_solid_idx.shape[0] == 0:
-            solid_distance = {
-                "status": "no_solid_voxels_on_one_side",
-                "measured_solid_in_bounds": int(np.count_nonzero(meas_solid_all)),
-                "candidate_solid_observed": int(cand_solid_idx.shape[0]),
-            }
-        else:
+            meas_solid_all = ((meas_sel == OCC) | (meas_sel == MOV)) & in_b
+            cand_solid_idx = np.argwhere(cf_touched & ((cf_cls == OCC) | (cf_cls == MOV)))
+            taus = (0.025, 0.05, 0.10)
+            if int(np.count_nonzero(meas_solid_all)) == 0 or cand_solid_idx.shape[0] == 0:
+                return {
+                    "status": "no_solid_voxels_on_one_side",
+                    "alignment": alignment,
+                    "measured_solid_in_bounds": int(np.count_nonzero(meas_solid_all)),
+                    "candidate_solid_observed": int(cand_solid_idx.shape[0]),
+                }
+            out: dict[str, Any] = {"status": "computed", "alignment": alignment}
+            p_c = ((1.0 / s_used) * (R.T @ (pts_meas - t_used[None, :]).T)).T
             cand_solid_centers = cf_org[None, :] + (cand_solid_idx + 0.5) * cf_v
-            d_recall = cKDTree(cand_solid_centers).query(p_cand[meas_solid_all])[0]
-            d_recall_m = d_recall * s  # candidate-frame units -> meters
+            d_recall = cKDTree(cand_solid_centers).query(p_c[meas_solid_all])[0]
+            d_recall_m = d_recall * s_used  # candidate-frame units -> meters
             # forward-map candidate solids to the measured (metric) frame
-            q_meas = (s * (R @ cand_solid_centers.T)).T + t[None, :]
+            q_meas = (s_used * (R @ cand_solid_centers.T)).T + t_used[None, :]
             in_slab = (q_meas[:, m_fa] >= bmin) & (q_meas[:, m_fa] < bmax)
             d_obs = cKDTree(pts_meas).query(q_meas)[0]
             judged = in_slab & (d_obs <= 0.10)
             meas_solid_pts = pts_meas[(meas_sel == OCC) | (meas_sel == MOV)]
             prec_base = q_meas[judged]
-            solid_distance["measured_solid_in_bounds"] = int(np.count_nonzero(meas_solid_all))
-            solid_distance["candidate_solid_judged"] = int(np.count_nonzero(judged))
-            solid_distance["candidate_solid_observed"] = int(cand_solid_idx.shape[0])
+            out["measured_solid_in_bounds"] = int(np.count_nonzero(meas_solid_all))
+            out["candidate_solid_judged"] = int(np.count_nonzero(judged))
+            out["candidate_solid_observed"] = int(cand_solid_idx.shape[0])
             if meas_solid_pts.shape[0] and prec_base.shape[0]:
                 d_prec_m = cKDTree(meas_solid_pts).query(prec_base)[0]
             else:
@@ -1263,16 +1265,29 @@ def _band3d_agreement(
                 )
                 f1 = 2 * p_tau * r_tau / (p_tau + r_tau) if (p_tau + r_tau) > 0 else 0.0
                 key = tau_keys[tau]  # dot-free: these feed dotted diff paths
-                solid_distance[f"solid_recall_at_{key}"] = r_tau
-                solid_distance[f"solid_precision_at_{key}"] = p_tau
-                solid_distance[f"solid_f1_at_{key}"] = float(f1)
-            solid_distance["median_solid_distance_m"] = float(np.median(d_recall_m))
-    except Exception as exc:  # honest miss, never fabricated numbers
-        solid_distance = {"status": "not_computed", "error": str(exc)}
+                out[f"solid_recall_at_{key}"] = r_tau
+                out[f"solid_precision_at_{key}"] = p_tau
+                out[f"solid_f1_at_{key}"] = float(f1)
+            out["median_solid_distance_m"] = float(np.median(d_recall_m))
+            return out
+        except Exception as exc:  # honest miss, never fabricated numbers
+            return {"status": "not_computed", "alignment": alignment, "error": str(exc)}
+
+    solid_distance = _solid_distance(s, t, "sim3_gauge_aligned")
+    # SCALE-HONEST variant: rigid SE(3) only (scale FIXED at 1) -- the label as
+    # the ROBOT would consume it, at its own claimed metric scale. The Sim(3)
+    # variant above forgives a global scale error (the alignment absorbs it);
+    # a robot has no such forgiveness. Comparing recipes on the Sim(3) metric
+    # alone lets a scale-distorted baseline look as collision-accurate as a
+    # scale-honest one (docs Phase 12 continuation). Same rotation (scale-free
+    # in Umeyama), translation re-fit at s=1.
+    t_scale1 = mu_dst - R @ mu_src
+    solid_distance_metric = _solid_distance(1.0, t_scale1, "rigid_se3_scale_fixed_1")
 
     return {
         "status": "computed",
         "solid_distance_agreement": solid_distance,
+        "solid_distance_agreement_metric_scale": solid_distance_metric,
         "method": "camera_sim3_plus_floor_normal_refine_inverse_sample_candidate_full_at_measured_band",
         "common_frame_count": len(common),
         "estimated_scale_monocular_to_measured": float(s),

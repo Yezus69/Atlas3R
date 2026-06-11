@@ -1208,3 +1208,25 @@ in — while the gentle-scene comparison is confounded by the canonical
 baseline's scale artifact. The next session's decision point (fresh
 pre-registration, never tuned on these numbers): a matched-scale-honesty
 bar, or a multi-scene aggregate bar, for re-judging the stability tier.
+
+### Phase 13 — the SCALE-HONEST instrument (pre-registered predictions, then observation)
+
+The Sim(3) band alignment FORGIVES global scale error by construction: a
+candidate whose labels are 34% scale-distorted aligns onto the measured
+field for free, scoring as if a robot could consume it. A robot cannot — it
+reads the label at its claimed metric scale. New reportage instrument
+`solid_distance_agreement_metric_scale`: identical distance metrics under a
+RIGID SE(3) alignment with scale FIXED at 1 (same scale-free rotation;
+translation re-fit). This is the robot-relevant placement metric a priori,
+independent of any recipe contest.
+
+**Predictions, committed BEFORE the observation runs:** a global scale
+error |s−1| displaces solids by roughly |s−1| × distance-from-trajectory
+(band surfaces sit ~1–3 m out): canonical xyz (s=1.337) should COLLAPSE to
+F1@5cm ≈ 0 under the honest metric; v3 xyz (s=1.028, ~3–6 cm displacement)
+should hold near its Sim(3) value; desk (both recipes s≈1.08) and room
+(v3 s≈0.90) carry 8–10% scale error ≈ 10–25 cm at range — BOTH recipes may
+degrade severely there, in which case ABSOLUTE SCALE (not placement)
+becomes the measured next wall. The instrument reports whatever it
+reports; no recipe parameter changes in response. One observation pass
+(canonical rerun + v3 rerun, metrics-identical code with additive keys).

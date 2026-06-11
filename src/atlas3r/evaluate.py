@@ -241,6 +241,11 @@ def extract_band3d_agreement(report: dict[str, Any]) -> dict[str, Any]:
         # Resolution-invariant metric-distance agreement (reportage; not in
         # the numeric diff law until a pre-registered promotion).
         "solid_distance_agreement": _pluck(full, "solid_distance_agreement"),
+        # Scale-honest variant: rigid SE(3), scale fixed at 1 -- the label as
+        # the robot consumes it (the Sim(3) variant forgives global scale).
+        "solid_distance_agreement_metric_scale": _pluck(
+            full, "solid_distance_agreement_metric_scale"
+        ),
     }
 
 
