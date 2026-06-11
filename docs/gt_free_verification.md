@@ -239,6 +239,47 @@ injection-calibrated, direction-resolved authority — was not found published.
    teacher report/scorecard once per-scene runs exist (today it lives in
    `runs/_diag/`).
 
+## Gate-signal calibration on the EXPANDED config population (2026-06-11) — NEGATIVE result, recorded before any threshold move
+
+The v3-adoption blocker (xyz-v3 map fsc 0.2532 vs the 0.25 gate) motivated
+re-calibrating the gate. The expanded population (12 configs: canonical/v2/
+v3 × 4 tracks + vault × 2, all on disk) was tabulated BEFORE touching any
+threshold — and it refutes BOTH candidate signals:
+
+| config | prerefine p90 | fsc | GT class |
+|---|---|---|---|
+| canonical/xyz | 0.126 | 0.244 | good (accept) |
+| v3/xyz | 0.155 | 0.253 | good (best labels) |
+| v2/xyz | 0.225 | 0.251 | good |
+| v3/desk | 0.368 | 0.461 | good (RMSE 0.011, F1@5cm 0.432) |
+| v2/desk | 0.369 | 0.415 | good (RMSE 0.011) |
+| v2/room | 0.508 | 0.273 | good poses (RMSE 0.036) |
+| v3/room | 0.548 | 0.170 | good poses, evidence-limited |
+| canonical/desk | 0.553 | 0.364 | BAD (RMSE 0.278) |
+| vault both | 0.785–0.789 | 0.607–0.622 | BAD (drift 0.83–1.41) |
+| canonical/room | 0.833 | 0.157 | BAD (RMSE 0.823) |
+
+1. **fsc is clutter-confounded:** desk reads 0.42–0.46 WITH near-perfect
+   BA poses (false-reject class) while canonical/room reads 0.157 while
+   broken (the long-documented blind spot). Recalibrating its threshold
+   cannot fix a metric that does not rank the quantity the gate cares
+   about.
+2. **prerefine p90's perfect rank (7 configs, Spearman 1.0) BREAKS on the
+   expanded population:** v3/room (good BA poses) reads 0.548 vs
+   canonical/desk (bad, 0.553) — overlap, no chasm. The signal tracks
+   depth-vs-pose residual, which conflates scene depth difficulty with
+   geometric error once recipes with frozen BA poses enter the population.
+   The pending LOSO promotion is therefore NOT performed — the signal does
+   not qualify as a standalone gate on the population that now exists.
+3. Standing direction (needs fresh pre-registration + adversarial design,
+   NOT done here): no single internal signal survives; the gate's Stage-2
+   accept path likely needs a CONJUNCTION that conditions on evidence
+   provenance — e.g. BA-grade-frozen pose provenance AND stable-verified
+   fraction AND a within-provenance-class consistency bound — calibrated
+   per provenance class, never per scene. Until then v3 adoption remains
+   honestly blocked; the knife-edge fsc stays as committed (moving it on
+   this evidence would be bar-shopping into a confounded metric).
+
 Production data point (2026-06-10): the gate's verdict on `phone_room` under
 the full v2 production recipe — self-calibrated COLMAP poses + multi-view
 verified depth — moved from 4 rejection reasons to 2 (Stage-0 inbounds and
