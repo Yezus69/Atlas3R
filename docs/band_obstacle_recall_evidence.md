@@ -1209,6 +1209,37 @@ baseline's scale artifact. The next session's decision point (fresh
 pre-registration, never tuned on these numbers): a matched-scale-honesty
 bar, or a multi-scene aggregate bar, for re-judging the stability tier.
 
+### Phase 15 — RECIPE v3 ADOPTED AS CANONICAL (2026-06-11)
+
+The Phase 13 adoption sequence completed: (1) the gate's Stage-2 metrics
+were re-grounded on the expanded 12-config population (negative result
+first: both single signals refuted as cross-class rankers; then the
+provenance-CONDITIONED bounds — class B fsc 0.25 / p90 0.35 mid-chasm,
+class A fsc 0.55 / p90 0.66 good-cluster ×1.2 provisional — calibrated
+WITHOUT the vault, validated BY the vault, reproducing every frozen
+canonical verdict with an EMPTY scorecard diff); (2) the re-judgment under
+the amended gate: **xyz-v3 ACCEPTED** (p90 0.155, zero reasons), desk-v3
+rejected on its floor blocker alone (0.268 vs 0.30 — the false fsc
+rejection is gone), room/phone rejected for the right evidence reasons
+(phone gains the coherent stage-2b reason, p90 0.712).
+
+Adoption mechanics (the documented mechanism): canonical artifacts backed
+up at `external/_pre_v3_artifacts_backup`; the four v3 stability composites
+installed as `external/teacher_artifacts`; `configs/robot_envelope_v2.json`
+promoted to `configs/robot_envelope.json` (2.5 cm physics-derived voxel,
+stability tier k=2 / τ=0.005); canonical scorecard re-baselined (the
+adoption diff is the recorded mechanism, not a regression).
+
+Honest dual reading of the label-quality bar, both instruments stated:
+under the SCALE-HONEST instrument (the robot-relevant one; Phase 13
+predictions confirmed) v3 dominates the old canonical on every scene
+(xyz F1@5cm 0.046→0.358, desk 0.093→0.432, room 0→0.163, medians 5.6–11 cm);
+under the Sim(3) instrument xyz reads lower (0.199→0.158) — a comparison
+proven confounded by the old baseline's 1.34× scale-forgiveness. The old
+recipe's labels were never robot-consumable at claimed scale; the new
+canonical's are, and the gate that accepts them got STRONGER (stage-2b
+promotion + class bounds validated out-of-sample on the vault).
+
 ### Phase 14 — LOOP CLOSURE at linear cost (the long-video yield wall, measured)
 
 Vault Run 1 named the wall: sequential matching without loop closure drifts
