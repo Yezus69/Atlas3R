@@ -1432,3 +1432,58 @@ runs/teacher_room_loopdet`, M1/M2 read from the existing canonical dirs
   the loop-closed composite as the canonical room track is a SEPARATE
   documented step, justified only by (i) verdict-coherence + (ii) recipe
   coherence, never by metric shopping.
+
+### Phase 16 RESULTS — variance-dominated placement, BUT the danger bar fires
+
+One observation run (`runs/_diag/trainability_falsifier_results.json`,
+script committed at pre-registration). Numbers verbatim:
+
+| quantity | xyz (decision) | desk (reportage) |
+|---|---|---|
+| mean signed radial displacement (BIAS) | **−0.0054 m** | +0.0150 m |
+| std radial (VARIANCE) | 0.0443 m | 0.0337 m |
+| median lateral displacement | 0.0626 m | 0.0372 m |
+| match rate (≤0.20 m) | 0.958 | 0.934 |
+| solid_within_margin @5cm | 0.510 | 0.423 |
+| **dangerous_free @5cm** | **0.327** | 0.567 |
+| coverage_loss @5cm | 0.163 | 0.010 |
+| dangerous_free @10cm | 0.059 | 0.226 |
+
+**Verdict under the pre-registered bars:**
+
+1. *Bias test → Outcome A (VARIANCE-DOMINATED).* |−0.0054| < 0.025 and
+   0.044 ≥ 2×|mean|. The placement error of matched solids is averageable
+   spread, not a systematic radial shift a student would distill. The
+   error is dominantly LATERAL (0.063 m median vs 0.026 m radial) — the
+   voxel-level expression of the Phase 12 edge bleed. The placement
+   campaign does NOT re-open on bias grounds.
+2. *Danger test → FIRES, and it carries the verdict.* dangerous_free@5cm =
+   0.327 ≫ the 0.10 materiality bar ON THE ACCEPTED SCENE: at one in three
+   real obstacle voxels the label actively reads FREE within the robot's
+   own collision margin. This is not "unknown" (survivable); it is free
+   carved through space where the solid evidence was missed. At 10 cm the
+   rate collapses to 0.059 — the defect lives exactly at the margin.
+3. *Trainability verdict (the gap analysis's run-first question):* the
+   accepted labels are NOT naively trainable at the 5 cm margin — not
+   because placement is biased (it is not) but because the FREE channel
+   near missed solids teaches collision paths. A student trained on these
+   targets learns what the targets say; no proxy-student experiment is
+   needed to establish that targets are wrong where they are measurably
+   wrong. The proxy-student confirmation (part c) is therefore
+   DE-PRIORITIZED: its question (does a net average the error out)
+   dissolved — averaging works for placement variance, and no averaging
+   fixes free-at-obstacle supervision.
+
+**What this re-orders (consistent with the four-works plan):** the binding
+label defect is the DANGEROUS-FREE RATE, attacked from two sides already on
+the roadmap: (i) recall — every solid the teacher recovers converts its
+neighborhood from dangerous_free to solid_within_margin (floor estimator →
+more accepted evidence; placement levers if recall stalls); (ii) the
+calibrated per-voxel confidence channel — IF low-confidence free voxels
+near misses are separable by evidence features, the TrainingSample
+downweight channel can suppress exactly the dangerous supervision (this is
+now a measurable target for the Work-1 calibration: reliability of FREE
+claims, not just solid claims). Any free→unknown policy lever is a
+SEPARATE future pre-registration and must never fabricate occupancy
+(occupancy_support_overrides_free stays rejected). dangerous_free@5cm
+becomes a tracked scorecard-adjacent number for every future recipe change.
