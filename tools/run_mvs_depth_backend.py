@@ -161,7 +161,25 @@ def main() -> int:
              "raw index ratio -- required for self-calibrated distorted video "
              "(e.g. SIMPLE_RADIAL phone footage); without it a distorted "
              "camera would misregister verified depth by up to ~k*r^3*f px.")
+    parser.add_argument(
+        "--stability-workspace-a", default=None,
+        help="Dense workspace whose geometric depth came from one DISJOINT "
+             "source half (perturbation A). With --stability-workspace-b, the "
+             "verified mask is TIGHTENED to perturbation-STABLE pixels: "
+             "verified := geometric AND witnessed by BOTH halves AND "
+             "|log dA - log dB| <= stability-tau. Measured basis: "
+             "docs/band_obstacle_recall_evidence.md Phase 12 (single-witness "
+             "pixels are 1.6-1.8x worse; gating lifts solid F1@5cm 3.5-5.8x).")
+    parser.add_argument("--stability-workspace-b", default=None)
+    parser.add_argument(
+        "--stability-tau", type=float, default=0.005,
+        help="Stability bar on |log dA - log dB| (scale-free). FROZEN at 0.005 "
+             "from the Phase 12 two-scene calibration (xyz+desk, the stricter "
+             "of the swept bars, monotone on desk) -- never tuned per scene.")
     args = parser.parse_args()
+    if bool(args.stability_workspace_a) != bool(args.stability_workspace_b):
+        print(json.dumps({"status": "error_stability_needs_both_workspaces"}))
+        return 1
 
     src = ROOT / args.hybrid_artifacts / args.asset_id
     out = ROOT / args.out_dir / args.asset_id
@@ -180,16 +198,21 @@ def main() -> int:
         return 1
 
     orig_cams = undist_cams = orig_cam_of = undist_cam_of = None
-    resample = "index_nn"
+    resample_mode = "index_nn"
     if args.source_sparse_model:
         orig_cams = read_colmap_cameras(ROOT / args.source_sparse_model)
         orig_cam_of = read_image_camera_ids(ROOT / args.source_sparse_model)
         undist_cams = read_colmap_cameras(dense / "sparse")
         undist_cam_of = read_image_camera_ids(dense / "sparse")
-        resample = "distortion_aware_remap"
+        resample_mode = "distortion_aware_remap"
+
+    stab_a = ROOT / args.stability_workspace_a if args.stability_workspace_a else None
+    stab_b = ROOT / args.stability_workspace_b if args.stability_workspace_b else None
+    tau = float(args.stability_tau)
 
     replaced_px, total_px, frames_done, frames_missing_mvs = 0, 0, 0, []
     frames_missing_camera: list[int] = []
+    frames_missing_stability: list[int] = []
     sample_maps: dict = {}  # (cam_id pair, shapes) -> precomputed map
     for fr in poses["frames"]:
         fid = int(fr["frame_id"])
@@ -205,23 +228,41 @@ def main() -> int:
         mvs = read_colmap_depth(geo)
         ph, pw = learned.shape[:2]
         mh, mw = mvs.shape
-        if orig_cams is not None:
-            if name not in orig_cam_of or name not in undist_cam_of:
-                frames_missing_mvs.append(fid)
-                frames_missing_camera.append(fid)  # no calibration claim -> learned-only
-                continue
-            key = (orig_cam_of[name], undist_cam_of[name], ph, pw, mh, mw)
-            if key not in sample_maps:
-                sample_maps[key] = distortion_aware_sample_map(
-                    (ph, pw), orig_cams[key[0]], undist_cams[key[1]], (mh, mw)
-                )
-            row, col, valid = sample_maps[key]
-            mvs_r = np.where(valid, mvs[row, col], 0.0) * scale
-        else:
-            yi = (np.arange(ph) * mh / ph).astype(int)
-            xi = (np.arange(pw) * mw / pw).astype(int)
-            mvs_r = mvs[yi][:, xi] * scale
+
+        def resample(arr, name=name, ph=ph, pw=pw):
+            ah, aw = arr.shape
+            if orig_cams is not None:
+                key = (orig_cam_of[name], undist_cam_of[name], ph, pw, ah, aw)
+                if key not in sample_maps:
+                    sample_maps[key] = distortion_aware_sample_map(
+                        (ph, pw), orig_cams[key[0]], undist_cams[key[1]], (ah, aw)
+                    )
+                row, col, valid = sample_maps[key]
+                return np.where(valid, arr[row, col], 0.0)
+            yi = (np.arange(ph) * ah / ph).astype(int)
+            xi = (np.arange(pw) * aw / pw).astype(int)
+            return arr[yi][:, xi]
+
+        if orig_cams is not None and (name not in orig_cam_of or name not in undist_cam_of):
+            frames_missing_mvs.append(fid)
+            frames_missing_camera.append(fid)  # no calibration claim -> learned-only
+            continue
+        mvs_r = resample(mvs) * scale
         verified = mvs_r > 1e-6
+        if stab_a is not None:
+            geo_a = stab_a / "stereo/depth_maps" / f"{name}.geometric.bin"
+            geo_b = stab_b / "stereo/depth_maps" / f"{name}.geometric.bin"
+            if not geo_a.exists() or not geo_b.exists():
+                # No independent witnesses -> no stability claim -> the frame
+                # contributes learned depth only (verified stays all-False).
+                frames_missing_stability.append(fid)
+                verified = np.zeros_like(verified)
+            else:
+                a_r = resample(read_colmap_depth(geo_a))
+                b_r = resample(read_colmap_depth(geo_b))
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    delta = np.abs(np.log(a_r) - np.log(b_r))
+                verified = verified & (a_r > 1e-9) & (b_r > 1e-9) & (delta <= tau)
         np.save(npy, np.where(verified, mvs_r, learned).astype(np.float32))
         np.save(out / "verified" / f"{fid}.npy", verified)
         replaced_px += int(verified.sum())
@@ -239,12 +280,24 @@ def main() -> int:
         "frames_learned_only": frames_missing_mvs,
         "scale_applied_from_pose_provenance": scale,
         "verified_masks": "verified/<frame_id>.npy (bool, depth-map resolution)",
-        "mvs_resample": resample,
+        "mvs_resample": resample_mode,
         "original_cameras": (
             {str(cid): {"model": c[0], "width": c[1], "height": c[2], "params": c[3]}
              for cid, c in orig_cams.items()} if orig_cams else None
         ),
         "frames_missing_camera": frames_missing_camera,
+        "stability": (
+            {
+                "enabled": True,
+                "tau": tau,
+                "rule": "verified := geometric AND both disjoint-half witnesses AND |log dA - log dB| <= tau",
+                "tau_provenance": "frozen_once_from_phase12_two_scene_calibration_xyz_desk",
+                "workspace_a": str(args.stability_workspace_a),
+                "workspace_b": str(args.stability_workspace_b),
+                "frames_missing_stability": frames_missing_stability,
+            }
+            if stab_a is not None else {"enabled": False}
+        ),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(json.dumps({

@@ -539,6 +539,18 @@ NUMERIC_METRICS: tuple[str, ...] = (
     "band3d_agreement.dynamic_leakage_rate",
     "band3d_agreement.coverage_of_measured_band",
     "band3d_agreement.estimated_scale_monocular_to_measured",
+    # Resolution-invariant distance instruments (metric-law amendment,
+    # docs/band_obstacle_recall_evidence.md Phase 12: the adoption bar keys on
+    # solid_f1_at_0.05m; the voted metrics above stay reported for continuity
+    # but no longer gate adoption -- they diverge under grid refinement).
+    "band3d_agreement.solid_distance_agreement.solid_f1_at_5cm",
+    "band3d_agreement.solid_distance_agreement.solid_precision_at_5cm",
+    "band3d_agreement.solid_distance_agreement.solid_recall_at_5cm",
+    "band3d_agreement.solid_distance_agreement.solid_f1_at_10cm",
+    "band3d_agreement.solid_distance_agreement.solid_precision_at_10cm",
+    "band3d_agreement.solid_distance_agreement.solid_recall_at_10cm",
+    "band3d_agreement.solid_distance_agreement.median_solid_distance_m",
+    "map.free_space_contradiction_rate_at_reference_scale",
     "map.voxel_band_3d.free_fraction",
     "map.voxel_band_3d.occupied_static_fraction",
     "map.voxel_band_3d.movable_static_fraction",

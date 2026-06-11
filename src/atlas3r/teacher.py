@@ -1255,16 +1255,17 @@ def _band3d_agreement(
                 d_prec_m = cKDTree(meas_solid_pts).query(prec_base)[0]
             else:
                 d_prec_m = np.full(max(prec_base.shape[0], 1), np.inf)
+            tau_keys = {0.025: "2p5cm", 0.05: "5cm", 0.10: "10cm"}
             for tau in taus:
                 r_tau = float(np.mean(d_recall_m <= tau))
                 p_tau = (
                     float(np.mean(d_prec_m <= tau)) if prec_base.shape[0] else 0.0
                 )
                 f1 = 2 * p_tau * r_tau / (p_tau + r_tau) if (p_tau + r_tau) > 0 else 0.0
-                key = f"{tau:0.3f}".rstrip("0").rstrip(".")
-                solid_distance[f"solid_recall_at_{key}m"] = r_tau
-                solid_distance[f"solid_precision_at_{key}m"] = p_tau
-                solid_distance[f"solid_f1_at_{key}m"] = float(f1)
+                key = tau_keys[tau]  # dot-free: these feed dotted diff paths
+                solid_distance[f"solid_recall_at_{key}"] = r_tau
+                solid_distance[f"solid_precision_at_{key}"] = p_tau
+                solid_distance[f"solid_f1_at_{key}"] = float(f1)
             solid_distance["median_solid_distance_m"] = float(np.median(d_recall_m))
     except Exception as exc:  # honest miss, never fabricated numbers
         solid_distance = {"status": "not_computed", "error": str(exc)}

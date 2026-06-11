@@ -1117,3 +1117,51 @@ free-precision held; (2) tool integration — A/B stability masks in
 tracks; (4) phone_room production rerun — stability needs no GT, so the
 gate's Stage-0/Stage-2 signals see the same trust tightening on no-GT
 scenes.
+
+### Phase 12 continuation — METRIC-LAW AMENDMENT + RECIPE v3 single-shot (pre-registration)
+
+Committed BEFORE the v3 run; the commit timestamp is the proof.
+
+**Metric-law amendment (GT-free, geometry-first rationale):** the adoption
+bar for band-label changes becomes — `solid_f1_at_5cm` UP on the
+accepted-scene class, AND `per_class_agreement` held, AND
+`solid_precision_at_10cm` held, categories preserved, acceptance flips
+audited (unchanged). The voted metrics (occupied_static_iou, vote-level
+band_fsc, recall-any) remain REPORTED for continuity but no longer gate
+adoption: Phases 9/11 measured that the tolerance-box vote DIVERGES under
+grid refinement (box volume cubic vs thin-structure voxels linear) while
+the distance instrument converges, and the robot-relevant criterion is
+collision-margin placement, which solid_f1_at_5cm states directly. The
+distance metrics enter the scorecard NUMERIC diff law (dot-free key names).
+The verified-tier k stays 2 (NOT re-derived against the stability-gated
+accuracy ratio — deliberately conservative to keep the v3 change surface
+minimal; re-derivation would be its own pre-registration).
+
+**Recipe v3 = v2 + perturbation-stability tier:** composites rebuilt with
+`tools/run_mvs_depth_backend.py --stability-workspace-a/-b` (verified :=
+geometric AND both-witness AND δ ≤ 0.005, τ frozen with two-scene
+provenance) into `external/_composite_v3` (the v2 artifact set stays
+untouched for the record). phone_room now gets its OWN stability composite
+(the tier is GT-free). Envelope unchanged from v2
+(configs/robot_envelope_v2.json). Single shot:
+`ATLAS3R_ROBOT_ENVELOPE_CONFIG=configs/robot_envelope_v2.json python -m
+atlas3r.teacher --artifacts-dir external/_composite_v3 --output-dir
+runs/teacher_v3` then `python -m atlas3r.evaluate --no-run --teacher-dir
+runs/teacher_v3 --eval-dir runs/eval_v3`.
+
+**Pre-registered expectations (expectations, not targets):**
+- xyz: solid_f1_at_5cm ≈ 0.23 (pilot precedent), above both v2 (0.065) and
+  canonical (0.199); voted occ_iou likely DOWN (vote mechanics) — expected
+  and no longer gating.
+- desk: solid_f1_at_5cm ≈ 0.38 (pilot precedent ~5.8× v2).
+- room: direction unknown (no pilot; the loop's verified coverage is
+  thinner); reported as observed.
+- phone_room: no GT — gate verdict only; verified fraction will DROP
+  (~0.51 → ~0.15–0.2 of pixels); Stage-0/Stage-2 movement reported as
+  observed, acceptance flips audited for honesty.
+- Acceptance gates (map fsc at 0.25 etc.) unchanged; any acceptance flip
+  must trace to evidence changes, never to a weakened gate.
+**Adoption rule:** adopt v3 (composites + stability tier as the production
+recipe) only if the AMENDED bar is met on xyz AND desk improves or holds;
+mixed is reported as mixed and NOT adopted; no parameter (including τ) may
+be revised in response to these GT numbers.
