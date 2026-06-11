@@ -1209,6 +1209,28 @@ baseline's scale artifact. The next session's decision point (fresh
 pre-registration, never tuned on these numbers): a matched-scale-honesty
 bar, or a multi-scene aggregate bar, for re-judging the stability tier.
 
+### Phase 14 — LOOP CLOSURE at linear cost (the long-video yield wall, measured)
+
+Vault Run 1 named the wall: sequential matching without loop closure drifts
+on long sweeps (0.83–1.41 m RMSE on fr3), and the gate rejects the result —
+honest, but lost yield. Homes, yards, and any walkthrough video loop.
+Developed on fr1_room (the canonical loop scene; the vault stays sealed):
+
+| matching policy (375-frame room staging) | pairs | full-loop Sim(3) RMSE vs GT | cost |
+|---|---|---|---|
+| exhaustive (the prior recipe) | 70k (O(N²)) | 0.1480 m (374 reg.) | ~37 min CPU (Phase 8) |
+| sequential + vocab-tree loop detection | O(N·(15+50)) | **0.1399 m** (361 reg.) | **5.1 min** (1.8 matcher + 3.2 mapper) |
+
+Sequential + loop detection MATCHES exhaustive quality at linear cost —
+the production matching policy for video is now: `sequential_matcher
+--SequentialMatching.loop_detection 1` (COLMAP ≥May-2025 auto-downloads its
+faiss vocab tree; the legacy flann `.bin` from demuc.de is REJECTED by the
+4.x build — measured, then deleted). At 2,585-frame stagings (the vault
+class) exhaustive is 3.3M pairs (intractable); this recipe is O(N).
+GLOMAP remains an option for global-BA robustness at larger scales but is
+no longer the gating item. NOT yet re-run on the vault (that requires the
+next declared milestone); the fr1_room measurement is the recipe evidence.
+
 ### Phase 13 — the SCALE-HONEST instrument (pre-registered predictions, then observation)
 
 The Sim(3) band alignment FORGIVES global scale error by construction: a
