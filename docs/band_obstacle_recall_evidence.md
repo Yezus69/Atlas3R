@@ -1392,3 +1392,43 @@ on this outcome and gets its own pre-registration (architecture, training
 views, GT-eval-only protocol) — it is the confirmation step, not this
 measurement. Script: `runs/_diag/trainability_falsifier.py`; results
 committed to this file as Phase 16 RESULTS.
+
+### Phase 17 — room loop-closure propagation through the production pipeline (pre-registration)
+
+Committed BEFORE the run. The staged-but-unpropagated fact: the loop-closed
+room sparse (`runs/_diag/colmap_work/room_loopdet`, Phase 14) was built to
+prove the O(N) matching recipe but never carried through MVS + teacher; the
+canonical room track still traces to the O(N²) exhaustive `room_dense`
+workspace. HONEST FRAMING: canonical room poses are ALREADY BA-grade (camera
+Sim(3) RMSE 0.036 m) — this run is recipe COHERENCE (the canonical track
+should trace to the production one-command pipeline) plus the measured answer
+to "does the production staging change room's Stage-0 evidence mass" (its
+real blockers: inbounds 0.152 vs 0.30, conf 0.267 vs 0.30, floor 0.095 vs
+0.30, stable-verified fraction 0.038). It is NOT expected to flip the gate.
+
+**Mechanics (one shot, production tool end-to-end, frozen v3 recipe):**
+`tools/run_sfm_pipeline.py --asset-id reference_metric_room --camera-mode
+pinned` (fr1 measured intrinsics, anchors 108,238,367,626,735,951,1123,1318,
+tool defaults incl. stage-divisor 8) → fresh loop-closed SfM + dense +
+disjoint-half A/B workspaces → `run_colmap_pose_backend` (source =
+`external/_selector_artifacts`) → `run_mvs_depth_backend` with stability
+A/B (τ=0.005 frozen) → teacher on a side manifest
+(`config/_room_loopdet_manifest.json`, asset entry verbatim from canonical)
+with `--artifacts-dir external/_room_loopdet_composite --output-dir
+runs/teacher_room_loopdet`, M1/M2 read from the existing canonical dirs
+(never re-run — the M2 shared-registry clobber hazard).
+
+**Pre-registered expectations (not targets):**
+- SfM registers the large majority of ~210 staged frames in ONE model (the
+  loop closes; Phase 14 precedent 361/375); keyframe-level camera RMSE in the
+  0.03–0.15 m class (parity with canonical room — NOT an improvement claim).
+- Stage-0 signals: direction UNMEASURED. Inbounds may move with the staged
+  co-observation graph; verified fraction may stay ~0.04 (the loop's genuine
+  thin-evidence reality).
+- Gate verdict: expected still REJECTED for evidence reasons. An acceptance
+  flip must trace to named evidence improvements and gets audited; a flip
+  with unchanged evidence signals is itself an alarm (gate bug, not a win).
+- Canonical artifacts and scorecard are NOT touched by this run. Adoption of
+  the loop-closed composite as the canonical room track is a SEPARATE
+  documented step, justified only by (i) verdict-coherence + (ii) recipe
+  coherence, never by metric shopping.
