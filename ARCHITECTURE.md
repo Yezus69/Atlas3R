@@ -708,10 +708,37 @@ P_occupied_static[A0,A1,B]
 P_movable_static[A0,A1,B]
 P_dynamic[A0,A1,B]
 P_unknown[A0,A1,B]
-map_confidence[A0,A1,B]
-scale_uncertainty                     # scene-level
+map_confidence[A0,A1,B]               # UNCALIBRATED HEURISTIC (see below)
+scale_uncertainty                     # scene-level RELATIVE scale uncertainty
+                                      # (= ScalePosterior.relative_scale_uncertainty,
+                                      # dimensionless scale_std/scale_mean)
 acceptance_category                   # measured_metric | metric_pseudo_label | ...
 ```
+
+Optional evidence-count fields (None when absent; when present each shares the
+channel shape `[A0,A1,B]`, is non-negative, and carries the EXACT per-voxel
+fusion evidence the probability channels were built from -- post fusion-policy,
+band-cropped). They exist so a downstream reliability calibration can be fit
+and validated from exported artifacts without re-running fusion; they are
+reportage, consumed by no gate:
+
+```text
+evidence_occupied_static_count[A0,A1,B]
+evidence_movable_count[A0,A1,B]
+evidence_dynamic_count[A0,A1,B]
+evidence_free_count[A0,A1,B]
+evidence_verified_occupied_count[A0,A1,B]   # multi-view-verified static hits, per class
+evidence_verified_movable_count[A0,A1,B]
+```
+
+`map_confidence` semantics (honesty marker, binding until a calibrated channel
+replaces it): the channel is an UNCALIBRATED heuristic -- the scene-level
+acceptance-status weight times a one-hit-saturating per-voxel evidence strength.
+It has never been validated against measured occupancy and MUST NOT be consumed
+as a probability of label correctness; exporters carry
+`confidence_calibration: "uncalibrated_heuristic"` alongside it until a
+reliability-measured channel (fit on designated calibration scenes, frozen once,
+validated out-of-sample) replaces it.
 
 Where `B` is the number of band slices along `floor_axis`. The band is
 `[floor_plane, floor_plane + robot_collision_height + margin]`, CONFIG-DRIVEN via
@@ -763,8 +790,13 @@ P_dynamic[x,y]
 P_unknown[x,y]
 height_min_m[x,y]
 height_max_m[x,y]
-scale_uncertainty
-map_confidence
+scale_uncertainty             # RELATIVE scale uncertainty -- the SAME quantity
+                              # as VoxelOccupancyGrid3D.scale_uncertainty
+acceptance_status_weight      # scalar weight from the metric acceptance status
+                              # (NOT per-cell confidence; renamed from
+                              # map_confidence 2026-06-11 -- the old name
+                              # collided with the 3D field's per-voxel channel
+                              # while carrying different semantics)
 ```
 
 Projection rule (per column over the band, contract-invariant by construction):

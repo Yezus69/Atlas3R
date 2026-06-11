@@ -1259,6 +1259,8 @@ def _build_voxel_occupancy_3d(
     mov = take(movable_count)
     dyn = take(dynamic_count)
     free = take(free_count)
+    ver_occ = take(verified_occupied_count)
+    ver_mov = take(verified_movable_count)
 
     surf = occ + mov + dyn
     c_surf = surf / (surf + SURFACE_CONF_HALF_HITS)
@@ -1317,6 +1319,15 @@ def _build_voxel_occupancy_3d(
             map_confidence=map_confidence.astype(np.float64),
             scale_uncertainty=float(scale_posterior.relative_scale_uncertainty),
             acceptance_category=scale_posterior.metric_acceptance_status,
+            # Exact band-cropped fusion evidence behind the channels above
+            # (post fusion-policy) -- the substrate a reliability calibration
+            # needs; reportage, consumed by no gate (ARCHITECTURE.md).
+            evidence_occupied_static_count=occ.astype(np.float64),
+            evidence_movable_count=mov.astype(np.float64),
+            evidence_dynamic_count=dyn.astype(np.float64),
+            evidence_free_count=free.astype(np.float64),
+            evidence_verified_occupied_count=ver_occ.astype(np.float64),
+            evidence_verified_movable_count=ver_mov.astype(np.float64),
         )
     except ContractValidationError as exc:
         return None, band_volumes, comparison_field, {
@@ -1419,7 +1430,10 @@ def _build_occupancy_grid_from_band(
     )
 
     origin_world = (float(grid_min[0]), float(grid_min[1]), float(grid_min[2]))
-    scale_unc = float(scale_posterior.scale_std)
+    # Same quantity as the 3D field stamps: the RELATIVE scale uncertainty.
+    # (Was scale_std -- identical while scale_mean==1.0, silently divergent the
+    # day a real scale estimate lands. Unified 2026-06-11.)
+    scale_unc = float(scale_posterior.relative_scale_uncertainty)
 
     try:
         grid = OccupancyGrid2D(
@@ -1434,7 +1448,7 @@ def _build_occupancy_grid_from_band(
             height_min_m=height_min,
             height_max_m=height_max,
             scale_uncertainty=scale_unc,
-            map_confidence=_map_confidence(scale_posterior),
+            acceptance_status_weight=_acceptance_status_weight(scale_posterior),
         )
     except ContractValidationError as exc:
         return None, {"status": "occupancy_grid_contract_rejected", "error": str(exc)}
@@ -1495,14 +1509,11 @@ def _height_extents(touched_3d, floor_axis, grid_min, voxel, dims, np):
     return height_min, height_max
 
 
-def _map_confidence(scale_posterior: ScalePosterior) -> float:
+def _acceptance_status_weight(scale_posterior: ScalePosterior) -> float:
+    # Single source of truth: the same status table the 3D field's heuristic
+    # map_confidence uses (a duplicate inline table diverged silently before).
     status = scale_posterior.metric_acceptance_status.value
-    base = {
-        "measured_metric": 0.9,
-        "metric_pseudo_label": 0.6,
-        "non_metric_pseudo_label": 0.4,
-        "rejected": 0.1,
-    }.get(status, 0.3)
+    base = _MAP_CONFIDENCE_STATUS_WEIGHT.get(status, 0.3)
     return max(0.0, min(1.0, base))
 
 

@@ -793,8 +793,13 @@ class OccupancyGrid2D:
     P_unknown: Any
     height_min_m: Any
     height_max_m: Any
+    # RELATIVE scale uncertainty -- the SAME dimensionless quantity as
+    # VoxelOccupancyGrid3D.scale_uncertainty (ScalePosterior.relative_scale_uncertainty).
     scale_uncertainty: float
-    map_confidence: float
+    # Scalar weight derived from the metric acceptance status. Renamed from
+    # ``map_confidence`` (2026-06-11): the old name collided with the 3D field's
+    # per-voxel channel while carrying different (scene-scalar) semantics.
+    acceptance_status_weight: float
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.grid_frame, "grid_frame")
@@ -827,7 +832,7 @@ class OccupancyGrid2D:
             if float(max_height) < float(min_height):
                 raise ContractValidationError("height_max_m must be >= height_min_m")
         _validate_non_negative_number(self.scale_uncertainty, "scale_uncertainty")
-        _validate_probability(self.map_confidence, "map_confidence")
+        _validate_probability(self.acceptance_status_weight, "acceptance_status_weight")
         self._validate_grid_channels_are_not_collapsed()
 
     def _validate_grid_channels_are_not_collapsed(self) -> None:
@@ -844,6 +849,19 @@ class OccupancyGrid2D:
                 raise ContractValidationError(
                     "P_movable_static must remain distinct from P_free"
                 )
+
+
+# Optional per-voxel fusion-evidence count volumes on VoxelOccupancyGrid3D
+# (post fusion-policy, band-cropped). Single source of truth for validation and
+# export -- reportage fields, consumed by no gate.
+VOXEL_EVIDENCE_COUNT_FIELDS = (
+    "evidence_occupied_static_count",
+    "evidence_movable_count",
+    "evidence_dynamic_count",
+    "evidence_free_count",
+    "evidence_verified_occupied_count",
+    "evidence_verified_movable_count",
+)
 
 
 @dataclass(frozen=True)
@@ -883,6 +901,20 @@ class VoxelOccupancyGrid3D:
     is the world coordinate of the ``(0, 0, 0)`` voxel corner (the cropped band
     ``grid_min``); voxel center ``(i, j, k)`` is
     ``origin_world + (index + 0.5) * voxel_size_m`` along the three world axes.
+
+    ``map_confidence`` is an UNCALIBRATED HEURISTIC (acceptance-status weight x
+    one-hit-saturating evidence strength). It has never been validated against
+    measured occupancy and must not be consumed as a probability of label
+    correctness; exporters carry ``confidence_calibration:
+    "uncalibrated_heuristic"`` alongside it until a reliability-measured channel
+    replaces it (ARCHITECTURE.md). ``scale_uncertainty`` is the RELATIVE scale
+    uncertainty (``ScalePosterior.relative_scale_uncertainty``, dimensionless).
+
+    The optional ``evidence_*`` count volumes (``None`` when absent) carry the
+    exact per-voxel fusion evidence the probability channels were built from
+    (post fusion-policy, band-cropped). They exist so a downstream reliability
+    calibration can be fit/validated from exported artifacts without re-running
+    fusion; they are reportage, consumed by no gate.
     """
 
     grid_frame: str
@@ -899,6 +931,12 @@ class VoxelOccupancyGrid3D:
     map_confidence: Any
     scale_uncertainty: float
     acceptance_category: MetricAcceptanceStatus
+    evidence_occupied_static_count: Any | None = None
+    evidence_movable_count: Any | None = None
+    evidence_dynamic_count: Any | None = None
+    evidence_free_count: Any | None = None
+    evidence_verified_occupied_count: Any | None = None
+    evidence_verified_movable_count: Any | None = None
 
     def __post_init__(self) -> None:
         _validate_non_empty_string(self.grid_frame, "grid_frame")
@@ -930,6 +968,13 @@ class VoxelOccupancyGrid3D:
         for field_name in channel_fields:
             _validate_all_probability(getattr(self, field_name), field_name)
         self._validate_voxel_channels_are_not_collapsed()
+        for field_name in VOXEL_EVIDENCE_COUNT_FIELDS:
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            _validate_shape(value, shape, field_name)
+            _validate_all_finite(value, field_name)
+            _validate_all_non_negative(value, field_name)
         _validate_non_negative_number(self.scale_uncertainty, "scale_uncertainty")
         status = _as_enum(
             self.acceptance_category, MetricAcceptanceStatus, "acceptance_category"

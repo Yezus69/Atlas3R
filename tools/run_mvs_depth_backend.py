@@ -262,7 +262,18 @@ def main() -> int:
                 b_r = resample(read_colmap_depth(geo_b))
                 with np.errstate(divide="ignore", invalid="ignore"):
                     delta = np.abs(np.log(a_r) - np.log(b_r))
-                verified = verified & (a_r > 1e-9) & (b_r > 1e-9) & (delta <= tau)
+                both_witness = (a_r > 1e-9) & (b_r > 1e-9)
+                verified = verified & both_witness & (delta <= tau)
+                # Persist the CONTINUOUS stability residual (NaN where either
+                # witness is absent), not just the tau-thresholded boolean --
+                # the best-provenanced per-pixel uncertainty signal in the
+                # stack was previously computed and discarded here. float16:
+                # spacing ~4e-6 near tau=0.005, ample for calibration binning.
+                (out / "stability_delta").mkdir(parents=True, exist_ok=True)
+                np.save(
+                    out / "stability_delta" / f"{fid}.npy",
+                    np.where(both_witness, delta, np.nan).astype(np.float16),
+                )
         np.save(npy, np.where(verified, mvs_r, learned).astype(np.float32))
         np.save(out / "verified" / f"{fid}.npy", verified)
         replaced_px += int(verified.sum())
@@ -295,6 +306,11 @@ def main() -> int:
                 "workspace_a": str(args.stability_workspace_a),
                 "workspace_b": str(args.stability_workspace_b),
                 "frames_missing_stability": frames_missing_stability,
+                "stability_delta_maps": (
+                    "stability_delta/<frame_id>.npy (float16 |log dA - log dB|,"
+                    " NaN where either witness absent; continuous residual"
+                    " behind the tau-thresholded verified mask)"
+                ),
             }
             if stab_a is not None else {"enabled": False}
         ),

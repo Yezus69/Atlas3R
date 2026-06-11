@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import (
+    VOXEL_EVIDENCE_COUNT_FIELDS,
     FrameRayPacket,
     OccupancyGrid2D,
     ScalePosterior,
@@ -638,7 +639,9 @@ def _write_occupancy_channels(
         "origin_world": np.asarray(g.origin_world, dtype=np.float64),
         "resolution_m": np.asarray(float(g.resolution_m), dtype=np.float64),
         "scale_uncertainty": np.asarray(float(g.scale_uncertainty), dtype=np.float64),
-        "map_confidence": np.asarray(float(g.map_confidence), dtype=np.float64),
+        "acceptance_status_weight": np.asarray(
+            float(g.acceptance_status_weight), dtype=np.float64
+        ),
     }
     # grid_frame is a string -> store as 0-d object/str array.
     np.savez_compressed(
@@ -662,7 +665,7 @@ def _write_occupancy_channels(
         "dynamic_cell_fraction": _frac("P_dynamic"),
         "unknown_cell_fraction": _frac("P_unknown"),
         "scale_uncertainty": float(g.scale_uncertainty),
-        "map_confidence": float(g.map_confidence),
+        "acceptance_status_weight": float(g.acceptance_status_weight),
     }
     return {
         "status": "written",
@@ -713,10 +716,22 @@ def _write_voxel_occupancy_3d(
         "band_max_m": np.asarray(float(g.band_max_m)),
         "scale_uncertainty": np.asarray(float(g.scale_uncertainty)),
     }
+    # Optional per-voxel fusion-evidence counts (ARCHITECTURE.md): persisted so a
+    # reliability calibration can run from exported artifacts without re-running
+    # fusion. Absent fields are skipped, never fabricated.
+    evidence_present = []
+    for field_name in VOXEL_EVIDENCE_COUNT_FIELDS:
+        value = getattr(g, field_name)
+        if value is not None:
+            arrays[field_name] = np.asarray(value, dtype=np.float64)
+            evidence_present.append(field_name)
     np.savez_compressed(
         str(path),
         grid_frame=np.asarray(str(g.grid_frame)),
         acceptance_category=np.asarray(str(g.acceptance_category.value)),
+        # Honesty marker (binding until a calibrated channel replaces the
+        # heuristic): map_confidence must not be read as P(label correct).
+        confidence_calibration=np.asarray("uncalibrated_heuristic"),
         **arrays,
     )
 
@@ -744,6 +759,8 @@ def _write_voxel_occupancy_3d(
         "mean_map_confidence": (
             float(np.mean(arrays["map_confidence"])) if arrays["map_confidence"].size else 0.0
         ),
+        "confidence_calibration": "uncalibrated_heuristic",
+        "evidence_count_fields_present": evidence_present,
     }
     return {
         "status": "written",
