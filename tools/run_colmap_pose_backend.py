@@ -24,10 +24,19 @@ Provenance: pose_source=colmap_sfm_scaled_to_backbone is stamped in the
 manifest and poses.json; the scale-alignment record (scalar, common-frame
 count, residual) is preserved verbatim.
 
+CHAIN GUARD: the default ``--source-artifacts`` is the RAW staging area
+``external/_raw_backbone_artifacts`` (where the backbone runners write by
+default since 2026-06-12), NOT the teacher read path
+``external/teacher_artifacts`` -- the live teacher artifact is usually a
+promoted COMPOSITE, and silently rebuilding a hybrid FROM a composite would
+re-process already pose-corrected, MVS-mixed depth. A source manifest whose
+``method`` already carries ``colmap_pose_backend`` or ``mvs_verified_depth``
+is refused unless ``--allow-processed-source`` is passed.
+
 Usage:
   python tools/run_colmap_pose_backend.py --asset-id reference_metric \
       --colmap-model runs/_diag/colmap_work/reference_metric/sparse/0 \
-      [--source-artifacts external/teacher_artifacts] \
+      [--source-artifacts external/_raw_backbone_artifacts] \
       [--out-dir external/_hybrid_artifacts]
 """
 from __future__ import annotations
@@ -87,12 +96,51 @@ def main() -> int:
     parser.add_argument("--asset-id", required=True)
     parser.add_argument("--colmap-model", required=True,
                         help="COLMAP sparse model dir containing images.txt")
-    parser.add_argument("--source-artifacts", default="external/teacher_artifacts")
+    parser.add_argument(
+        "--source-artifacts", default="external/_raw_backbone_artifacts",
+        help="artifact root holding the RAW backbone artifact to re-pose; "
+             "default is the raw staging area the backbone runners write to. "
+             "Pass external/teacher_artifacts explicitly ONLY for a legacy "
+             "raw live artifact -- a promoted composite source is refused "
+             "(see --allow-processed-source).")
     parser.add_argument("--out-dir", default="external/_hybrid_artifacts")
+    parser.add_argument(
+        "--allow-processed-source", action="store_true",
+        help="override the refusal to consume a source manifest whose method "
+             "already carries colmap_pose_backend/mvs_verified_depth "
+             "(double-processing a hybrid/composite is almost always a chain "
+             "mistake).")
     args = parser.parse_args()
 
     src_dir = ROOT / args.source_artifacts / args.asset_id
     out_dir = ROOT / args.out_dir / args.asset_id
+    src_manifest_path = src_dir / "backbone_manifest.json"
+    if not src_manifest_path.exists():
+        print(json.dumps({
+            "status": "error_missing_source_artifact",
+            "missing": str(src_dir),
+            "note": "backbone runners stage raw artifacts under "
+                    "external/_raw_backbone_artifacts by default; pass "
+                    "--source-artifacts for a different root",
+        }))
+        return 1
+    src_method = str(json.loads(
+        src_manifest_path.read_text(encoding="utf-8")
+    ).get("method", ""))
+    processed_markers = [
+        m for m in ("colmap_pose_backend", "mvs_verified_depth") if m in src_method
+    ]
+    if processed_markers and not args.allow_processed_source:
+        print(json.dumps({
+            "status": "error_source_already_pose_processed",
+            "source_manifest": str(src_manifest_path),
+            "source_method": src_method,
+            "markers_found": processed_markers,
+            "note": "this source is a hybrid/composite, not a raw backbone "
+                    "artifact; point --source-artifacts at the raw run or "
+                    "pass --allow-processed-source to override",
+        }))
+        return 1
     if out_dir.exists():
         shutil.rmtree(out_dir)
     shutil.copytree(src_dir, out_dir)

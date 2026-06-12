@@ -24,13 +24,22 @@ Usage:
   python tools/run_mvs_depth_backend.py --asset-id reference_metric \
       --hybrid-artifacts external/_hybrid_artifacts \
       --dense-workspace runs/_diag/colmap_work/reference_metric/dense \
-      [--out-dir external/_composite_artifacts]
+      [--out-dir external/_composite_artifacts] [--promote]
+
+CHAIN GUARD: the composite under external/_composite_artifacts is NOT the
+teacher read path. ``--promote`` atomically installs it as
+external/teacher_artifacts/<asset> (the old dir is backed up to
+external/_superseded_artifacts/<asset>_<n>). Default OFF; when off the exact
+promote command is printed so the step is explicit, never silent.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -147,6 +156,53 @@ def distortion_aware_sample_map(
     return np.clip(row, 0, mh - 1), np.clip(col, 0, mw - 1), valid
 
 
+def promote_composite(out: Path, asset_id: str, root: Path = ROOT) -> dict:
+    """Atomically install the composite as the teacher read path.
+
+    Two renames, never an in-place copy into the live dir, so the teacher can
+    never observe a half-written artifact: (1) the composite is copied to a
+    temp sibling under external/teacher_artifacts; (2) the existing live dir
+    (if any) is renamed to external/_superseded_artifacts/<asset>_<n>; (3) the
+    temp sibling is renamed into place. Each rename targets a non-existent
+    destination (os.replace cannot replace a non-empty dir on Windows). If
+    rename (3) fails after (2) succeeded, the backup is rolled back into the
+    live path so the teacher read path is never left empty; the tmp sibling is
+    left for inspection and is reclaimed by the next promote. Do NOT promote
+    while a teacher run is reading the asset (Windows refuses to rename a dir
+    with open handles).
+    """
+    live_root = root / "external" / "teacher_artifacts"
+    superseded_root = root / "external" / "_superseded_artifacts"
+    live = live_root / asset_id
+    live_root.mkdir(parents=True, exist_ok=True)
+    superseded_root.mkdir(parents=True, exist_ok=True)
+
+    tmp = live_root / f"{asset_id}__promote_tmp"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    shutil.copytree(out, tmp)
+
+    backup = None
+    if live.exists():
+        n = 1
+        while (superseded_root / f"{asset_id}_{n}").exists():
+            n += 1
+        backup = superseded_root / f"{asset_id}_{n}"
+        os.replace(live, backup)
+    try:
+        os.replace(tmp, live)
+    except OSError:
+        if backup is not None:
+            # Rollback: restore the previous live artifact rather than leaving
+            # the teacher read path empty. The failed composite stays at tmp.
+            os.replace(backup, live)
+        raise
+    return {
+        "promoted_to": live.relative_to(root).as_posix(),
+        "superseded_backup": backup.relative_to(root).as_posix() if backup else None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--asset-id", required=True)
@@ -171,6 +227,13 @@ def main() -> int:
              "docs/band_obstacle_recall_evidence.md Phase 12 (single-witness "
              "pixels are 1.6-1.8x worse; gating lifts solid F1@5cm 3.5-5.8x).")
     parser.add_argument("--stability-workspace-b", default=None)
+    parser.add_argument(
+        "--promote", action="store_true",
+        help="after writing the composite, atomically replace "
+             "external/teacher_artifacts/<asset> with it (old dir backed up to "
+             "external/_superseded_artifacts/<asset>_<n>). Default OFF: the "
+             "composite stays out of the teacher read path until promoted, and "
+             "the exact promote command is printed.")
     parser.add_argument(
         "--stability-tau", type=float, default=0.005,
         help="Stability bar on |log dA - log dB| (scale-free). FROZEN at 0.005 "
@@ -316,12 +379,25 @@ def main() -> int:
         ),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    if args.promote:
+        promote = promote_composite(out, args.asset_id)
+    else:
+        promote = {
+            "enabled": False,
+            "note": "composite is NOT the teacher read path until promoted",
+            "promote_command": "python tools/run_mvs_depth_backend.py "
+                               + subprocess.list2cmdline(sys.argv[1:])
+                               + " --promote",
+        }
+
     print(json.dumps({
         "status": "written",
         "out_dir": str(out.relative_to(ROOT).as_posix()),
         "frames_with_mvs": frames_done,
         "frames_learned_only": len(frames_missing_mvs),
         "verified_pixel_fraction": round(replaced_px / max(total_px, 1), 4),
+        "promote": promote,
     }, indent=2))
     return 0
 

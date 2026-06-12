@@ -26,13 +26,21 @@ internal radial range downstream by ``geometry_adapter._source_depth_to_radial``
 Standalone tool. NOT imported by ``atlas3r``. Run with an isolated MapAnything venv
 (``external/mapanything_env``). No weights/repos vendored into git.
 
+CHAIN GUARD: the default ``--out-dir`` is ``external/_raw_backbone_artifacts``,
+which is NOT the teacher read path (``external/teacher_artifacts``). A raw
+backbone artifact has independently-posed views; the teacher is meant to consume
+the COLMAP-pose + MVS-verified COMPOSITE (tools/run_colmap_pose_backend.py ->
+tools/run_mvs_depth_backend.py --promote). Pass ``--out-dir
+external/teacher_artifacts`` only when you explicitly want the teacher to eat
+the raw artifact.
+
 Usage:
     external/mapanything_env/Scripts/python.exe tools/run_mapanything_backbone.py \
         --asset-id reference_metric --frames-dir data/reference_metric/rgb \
         --frame-glob "*.png" \
         --frame-ids "0,82,164,228,304,380,436,493,538,582,640,696,708,752" \
         --model facebook/map-anything-apache --device cuda \
-        --out-dir external/teacher_artifacts
+        --out-dir external/_raw_backbone_artifacts
 """
 
 from __future__ import annotations
@@ -183,7 +191,13 @@ def main(argv=None) -> int:
     parser.add_argument("--frame-ids", default=None, help="comma-separated indices into the sorted frame list")
     parser.add_argument("--num-frames", type=int, default=32)
     parser.add_argument("--model", default="facebook/map-anything-apache")
-    parser.add_argument("--out-dir", default="external/teacher_artifacts")
+    parser.add_argument(
+        "--out-dir", default="external/_raw_backbone_artifacts",
+        help="artifact root; default is the RAW staging area, NOT the teacher read "
+             "path (external/teacher_artifacts). The teacher should consume the "
+             "pose-corrected composite (run_colmap_pose_backend.py -> "
+             "run_mvs_depth_backend.py --promote); pass external/teacher_artifacts "
+             "explicitly to opt the raw artifact into the teacher read path.")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--memory-efficient", action="store_true", help="MapAnything memory_efficient_inference (slower, less VRAM)")
     parser.add_argument("--poses-w2c", action="store_true", help="installed build emits world-to-camera poses (invert to c2w)")

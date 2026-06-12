@@ -26,13 +26,21 @@ Conventions pinned from the installed DA3 source (not guessed):
 Standalone tool. NOT imported by ``atlas3r``. Run with the isolated DA3 venv
 interpreter (``external/da3_env``). No weights/repos vendored into git.
 
+CHAIN GUARD: the default ``--out-dir`` is ``external/_raw_backbone_artifacts``,
+which is NOT the teacher read path (``external/teacher_artifacts``). A raw
+backbone artifact has independently-posed views; the teacher is meant to consume
+the COLMAP-pose + MVS-verified COMPOSITE (tools/run_colmap_pose_backend.py ->
+tools/run_mvs_depth_backend.py --promote). Pass ``--out-dir
+external/teacher_artifacts`` only when you explicitly want the teacher to eat
+the raw artifact.
+
 Usage:
     external/da3_env/Scripts/python.exe tools/run_da3_backbone.py \
         --asset-id phone_room --frames-dir data/phone_room \
         --frame-glob "frame_*.jpg" --num-frames 32 \
         --geometry-model depth-anything/DA3-LARGE \
         --metric-model depth-anything/DA3METRIC-LARGE \
-        --device cuda --out-dir external/teacher_artifacts
+        --device cuda --out-dir external/_raw_backbone_artifacts
 """
 
 from __future__ import annotations
@@ -111,7 +119,13 @@ def main(argv=None) -> int:
     parser.add_argument("--geometry-model", default="depth-anything/DA3-LARGE")
     parser.add_argument("--metric-model", default="depth-anything/DA3METRIC-LARGE")
     parser.add_argument("--no-metric-scale", action="store_true", help="Skip metric anchoring (stay non-metric).")
-    parser.add_argument("--out-dir", default="external/teacher_artifacts")
+    parser.add_argument(
+        "--out-dir", default="external/_raw_backbone_artifacts",
+        help="artifact root; default is the RAW staging area, NOT the teacher read "
+             "path (external/teacher_artifacts). The teacher should consume the "
+             "pose-corrected composite (run_colmap_pose_backend.py -> "
+             "run_mvs_depth_backend.py --promote); pass external/teacher_artifacts "
+             "explicitly to opt the raw artifact into the teacher read path.")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--process-res", type=int, default=504)
     parser.add_argument("--conf-quantile", type=float, default=0.5, help="Keep pixels above this conf quantile for scale match.")

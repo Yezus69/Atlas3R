@@ -36,12 +36,67 @@ from .m2 import (
 )
 
 DEFAULT_ARTIFACTS_DIR = "external/teacher_artifacts"
+COMPOSITE_ARTIFACTS_DIR = "external/_composite_artifacts"
 DEFAULT_M2_DIR = "runs/m2"
+# CHAIN GUARD (raw-vs-composite hazard): a manifest whose ``method`` carries
+# this marker has COLMAP-SfM poses installed over the backbone geometry; a
+# manifest without it is a RAW backbone artifact (independently-posed views).
+_COMPOSITE_POSE_MARKER = "colmap_pose_backend"
+RAW_WHILE_COMPOSITE_BLOCKER = "raw_backbone_artifact_consumed_while_composite_exists"
 DEFAULT_MAX_RAYS_PER_PACKET = 2048
 # Robust clip band for monocular dense depth: dense models emit a handful of
 # enormous outlier pixels (>1e6). They are not fabricated away -- they are
 # excluded from the valid sample with an explicit recorded fraction.
 _DEPTH_OUTLIER_HIGH_PERCENTILE = 99.0
+
+
+def composite_shadow_blocker(
+    consumed_method: str | None, composite_method: str | None
+) -> str | None:
+    """CHAIN GUARD pure decision: did the teacher consume a RAW backbone
+    artifact while a pose-corrected COMPOSITE for the same asset exists?
+
+    Returns ``RAW_WHILE_COMPOSITE_BLOCKER`` iff the consumed manifest's
+    ``method`` does NOT contain the COLMAP pose-backend marker AND the
+    composite manifest's ``method`` DOES; otherwise ``None``. Honesty marker
+    only -- the caller appends it as a report blocker, never a hard fail.
+    """
+    if _COMPOSITE_POSE_MARKER in str(consumed_method or ""):
+        return None
+    if _COMPOSITE_POSE_MARKER not in str(composite_method or ""):
+        return None
+    return RAW_WHILE_COMPOSITE_BLOCKER
+
+
+def _composite_shadow_report(
+    asset_id: str, root_path: Path, consumed_method: str
+) -> dict[str, Any] | None:
+    """IO wrapper around :func:`composite_shadow_blocker`: read the composite
+    manifest at ``external/_composite_artifacts/<asset>`` if present. A
+    missing or unparseable composite manifest is NO claim (returns ``None``),
+    never a guessed blocker."""
+    composite_dir = _resolve_path(Path(COMPOSITE_ARTIFACTS_DIR), root_path) / asset_id
+    composite_manifest_path = composite_dir / "backbone_manifest.json"
+    if not composite_manifest_path.exists():
+        return None
+    composite_manifest, parse_error = _load_json_mapping(composite_manifest_path)
+    if parse_error is not None:
+        return None
+    composite_method = composite_manifest.get("method")
+    blocker = composite_shadow_blocker(consumed_method, composite_method)
+    if blocker is None:
+        return None
+    return {
+        "blocker": blocker,
+        "consumed_method": consumed_method,
+        "composite_dir": str(composite_dir),
+        "composite_method": str(composite_method or ""),
+        "hint": (
+            "raw backbone artifact consumed while a pose-corrected composite "
+            "exists; install the composite into the teacher read path with "
+            f"tools/run_mvs_depth_backend.py --asset-id {asset_id} ... --promote"
+        ),
+    }
 
 
 def load_geometry_artifacts(
@@ -69,9 +124,11 @@ def load_geometry_artifacts(
         "source_kind": "external_monocular_backbone_artifact",
     }
 
+    # The runner's --out-dir DEFAULT is the raw staging area, so the read path
+    # must be explicit here (runner flag is --out-dir, not --artifacts-dir).
     next_command = (
         f"python tools/run_mapanything_backbone.py --asset-id {asset_id} "
-        f"--artifacts-dir {artifacts_dir}"
+        f"--out-dir {artifacts_dir}"
     )
 
     if not asset_dir.is_dir() or not manifest_path.exists():
@@ -383,6 +440,15 @@ def load_geometry_artifacts(
         except ContractValidationError:
             scale_evidence_objects = []
 
+    # CHAIN GUARD: honesty blocker (never a hard fail) when this artifact is a
+    # RAW backbone run but a pose-corrected composite exists for the asset.
+    composite_shadow = _composite_shadow_report(asset_id, root_path, method)
+    blockers: list[str] = (
+        [] if packets else ["external_artifact_present_but_no_valid_packets"]
+    )
+    if composite_shadow is not None:
+        blockers.append(composite_shadow["blocker"])
+
     status = "loaded" if packets else "no_valid_packets_from_artifact"
     report = {
         **base_report,
@@ -402,7 +468,8 @@ def load_geometry_artifacts(
         "packet_summaries": tuple(packet_summaries),
         "skipped_frames": tuple(skipped),
         "next_command": next_command,
-        "blockers": () if packets else ("external_artifact_present_but_no_valid_packets",),
+        "composite_artifact_shadow": composite_shadow,
+        "blockers": tuple(blockers),
         "_scale_evidence": scale_evidence_objects,
     }
     return packets, report
