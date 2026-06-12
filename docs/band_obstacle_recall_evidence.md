@@ -2038,3 +2038,20 @@ Confound recorded for any future revisit: without per-voxel contributing
 frame ids the pilot blocks rays from ALL keyframes seeing a voxel, which
 over-counts false-stops; a revisit would need in-spine ray instrumentation
 (only justified if hazard fusion under-delivers on dangerous_free).
+
+### Phase 25 — D1 single-gauge composite fix (Codex-built gpt-5.5/xhigh, independently verified): loop p90 1.119 -> 0.227
+
+tools/run_mvs_depth_backend.py: per-frame s_f = median(backbone/MVS on
+verified px), fill pixels rescaled 1/s_f onto the pose gauge (N_MIN 500,
+global-median fallback, materiality band [0.8,1.25] so near-unity TUM ratios
+are no-ops); depth-based global scale replaces the trajectory-Umeyama anchor;
+single_gauge_v2 provenance + gauge_spread_log persisted (spread 0.2389 ==
+Phase-23 forensics 0.239 — independent agreement). VERIFIED: loop fill/verified
+ratio in [0.95,1.05] for 47/48 frames; stage2b p90 1.119 -> 0.227 (live
+report); all four canonical reports BYTE-IDENTICAL to pre-D1 snapshots.
+HONEST ASTERISK: Codex's literal TUM composite rebuild CHANGED the TUM pose
+gauge and failed scorecards, so the pre-D1 TUM live artifacts were RESTORED
+(not rebuilt) — A3 passes by restoration; TUM composite reproducibility is a
+recorded follow-up (raw-anchor provenance of the original builds unclear).
+Codex's ad-hoc A3 dangerous-free metric (0.95) matches no standing field —
+disregarded; verification used the repo's standing metrics only.

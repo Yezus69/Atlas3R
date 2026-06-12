@@ -10,8 +10,11 @@ Takes a HYBRID artifact dir (COLMAP poses + learned depth, from
 tools/run_colmap_pose_backend.py) plus the COLMAP dense workspace, and writes
 a composite artifact dir where each frame's depth is MVS-verified depth where
 the geometric check passed, learned depth elsewhere. Scale consistency: MVS
-depth (COLMAP units) is multiplied by the SAME candidate-only scalar recorded
-in the hybrid's pose provenance -- no ground truth anywhere.
+depth stays in the existing pose gauge, while learned fill pixels are rescaled
+per frame onto that pose gauge when enough MVS-verified pixels exist, with a
+pre-registered global fallback otherwise. Near-unity global ratios are recorded
+but left as no-ops so the fix only fires on material two-gauge composites. No
+ground truth is used.
 
 Also writes per-frame ``verified/<frame_id>.npy`` boolean masks: the
 multi-view-verification provenance of every pixel. These feed the
@@ -45,6 +48,72 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+N_MIN_SINGLE_GAUGE_PIXELS = 500
+SINGLE_GAUGE_APPLY_RATIO_BAND = (0.8, 1.25)
+
+
+def single_gauge_v2_decisions(
+    frame_observations: list[dict],
+    min_verified_pixels: int = N_MIN_SINGLE_GAUGE_PIXELS,
+) -> dict:
+    """Choose the depth-derived global gauge and per-frame fill rescale.
+
+    ``raw_backbone_over_pose_mvs_median`` is the per-frame fill/MVS gauge ratio
+    after applying the pose backend's COLMAP scale. Qualifying frames use their
+    own estimate to undo backbone fill drift; low-support frames use the global
+    median instead.
+    """
+    qualifying: list[float] = []
+    for obs in frame_observations:
+        scale = obs.get("raw_backbone_over_pose_mvs_median")
+        if (
+            int(obs.get("verified_count", 0)) >= min_verified_pixels
+            and scale is not None
+            and np.isfinite(float(scale))
+            and float(scale) > 0.0
+        ):
+            qualifying.append(float(scale))
+    if not qualifying:
+        raise ValueError(
+            "single_gauge_v2 needs at least one frame with enough verified pixels"
+        )
+
+    global_scale = float(np.median(np.asarray(qualifying, dtype=np.float64)))
+    gauge_spread_log = (
+        float(np.std(np.log(np.asarray(qualifying, dtype=np.float64))))
+        if len(qualifying) > 1
+        else 0.0
+    )
+
+    frames = []
+    for obs in frame_observations:
+        scale = obs.get("raw_backbone_over_pose_mvs_median")
+        per_frame = (
+            int(obs.get("verified_count", 0)) >= min_verified_pixels
+            and scale is not None
+            and np.isfinite(float(scale))
+            and float(scale) > 0.0
+        )
+        frame_scale = float(scale) if per_frame else global_scale
+        frames.append(
+            {
+                "frame_id": int(obs["frame_id"]),
+                "verified_count": int(obs.get("verified_count", 0)),
+                "raw_backbone_over_pose_mvs_median": (
+                    None if scale is None else float(scale)
+                ),
+                "frame_scale_source": "per_frame" if per_frame else "global_fallback",
+                "frame_scale_used": frame_scale,
+                "fill_scale_multiplier": float(1.0 / frame_scale),
+            }
+        )
+    return {
+        "min_verified_pixels": int(min_verified_pixels),
+        "depth_based_global_scale": global_scale,
+        "qualifying_frame_count": len(qualifying),
+        "gauge_spread_log": gauge_spread_log,
+        "frames": frames,
+    }
 
 
 def read_colmap_depth(path: Path) -> np.ndarray:
@@ -277,6 +346,22 @@ def main() -> int:
     frames_missing_camera: list[int] = []
     frames_missing_stability: list[int] = []
     sample_maps: dict = {}  # (cam_id pair, shapes) -> precomputed map
+    frame_payloads: list[dict] = []
+
+    def resample(arr: np.ndarray, name: str, ph: int, pw: int) -> np.ndarray:
+        ah, aw = arr.shape
+        if orig_cams is not None:
+            key = (orig_cam_of[name], undist_cam_of[name], ph, pw, ah, aw)
+            if key not in sample_maps:
+                sample_maps[key] = distortion_aware_sample_map(
+                    (ph, pw), orig_cams[key[0]], undist_cams[key[1]], (ah, aw)
+                )
+            row, col, valid = sample_maps[key]
+            return np.where(valid, arr[row, col], 0.0)
+        yi = (np.arange(ph) * ah / ph).astype(int)
+        xi = (np.arange(pw) * aw / pw).astype(int)
+        return arr[yi][:, xi]
+
     for fr in poses["frames"]:
         fid = int(fr["frame_id"])
         name = Path(str(fr["source_frame_path"])).name
@@ -288,30 +373,14 @@ def main() -> int:
             frames_missing_mvs.append(fid)  # learned-only frame, recorded
             continue
         learned = np.load(npy).astype(np.float64)
-        mvs = read_colmap_depth(geo)
         ph, pw = learned.shape[:2]
-        mh, mw = mvs.shape
-
-        def resample(arr, name=name, ph=ph, pw=pw):
-            ah, aw = arr.shape
-            if orig_cams is not None:
-                key = (orig_cam_of[name], undist_cam_of[name], ph, pw, ah, aw)
-                if key not in sample_maps:
-                    sample_maps[key] = distortion_aware_sample_map(
-                        (ph, pw), orig_cams[key[0]], undist_cams[key[1]], (ah, aw)
-                    )
-                row, col, valid = sample_maps[key]
-                return np.where(valid, arr[row, col], 0.0)
-            yi = (np.arange(ph) * ah / ph).astype(int)
-            xi = (np.arange(pw) * aw / pw).astype(int)
-            return arr[yi][:, xi]
-
         if orig_cams is not None and (name not in orig_cam_of or name not in undist_cam_of):
             frames_missing_mvs.append(fid)
             frames_missing_camera.append(fid)  # no calibration claim -> learned-only
             continue
-        mvs_r = resample(mvs) * scale
-        verified = mvs_r > 1e-6
+        mvs_raw = resample(read_colmap_depth(geo), name, ph, pw)
+        mvs_pose = mvs_raw * scale
+        verified = mvs_pose > 1e-6
         if stab_a is not None:
             geo_a = stab_a / "stereo/depth_maps" / f"{name}.geometric.bin"
             geo_b = stab_b / "stereo/depth_maps" / f"{name}.geometric.bin"
@@ -321,8 +390,8 @@ def main() -> int:
                 frames_missing_stability.append(fid)
                 verified = np.zeros_like(verified)
             else:
-                a_r = resample(read_colmap_depth(geo_a))
-                b_r = resample(read_colmap_depth(geo_b))
+                a_r = resample(read_colmap_depth(geo_a), name, ph, pw)
+                b_r = resample(read_colmap_depth(geo_b), name, ph, pw)
                 with np.errstate(divide="ignore", invalid="ignore"):
                     delta = np.abs(np.log(a_r) - np.log(b_r))
                 both_witness = (a_r > 1e-9) & (b_r > 1e-9)
@@ -337,22 +406,126 @@ def main() -> int:
                     out / "stability_delta" / f"{fid}.npy",
                     np.where(both_witness, delta, np.nan).astype(np.float16),
                 )
-        np.save(npy, np.where(verified, mvs_r, learned).astype(np.float32))
-        np.save(out / "verified" / f"{fid}.npy", verified)
+        scale_mask = (
+            verified
+            & np.isfinite(learned)
+            & np.isfinite(mvs_pose)
+            & (learned > 1e-9)
+            & (mvs_pose > 1e-9)
+        )
+        verified_count = int(scale_mask.sum())
+        if verified_count > 0:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                pose_ratio = learned[scale_mask] / mvs_pose[scale_mask]
+            pose_median = float(np.median(pose_ratio))
+        else:
+            pose_median = None
+        frame_payloads.append(
+            {
+                "frame_id": fid,
+                "npy": npy,
+                "learned": learned,
+                "mvs_pose": mvs_pose,
+                "verified": verified,
+                "verified_count": verified_count,
+                "raw_backbone_over_pose_mvs_median": pose_median,
+                "before_backbone_over_pose_mvs_median": pose_median,
+            }
+        )
         replaced_px += int(verified.sum())
         total_px += verified.size
         frames_done += 1
 
+    try:
+        gauge = single_gauge_v2_decisions(frame_payloads)
+    except ValueError as exc:
+        print(json.dumps({"status": "error_single_gauge_v2_no_anchor", "error": str(exc)}))
+        return 1
+
+    frame_decisions = {row["frame_id"]: row for row in gauge["frames"]}
+    depth_based_scale = float(gauge["depth_based_global_scale"])
+    lo, hi = SINGLE_GAUGE_APPLY_RATIO_BAND
+    fill_rescale_applied = not (lo <= depth_based_scale <= hi)
+    for item in frame_payloads:
+        decision = frame_decisions[item["frame_id"]]
+        fill_multiplier = (
+            float(decision["fill_scale_multiplier"]) if fill_rescale_applied else 1.0
+        )
+        scale_mask = (
+            item["verified"]
+            & np.isfinite(item["learned"])
+            & np.isfinite(item["mvs_pose"])
+            & (item["learned"] > 1e-9)
+            & (item["mvs_pose"] > 1e-9)
+        )
+        if int(scale_mask.sum()) > 0:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                after_ratio = (
+                    item["learned"][scale_mask]
+                    * fill_multiplier
+                    / item["mvs_pose"][scale_mask]
+                )
+            decision["after_fill_over_verified_median"] = float(np.median(after_ratio))
+        else:
+            decision["after_fill_over_verified_median"] = None
+        decision["before_backbone_over_pose_mvs_median"] = item[
+            "before_backbone_over_pose_mvs_median"
+        ]
+        decision["applied_fill_scale_multiplier"] = fill_multiplier
+        out_depth = np.where(
+            item["verified"],
+            item["mvs_pose"],
+            item["learned"] * fill_multiplier,
+        )
+        np.save(item["npy"], out_depth.astype(np.float32))
+        np.save(out / "verified" / f"{item['frame_id']}.npy", item["verified"])
+
+    pose_rescale = 1.0
+    old_alignment = dict(prov.get("scale_alignment", {}))
+    prov["scale_alignment"] = {
+        "method": "median_backbone_over_pose_gauge_mvs_depth_single_gauge_v2",
+        "scale": depth_based_scale,
+        "scale_field_units": "raw_backbone_depth_per_pose_gauge_mvs_depth",
+        "min_verified_pixels": int(gauge["min_verified_pixels"]),
+        "qualifying_frames": int(gauge["qualifying_frame_count"]),
+        "gauge_spread_log": float(gauge["gauge_spread_log"]),
+        "apply_ratio_band": [float(lo), float(hi)],
+        "fill_rescale_applied": bool(fill_rescale_applied),
+        "previous_trajectory_umeyama_scale_alignment": old_alignment,
+        "pose_translations_preserved_from_previous_alignment": True,
+        "residual_rmse_backbone_units": old_alignment.get("residual_rmse_backbone_units"),
+        "common_frames": old_alignment.get("common_frames"),
+        "honesty": (
+            "candidate-only fill-to-MVS gauge alignment; no measured data; "
+            "verified MVS pixels and COLMAP poses preserve the existing pose gauge"
+        ),
+    }
+    poses["pose_provenance"] = prov
+    (out / "poses.json").write_text(json.dumps(poses, indent=2), encoding="utf-8")
+
     manifest_path = out / "backbone_manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["method"] = manifest.get("method", "") + "+mvs_verified_depth"
+    manifest["method"] = manifest.get("method", "") + "+mvs_verified_depth+single_gauge_v2"
     manifest["depth_source"] = {
         "primary": "colmap_patchmatch_geometric_verified",
-        "fill": "learned_backbone_depth",
+        "fill": "learned_backbone_depth_rescaled_single_gauge_v2",
         "verified_pixel_fraction": round(replaced_px / max(total_px, 1), 4),
         "frames_with_mvs": frames_done,
         "frames_learned_only": frames_missing_mvs,
         "scale_applied_from_pose_provenance": scale,
+        "previous_trajectory_umeyama_scale": scale,
+        "single_gauge_v2": {
+            "min_verified_pixels": int(gauge["min_verified_pixels"]),
+            "depth_based_global_scale": depth_based_scale,
+            "scale_field_units": "raw_backbone_depth_per_pose_gauge_mvs_depth",
+            "mvs_pose_scale_applied_from_pose_provenance": scale,
+            "previous_trajectory_umeyama_scale": scale,
+            "pose_translation_rescale": pose_rescale,
+            "qualifying_frame_count": int(gauge["qualifying_frame_count"]),
+            "gauge_spread_log": float(gauge["gauge_spread_log"]),
+            "apply_ratio_band": [float(lo), float(hi)],
+            "fill_rescale_applied": bool(fill_rescale_applied),
+        },
         "verified_masks": "verified/<frame_id>.npy (bool, depth-map resolution)",
         "mvs_resample": resample_mode,
         "original_cameras": (
@@ -379,6 +552,23 @@ def main() -> int:
         ),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    depth_meta_path = out / "depth_meta.json"
+    depth_meta = json.loads(depth_meta_path.read_text(encoding="utf-8"))
+    depth_meta["single_gauge_v2"] = {
+        "min_verified_pixels": int(gauge["min_verified_pixels"]),
+        "depth_based_global_scale": depth_based_scale,
+        "scale_field_units": "raw_backbone_depth_per_pose_gauge_mvs_depth",
+        "mvs_pose_scale_applied_from_pose_provenance": scale,
+        "previous_trajectory_umeyama_scale": scale,
+        "pose_translation_rescale": pose_rescale,
+        "qualifying_frame_count": int(gauge["qualifying_frame_count"]),
+        "gauge_spread_log": float(gauge["gauge_spread_log"]),
+        "apply_ratio_band": [float(lo), float(hi)],
+        "fill_rescale_applied": bool(fill_rescale_applied),
+        "frame_scales": sorted(gauge["frames"], key=lambda row: row["frame_id"]),
+    }
+    depth_meta_path.write_text(json.dumps(depth_meta, indent=2), encoding="utf-8")
 
     if args.promote:
         promote = promote_composite(out, args.asset_id)
