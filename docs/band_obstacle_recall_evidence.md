@@ -2075,3 +2075,19 @@ falsifiers in under a day combined — dangerous_free remains DEPTH-COVERAGE
 limited (Phase 16: candidate misses ~72% of co-observed band obstacles),
 pointing the next attack at coverage/refinement (render-consistency
 refinement, denser verified depth), not fusion arithmetic.
+
+### Phase 27 — D2 gravity consensus: NOT ADOPTED (default OFF, brief-authorized) — because D1 already fixed the target via the legacy path
+
+The consensus estimator shipped default-OFF per its pre-registered failure
+mode: (A2) on desk it correctly REFUSED to align (camera-up prior vs plane
+disagree 34.7 deg — the Phase-23-predicted narrow-heading bias case; metrics
+unchanged, honest refusal beats wrong alignment); (A3) on phone_room_loop the
+rescue case EVAPORATED: with D1's single gauge the LEGACY floor RANSAC now
+passes (floor_inlier 0.379 vs 0.094 pre-D1 — first walking capture ever past
+the 0.30 bar) and the live export is reconstruction_world_floor_aligned with
+band tilt 0.73 deg vs the Phase-23 measured gravity (was 34.6), held-out
+render error 0.062 (0.210 raw -> 0.125 composite -> 0.062 single-gauge),
+xyz byte-identical (A1 PASS), 22 tests + ruff green. Verdict: D2's defect was
+downstream of D1 on this scene; the consensus path stays available (flag) for
+future low-floor-share captures, unproven and honestly marked. Desk-class
+captures (narrow heading) remain unaligned — recorded open defect.

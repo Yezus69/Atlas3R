@@ -9,5 +9,6 @@
   "occupancy_support_overrides_free": false,
   "occupancy_close_voxels": 0,
   "free_carve_full_column": true,
-  "verified_surface_min_count": 2
+  "verified_surface_min_count": 2,
+  "gravity_consensus_alignment": false
 }

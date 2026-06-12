@@ -780,24 +780,158 @@ def _apply_scale_posterior_to_packets(
     }
 
 
-def _camera_up_prior(packets: Sequence[Any]) -> list[float] | None:
-    """World-frame UP estimate from the camera poses: the median of each
-    frame's camera +y axis (image down) in world coords, negated. Rests on
-    the handheld/upright-capture ASSUMPTION -- soft evidence, recorded as
-    such by the fuser; it constrains the floor search, never the gate bar."""
+def _camera_up_prior(packets: Sequence[Any]) -> dict[str, Any] | None:
+    """World-frame UP estimate from camera poses.
+
+    Prefer the full COLMAP registered trajectory recorded in artifact
+    provenance; fall back to the packet/keyframe poses. The vector is soft
+    handheld-upright evidence: it can guide export alignment, never metric
+    acceptance by itself.
+    """
     import numpy as np  # type: ignore
 
+    full = _camera_up_prior_from_colmap_trajectory(packets, np)
+    if full is not None:
+        return full
+    return _camera_up_prior_from_packet_poses(
+        packets,
+        np,
+        source="keyframe_packet_pose_mean",
+        fallback_reason="full_registered_colmap_trajectory_unavailable",
+    )
+
+
+def _camera_up_prior_from_packet_poses(
+    packets: Sequence[Any],
+    np: Any,
+    *,
+    source: str,
+    fallback_reason: str | None = None,
+) -> dict[str, Any] | None:
     downs = []
     for packet in packets:
         T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
         downs.append(T[:3, 1])  # R @ e_y = column 1
     if not downs:
         return None
-    up = -np.median(np.stack(downs, axis=0), axis=0)
+    ups = -np.stack(downs, axis=0)
+    return _camera_up_prior_record(ups, np, source=source, fallback_reason=fallback_reason)
+
+
+def _camera_up_prior_from_colmap_trajectory(
+    packets: Sequence[Any],
+    np: Any,
+) -> dict[str, Any] | None:
+    model = _colmap_model_from_packet_provenance(packets)
+    if model is None:
+        return None
+    images_txt = model / "images.txt"
+    if not images_txt.is_file():
+        return None
+    ups = []
+    try:
+        for line in images_txt.read_text(encoding="utf-8", errors="ignore").splitlines():
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            parts = s.split()
+            if len(parts) < 10 or not parts[0].isdigit():
+                continue
+            qw, qx, qy, qz = (float(v) for v in parts[1:5])
+            R_cw = _colmap_qvec_to_rot(qw, qx, qy, qz, np)
+            ups.append(-R_cw[1, :])
+    except (OSError, ValueError):
+        return None
+    if not ups:
+        return None
+    return _camera_up_prior_record(
+        np.stack(ups, axis=0),
+        np,
+        source="full_colmap_registered_pose_mean",
+        colmap_model=str(model),
+    )
+
+
+def _colmap_model_from_packet_provenance(packets: Sequence[Any]) -> Path | None:
+    repo_root = Path(__file__).resolve().parents[2]
+    for packet in packets:
+        provenance = getattr(packet, "provenance", {}) or {}
+        manifest = provenance.get("manifest")
+        if not manifest:
+            continue
+        manifest_path = Path(str(manifest))
+        if not manifest_path.is_absolute():
+            manifest_path = repo_root / manifest_path
+        poses_path = manifest_path.parent / "poses.json"
+        try:
+            payload = json.loads(poses_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        pose_prov = payload.get("pose_provenance")
+        if not isinstance(pose_prov, Mapping):
+            continue
+        model = pose_prov.get("colmap_model")
+        if not model:
+            continue
+        model_path = Path(str(model))
+        if not model_path.is_absolute():
+            model_path = repo_root / model_path
+        if model_path.exists():
+            return model_path
+    return None
+
+
+def _colmap_qvec_to_rot(qw: float, qx: float, qy: float, qz: float, np: Any) -> Any:
+    q = np.asarray([qw, qx, qy, qz], dtype=np.float64)
+    q = q / (float(np.linalg.norm(q)) + 1e-12)
+    qw, qx, qy, qz = (float(v) for v in q)
+    return np.array(
+        [
+            [1 - 2 * (qy * qy + qz * qz), 2 * (qx * qy - qz * qw), 2 * (qx * qz + qy * qw)],
+            [2 * (qx * qy + qz * qw), 1 - 2 * (qx * qx + qz * qz), 2 * (qy * qz - qx * qw)],
+            [2 * (qx * qz - qy * qw), 2 * (qy * qz + qx * qw), 1 - 2 * (qx * qx + qy * qy)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def _camera_up_prior_record(
+    ups: Any,
+    np: Any,
+    *,
+    source: str,
+    fallback_reason: str | None = None,
+    colmap_model: str | None = None,
+) -> dict[str, Any] | None:
+    ups = np.asarray(ups, dtype=np.float64).reshape((-1, 3))
+    norms = np.linalg.norm(ups, axis=1)
+    valid = np.isfinite(ups).all(axis=1) & (norms > 1e-9)
+    ups = ups[valid] / norms[valid, None]
+    if ups.shape[0] == 0:
+        return None
+    up = ups.mean(axis=0)
     norm = float(np.linalg.norm(up))
     if norm < 1e-9:
         return None
-    return [float(v) for v in up / norm]
+    up = up / norm
+    dots = np.clip(ups @ up, -1.0, 1.0)
+    dev = np.degrees(np.arccos(dots))
+    record: dict[str, Any] = {
+        "vector": [float(v) for v in up],
+        "source": source,
+        "n_poses": int(ups.shape[0]),
+        "per_frame_angular_deviation_deg": {
+            "median": float(np.median(dev)),
+            "p90": float(np.percentile(dev, 90.0)),
+            "max": float(np.max(dev)),
+        },
+        "mean_resultant_length": float(norm),
+    }
+    if fallback_reason is not None:
+        record["fallback_reason"] = fallback_reason
+    if colmap_model is not None:
+        record["colmap_model"] = colmap_model
+    return record
 
 
 def _map(

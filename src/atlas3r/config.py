@@ -66,6 +66,7 @@ DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT = 1
 DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE = False
 DEFAULT_OCCUPANCY_CLOSE_VOXELS = 0
+DEFAULT_GRAVITY_CONSENSUS_ALIGNMENT = False
 # Verified-evidence tier: hits whose depth passed multi-view geometric
 # verification qualify a voxel as a CONFIDENT truncation/support source at
 # this count -- confident := (occ >= occupancy_support_min_count) OR
@@ -111,6 +112,7 @@ class RobotEnvelopeConfig:
     occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
     occupancy_close_voxels: int = DEFAULT_OCCUPANCY_CLOSE_VOXELS
     verified_surface_min_count: int = DEFAULT_VERIFIED_SURFACE_MIN_COUNT
+    gravity_consensus_alignment: bool = DEFAULT_GRAVITY_CONSENSUS_ALIGNMENT
 
     def __post_init__(self) -> None:
         if not _positive(self.collision_height_m):
@@ -131,6 +133,8 @@ class RobotEnvelopeConfig:
             raise RobotEnvelopeConfigError("occupancy_close_voxels must be a non-negative integer")
         if not isinstance(self.verified_surface_min_count, int) or isinstance(self.verified_surface_min_count, bool) or self.verified_surface_min_count < 1:
             raise RobotEnvelopeConfigError("verified_surface_min_count must be an integer >= 1")
+        if not isinstance(self.gravity_consensus_alignment, bool):
+            raise RobotEnvelopeConfigError("gravity_consensus_alignment must be a bool")
 
     @property
     def band_height_m(self) -> float:
@@ -158,6 +162,7 @@ class RobotEnvelopeConfig:
             "occupancy_support_overrides_free": bool(self.occupancy_support_overrides_free),
             "occupancy_close_voxels": int(self.occupancy_close_voxels),
             "verified_surface_min_count": int(self.verified_surface_min_count),
+            "gravity_consensus_alignment": bool(self.gravity_consensus_alignment),
         }
 
 
@@ -222,6 +227,9 @@ def load_robot_envelope(
             occupancy_close_voxels=int(data.get("occupancy_close_voxels", DEFAULT_OCCUPANCY_CLOSE_VOXELS)),
             verified_surface_min_count=int(
                 data.get("verified_surface_min_count", DEFAULT_VERIFIED_SURFACE_MIN_COUNT)
+            ),
+            gravity_consensus_alignment=bool(
+                data.get("gravity_consensus_alignment", DEFAULT_GRAVITY_CONSENSUS_ALIGNMENT)
             ),
         )
     except (TypeError, ValueError) as exc:

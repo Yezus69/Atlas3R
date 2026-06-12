@@ -97,6 +97,12 @@ REFERENCE_FSC_SCALE_M = 0.05
 # unchanged, so a scene with no actual floor support still fails loudly. The
 # assumption is recorded in the report (soft evidence, not a measurement).
 CAMERA_UP_PRIOR_MAX_ANGLE_DEG = 30.0
+# Export-only gravity consensus: when the legacy floor-inlier gate refuses to
+# claim the band is floor-aligned, a dominant plane that agrees with the camera
+# up prior can still rotate the exported band. This does NOT change Stage 1's
+# gate inputs; it records a separate export-alignment provenance block.
+GRAVITY_CONSENSUS_PRIOR_CONE_DEG = 45.0
+GRAVITY_CONSENSUS_MAX_AGREEMENT_DEG = 10.0
 
 
 def fuse_static_map(
@@ -187,16 +193,25 @@ def fuse_static_map(
     # lands on its dominant axis. Then the axis-aligned band crop below is a true
     # floor-parallel slab (not an oblique cut through a tilted floor). Weak floor
     # RANSAC -> IDENTITY + loud blocker (honest unaligned band, never fabricated).
-    align = _up_alignment(static_surfaces, voxel, np, camera_up_prior=camera_up_prior)
+    align = _up_alignment(
+        static_surfaces,
+        voxel,
+        np,
+        camera_up_prior=camera_up_prior,
+        gravity_consensus_enabled=bool(envelope.gravity_consensus_alignment),
+    )
     R_up = np.asarray(align["R_up"], dtype=np.float64)
     if align["applied"]:
         surfaces = surfaces @ R_up.T
         origins = origins @ R_up.T
         ray_dirs = ray_dirs @ R_up.T
         static_surfaces = surfaces[static_mask] if bool(np.any(static_mask)) else surfaces
-    coordinate_frame = base_frame + (
-        "_floor_aligned" if align["applied"] else "_axis_aligned_band_not_floor_aligned"
-    )
+    if align.get("alignment_path") == "consensus":
+        coordinate_frame = base_frame + "_gravity_aligned_camera_up_plane_consensus_band"
+    else:
+        coordinate_frame = base_frame + (
+            "_floor_aligned" if align["applied"] else "_axis_aligned_band_not_floor_aligned"
+        )
 
     # Robust bounds: clip extreme outliers so the grid bounds are not blown out
     # by a few stray points. The points themselves are kept; only the grid
@@ -286,14 +301,24 @@ def fuse_static_map(
         axis_vec = np.zeros(3, dtype=np.float64)
         axis_vec[int(align["target_axis"])] = 1.0
         post_hint = (axis_vec, CAMERA_UP_PRIOR_MAX_ANGLE_DEG)
-    floor_info = _estimate_floor(static_surfaces, effective_voxel, np, up_hint=post_hint)
+    if align.get("alignment_path") == "consensus":
+        floor_info = _aligned_consensus_floor_info(align, np)
+    else:
+        floor_info = _estimate_floor(static_surfaces, effective_voxel, np, up_hint=post_hint)
     tilt_after = _normal_axis_tilt_deg(
         floor_info["normal"], int(floor_info["floor_axis"]), np
     )
-    floor_info["report"]["up_alignment_applied"] = bool(align["applied"])
+    floor_info["report"]["up_alignment_applied"] = bool(align["gate_alignment_applied"])
+    if align.get("alignment_path") == "consensus":
+        # Stage 1 validation reads these legacy fields. Keep them tied to the
+        # original 0.30 inlier bar even though the export band is now rotated by
+        # the separately reported consensus path.
+        floor_info["report"]["method"] = align["legacy_method"]
+        floor_info["report"]["inlier_ratio"] = float(align["legacy_inlier_ratio"])
     floor_info["report"]["floor_tilt_to_band_axis_deg_before"] = float(align["tilt_before_deg"])
     floor_info["report"]["floor_tilt_to_band_axis_deg_after"] = float(tilt_after)
     floor_info["report"]["min_inlier_ratio_for_alignment"] = float(MIN_FLOOR_INLIER_RATIO_FOR_ALIGN)
+    floor_info["report"]["export_alignment"] = align["export_alignment"]
     floor_info["blockers"] = tuple(floor_info.get("blockers", ())) + tuple(align["blockers"])
 
     # Primary output: the collision-band 3D occupancy field. The 2D grid is its
@@ -311,6 +336,7 @@ def fuse_static_map(
     # Identity on fallback keeps that math correct without a special case.
     comparison_field["R_up"] = [[float(v) for v in row] for row in R_up]
     comparison_field["up_aligned"] = bool(align["applied"])
+    comparison_field["alignment_path"] = str(align.get("alignment_path", "none"))
 
     grid, grid_report = _build_occupancy_grid_from_band(
         band_volumes, scale_posterior, coordinate_frame, grid_min, np,
@@ -432,13 +458,17 @@ def fuse_static_map(
         ),
         "up_alignment": {
             "applied": bool(align["applied"]),
+            "gate_alignment_applied": bool(align["gate_alignment_applied"]),
+            "alignment_path": str(align.get("alignment_path", "none")),
             "target_axis": int(align["target_axis"]),
             "floor_tilt_to_band_axis_deg_before": float(align["tilt_before_deg"]),
             "floor_tilt_to_band_axis_deg_after": float(tilt_after),
-            "floor_inlier_ratio": float(align["inlier_ratio"]),
+            "floor_inlier_ratio": float(align["legacy_inlier_ratio"]),
+            "export_floor_support_share": float(align["inlier_ratio"]),
             "min_inlier_ratio_for_alignment": float(MIN_FLOOR_INLIER_RATIO_FOR_ALIGN),
             "floor_method": align["method"],
             "camera_up_prior": align.get("prior", {"camera_up_prior_used": False}),
+            "export_alignment": align["export_alignment"],
             "grid_frame": coordinate_frame,
             "blockers": list(align["blockers"]),
         },
@@ -1086,7 +1116,171 @@ def _normal_axis_tilt_deg(normal, axis, np) -> float:
     return float(np.degrees(np.arccos(cos)))
 
 
-def _up_alignment(static_surfaces, voxel, np, camera_up_prior=None) -> dict[str, Any]:
+def _vector_angle_deg(a, b, np, *, sign_agnostic: bool = False) -> float:
+    aa = np.asarray(a, dtype=np.float64)
+    bb = np.asarray(b, dtype=np.float64)
+    aa = aa / (np.linalg.norm(aa) + 1e-12)
+    bb = bb / (np.linalg.norm(bb) + 1e-12)
+    dot = float(aa @ bb)
+    if sign_agnostic:
+        dot = abs(dot)
+    dot = min(1.0, max(-1.0, dot))
+    return float(np.degrees(np.arccos(dot)))
+
+
+def _camera_up_prior_payload(camera_up_prior, np) -> tuple[Any | None, dict[str, Any]]:
+    if camera_up_prior is None:
+        return None, {"camera_up_prior_used": False}
+    if isinstance(camera_up_prior, Mapping):
+        raw = (
+            camera_up_prior.get("vector")
+            or camera_up_prior.get("camera_up_prior")
+            or camera_up_prior.get("up")
+        )
+        record = {
+            k: v
+            for k, v in dict(camera_up_prior).items()
+            if not str(k).startswith("_")
+        }
+    else:
+        raw = camera_up_prior
+        record = {}
+    if raw is None:
+        return None, {"camera_up_prior_used": False, **record}
+    vec = np.asarray(raw, dtype=np.float64).reshape(-1)
+    if vec.shape[0] != 3:
+        return None, {"camera_up_prior_used": False, **record, "invalid_reason": "not_3d"}
+    norm = float(np.linalg.norm(vec))
+    if norm < 1e-9:
+        return None, {"camera_up_prior_used": False, **record, "invalid_reason": "zero_norm"}
+    vec = vec / norm
+    return vec, {
+        **record,
+        "camera_up_prior_used": True,
+        "camera_up_prior": [float(v) for v in vec],
+        "assumption": "handheld_upright_capture_prior_soft_evidence_not_a_measurement",
+    }
+
+
+def _floor_summary(floor: Mapping[str, Any]) -> dict[str, Any]:
+    report = floor.get("report") if isinstance(floor.get("report"), Mapping) else {}
+    return {
+        "method": str(floor.get("method", report.get("method", "unknown"))),
+        "inlier_ratio": float(report.get("inlier_ratio", 0.0) or 0.0),
+        "normal": [float(v) for v in floor.get("normal", (0.0, 0.0, 1.0))],
+        "floor_axis": int(floor.get("floor_axis", report.get("floor_axis", 2))),
+        "floor_value": float(floor.get("floor_value", report.get("floor_value", 0.0))),
+        "plane_d": (
+            float(floor["plane_d"])
+            if isinstance(floor.get("plane_d"), (int, float))
+            else None
+        ),
+    }
+
+
+def _oriented_floor_to_prior(floor: Mapping[str, Any], prior, np) -> dict[str, Any]:
+    out = dict(floor)
+    report = dict(out.get("report", {}) or {})
+    normal = np.asarray(out.get("normal", (0.0, 0.0, 1.0)), dtype=np.float64)
+    d = float(out.get("plane_d", 0.0))
+    if float(normal @ prior) < 0.0:
+        normal = -normal
+        d = -d
+    out["normal"] = tuple(float(v) for v in normal)
+    out["plane_d"] = float(d)
+    report["normal"] = tuple(float(v) for v in normal)
+    out["report"] = report
+    return out
+
+
+def _gravity_consensus_decision(
+    *,
+    legacy_reliable: bool,
+    consensus_enabled: bool,
+    consensus_normal,
+    camera_up_prior,
+    np,
+    max_agreement_deg: float = GRAVITY_CONSENSUS_MAX_AGREEMENT_DEG,
+) -> dict[str, Any]:
+    """Pure decision for the export-only consensus path."""
+    if legacy_reliable:
+        return {
+            "path": "legacy",
+            "align_consensus": False,
+            "reason": "legacy_inlier_precedence",
+            "agreement_angle_deg": None,
+        }
+    if not consensus_enabled:
+        return {
+            "path": "none",
+            "align_consensus": False,
+            "reason": "gravity_consensus_alignment_disabled",
+            "agreement_angle_deg": None,
+        }
+    if consensus_normal is None or camera_up_prior is None:
+        return {
+            "path": "none",
+            "align_consensus": False,
+            "reason": "missing_consensus_plane_or_camera_up_prior",
+            "agreement_angle_deg": None,
+        }
+    angle = _vector_angle_deg(consensus_normal, camera_up_prior, np, sign_agnostic=True)
+    if angle <= float(max_agreement_deg):
+        return {
+            "path": "consensus",
+            "align_consensus": True,
+            "reason": "plane_normal_agrees_with_camera_up_prior",
+            "agreement_angle_deg": float(angle),
+        }
+    return {
+        "path": "none",
+        "align_consensus": False,
+        "reason": "plane_normal_disagrees_with_camera_up_prior",
+        "agreement_angle_deg": float(angle),
+    }
+
+
+def _aligned_consensus_floor_info(align: Mapping[str, Any], np) -> dict[str, Any]:
+    floor = align.get("selected_floor")
+    if not isinstance(floor, Mapping):
+        raise ValueError("consensus alignment missing selected_floor")
+    R_up = np.asarray(align["R_up"], dtype=np.float64)
+    normal0 = np.asarray(floor["normal"], dtype=np.float64)
+    normal1 = R_up @ normal0
+    axis = int(align["target_axis"])
+    d = float(floor.get("plane_d", 0.0))
+    denom = float(normal1[axis])
+    if abs(denom) < 1e-9:
+        floor_value = float(floor.get("floor_value", 0.0))
+    else:
+        floor_value = float(-d / denom)
+    report = {
+        "method": "ransac_camera_up_plane_consensus_export",
+        "inlier_ratio": float(align["inlier_ratio"]),
+        "normal": tuple(float(v) for v in normal1),
+        "floor_axis": axis,
+        "floor_value": floor_value,
+        "plane_d": float(d),
+    }
+    return {
+        "floor_axis": axis,
+        "floor_value": floor_value,
+        "normal": tuple(float(v) for v in normal1),
+        "plane_d": float(d),
+        "method": "ransac_camera_up_plane_consensus_export",
+        "report": report,
+        "blockers": (),
+    }
+
+
+def _up_alignment(
+    static_surfaces,
+    voxel,
+    np,
+    camera_up_prior=None,
+    *,
+    gravity_consensus_enabled: bool = True,
+) -> dict[str, Any]:
     """Derive a robust per-reconstruction up-alignment rotation ``R_up``.
 
     Estimate the floor, then build ``R_up`` mapping the floor NORMAL onto the +unit
@@ -1101,43 +1295,107 @@ def _up_alignment(static_surfaces, voxel, np, camera_up_prior=None) -> dict[str,
     (``CAMERA_UP_PRIOR_MAX_ANGLE_DEG``). The acceptance bar is the SAME -- the
     prior redirects the search, never lowers the evidence required.
     """
+    prior_vec, prior_record = _camera_up_prior_payload(camera_up_prior, np)
     floor0 = _estimate_floor(static_surfaces, voxel, np)
+    legacy_floor = floor0
     normal = np.asarray(floor0["normal"], dtype=np.float64)
     floor_axis = int(floor0["floor_axis"])
     method = str(floor0.get("method", ""))
     inlier_ratio = float(floor0.get("report", {}).get("inlier_ratio", 0.0))
-    reliable = method == "ransac" and inlier_ratio >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN
-    prior_record: dict[str, Any] = {"camera_up_prior_used": False}
-    if not reliable and camera_up_prior is not None:
+    legacy_reliable = method == "ransac" and inlier_ratio >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN
+    legacy_method = method
+    legacy_inlier_ratio = inlier_ratio
+    if not legacy_reliable and prior_vec is not None:
         floor1 = _estimate_floor(
             static_surfaces, voxel, np,
-            up_hint=(camera_up_prior, CAMERA_UP_PRIOR_MAX_ANGLE_DEG),
+            up_hint=(prior_vec, CAMERA_UP_PRIOR_MAX_ANGLE_DEG),
         )
         method1 = str(floor1.get("method", ""))
         inlier1 = float(floor1.get("report", {}).get("inlier_ratio", 0.0))
         prior_record = {
-            "camera_up_prior_used": True,
-            "camera_up_prior": [float(v) for v in np.asarray(camera_up_prior, dtype=np.float64)],
+            **prior_record,
             "max_angle_deg": float(CAMERA_UP_PRIOR_MAX_ANGLE_DEG),
-            "assumption": "handheld_upright_capture_prior_soft_evidence_not_a_measurement",
             "unconstrained_inlier_ratio": inlier_ratio,
             "constrained_inlier_ratio": inlier1,
         }
         if method1.startswith("ransac") and inlier1 >= MIN_FLOOR_INLIER_RATIO_FOR_ALIGN:
-            floor0, method, inlier_ratio = floor1, method1, inlier1
+            legacy_floor, method, inlier_ratio = floor1, method1, inlier1
             normal = np.asarray(floor1["normal"], dtype=np.float64)
             floor_axis = int(floor1["floor_axis"])
-            reliable = True
+            legacy_reliable = True
+            legacy_method = method1
+            legacy_inlier_ratio = inlier1
+
+    selected_floor = legacy_floor
+    alignment_path = "legacy" if legacy_reliable else "none"
+    consensus_record: dict[str, Any] = {
+        "enabled": bool(gravity_consensus_enabled),
+        "path": alignment_path,
+        "legacy_estimate": _floor_summary(legacy_floor),
+        "consensus_estimate": None,
+        "agreement_angle_deg": None,
+        "max_agreement_deg": float(GRAVITY_CONSENSUS_MAX_AGREEMENT_DEG),
+        "prior_cone_deg": float(GRAVITY_CONSENSUS_PRIOR_CONE_DEG),
+        "gate_stage1_unchanged": True,
+        "export_up_alignment_applied": bool(legacy_reliable),
+    }
+    if not legacy_reliable and prior_vec is not None:
+        floor2 = _estimate_floor(
+            static_surfaces,
+            voxel,
+            np,
+            up_hint=(prior_vec, GRAVITY_CONSENSUS_PRIOR_CONE_DEG),
+        )
+        consensus_normal = (
+            floor2.get("normal")
+            if str(floor2.get("method", "")).startswith("ransac")
+            else None
+        )
+        decision = _gravity_consensus_decision(
+            legacy_reliable=False,
+            consensus_enabled=bool(gravity_consensus_enabled),
+            consensus_normal=consensus_normal,
+            camera_up_prior=prior_vec,
+            np=np,
+        )
+        consensus_record.update(
+            {
+                "path": decision["path"],
+                "decision_reason": decision["reason"],
+                "agreement_angle_deg": decision["agreement_angle_deg"],
+                "consensus_estimate": {
+                    **_floor_summary(floor2),
+                    "support_share": float(
+                        floor2.get("report", {}).get("inlier_ratio", 0.0)
+                    ),
+                },
+            }
+        )
+        if decision["align_consensus"]:
+            selected_floor = _oriented_floor_to_prior(floor2, prior_vec, np)
+            normal = np.asarray(selected_floor["normal"], dtype=np.float64)
+            floor_axis = int(selected_floor["floor_axis"])
+            method = "ransac_camera_up_plane_consensus_export"
+            inlier_ratio = float(selected_floor.get("report", {}).get("inlier_ratio", 0.0))
+            alignment_path = "consensus"
+            consensus_record["path"] = "consensus"
+
     tilt_before = _normal_axis_tilt_deg(normal, floor_axis, np)
-    if not reliable:
+    if alignment_path == "none":
         return {
             "applied": False,
+            "gate_alignment_applied": False,
             "R_up": np.eye(3),
             "target_axis": floor_axis,
             "tilt_before_deg": tilt_before,
             "inlier_ratio": inlier_ratio,
+            "legacy_inlier_ratio": legacy_inlier_ratio,
+            "legacy_method": legacy_method,
             "method": method,
+            "selected_floor": selected_floor,
             "prior": prior_record,
+            "alignment_path": "none",
+            "export_alignment": consensus_record,
             "blockers": ("floor_normal_unreliable_band_not_floor_aligned",),
         }
     target = np.zeros(3, dtype=np.float64)
@@ -1145,12 +1403,22 @@ def _up_alignment(static_surfaces, voxel, np, camera_up_prior=None) -> dict[str,
     R_up = _rotation_align(normal, target, np)
     return {
         "applied": True,
+        "gate_alignment_applied": bool(legacy_reliable),
         "R_up": R_up,
         "target_axis": floor_axis,
         "tilt_before_deg": tilt_before,
         "inlier_ratio": inlier_ratio,
+        "legacy_inlier_ratio": legacy_inlier_ratio,
+        "legacy_method": legacy_method,
         "method": method,
+        "selected_floor": selected_floor,
         "prior": prior_record,
+        "alignment_path": alignment_path,
+        "export_alignment": {
+            **consensus_record,
+            "path": alignment_path,
+            "export_up_alignment_applied": True,
+        },
         "blockers": (),
     }
 
