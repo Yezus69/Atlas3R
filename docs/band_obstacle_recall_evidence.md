@@ -2114,3 +2114,22 @@ PROTOCOL ADOPTED: a known-length object in the first seconds of any capture
 NEW ANCHOR FAMILY unlocked by the floor fix: camera-height-above-detected-
 floor x handheld-height prior — internet-video-compatible, sensor-free,
 calibratable on GT rows.
+
+### Phase 29 — scale arbitration: ruler CONFIRMED by pure triangulation; height-anchor falsifier FAILED honestly (capture-style prior mismatch)
+
+Three conflicting loop-scale claims arbitrated by triangulating the ruler
+endpoints from COLMAP sparse points (multi-view geometry only, no learned
+components, no depth maps): span 0.5650 COLMAP units -> 0.8142 m/COLMAP-unit
+-> /0.2325 pose anchor = **3.502 m per composite unit**, agreeing with the
+Phase-28 depth-based read (3.444) to 1.7%. RULER VERDICT STANDS, now
+double-measured: backbone metric prior (2.551) understates scale by ~37%.
+Corrections this forced: (1) Phase 23's "camera 0.36 units above floor" was
+measured against a FURNITURE plane; against the occupied floor voxels the
+camera sits 0.582 units = ~2.0 m up — the user filmed elevated, not at hand
+height. (2) The camera-height anchor falsifier (Codex, pre-registered)
+FAILED correctly: pred 2.27 vs truth 3.50 (log err 0.43 > 0.25) on loop;
+xyz passed (0.17); desk/room honestly unavailable. The failing assumption is
+H_PRIOR=1.35 m — capture style varies too much for a fixed prior; the anchor
+stays reportage-only (guard intact). Possible rescue (NOT pre-registered,
+needs design): per-corpus or per-creator height calibration, or pitch-aware
+priors. Home-truth ledger at 3.50: span 9.6 m, path 25.5 m, loop drift 5.7 cm.
