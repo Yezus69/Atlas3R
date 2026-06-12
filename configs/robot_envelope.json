@@ -1,5 +1,5 @@
 {
-  "_comment": "CANONICAL envelope (production recipe v3 ADOPTED 2026-06-11 per the Phase 13/15 re-judgment; see docs/band_obstacle_recall_evidence.md Phases 9-15 and docs/gt_free_verification.md; prior canonical artifacts at external/_pre_v3_artifacts_backup). The 2.5 cm voxel is PHYSICALLY derived, never from scene results: the robot's collision-relevant thin-structure class is furniture legs (chair/table legs ~3 cm cross-section, the canonical small obstacle the collision band exists for); a voxel edge larger than the structure's cross-section makes the structure a sub-voxel minority that cannot robustly claim even one voxel, so voxel <= ~3 cm; 0.025 m is the clean halving of the prior 0.05 m grid satisfying that bound, and keeps margin_m representable as exactly 2 voxels. Lever conversions at 2.5 cm: support 0.15 m = 6 voxels; free_carve full-column unchanged; occupancy_support_min_count stays 3 ABSOLUTE (unverified evidence keeps the same count bar; only multi-view-VERIFIED, perturbation-STABLE evidence reaches confidence at verified_surface_min_count = 2 = ceil(3/2.2), the once-fixed tier).",
+  "_comment": "CANONICAL envelope (production recipe v3 ADOPTED 2026-06-11 per the Phase 13/15 re-judgment; see docs/band_obstacle_recall_evidence.md Phases 9-15 and docs/gt_free_verification.md; prior canonical artifacts at external/_pre_v3_artifacts_backup). The 2.5 cm voxel is PHYSICALLY derived, never from scene results: the robot's collision-relevant thin-structure class is furniture legs (chair/table legs ~3 cm cross-section, the canonical small obstacle the collision band exists for); a voxel edge larger than the structure's cross-section makes the structure a sub-voxel minority that cannot robustly claim even one voxel, so voxel <= ~3 cm; 0.025 m is the clean halving of the prior 0.05 m grid satisfying that bound, and keeps margin_m representable as exactly 2 voxels. Lever conversions at 2.5 cm: support 0.15 m = 6 voxels; occupancy_support_min_count stays 3 ABSOLUTE (unverified evidence keeps the same count bar; only multi-view-VERIFIED, perturbation-STABLE evidence reaches confidence at verified_surface_min_count = 2 = ceil(3/2.2), the once-fixed tier). Brief S2 adopted free_carve_discipline=truncated with unverified margin multiplier 1.5 as a fresh xyz-scoped falsifier: dangerous_free@5cm 0.111 <= 0.20 and free-recall retention 0.941 >= 0.60; desk remains reportage.",
   "collision_height_m": 0.2,
   "margin_m": 0.05,
   "voxel_size_m": 0.025,
@@ -9,6 +9,8 @@
   "occupancy_support_overrides_free": false,
   "occupancy_close_voxels": 0,
   "free_carve_full_column": true,
+  "free_carve_discipline": "truncated",
+  "free_carve_unverified_margin_multiplier": 1.5,
   "verified_surface_min_count": 2,
   "gravity_consensus_alignment": false
 }

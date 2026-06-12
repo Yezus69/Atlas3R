@@ -111,6 +111,7 @@ class RobotEnvelopeConfig:
     free_carve_margin_m: float = DEFAULT_FREE_CARVE_MARGIN_M
     free_carve_full_column: bool = DEFAULT_FREE_CARVE_FULL_COLUMN
     free_carve_discipline: str = DEFAULT_FREE_CARVE_DISCIPLINE
+    free_carve_unverified_margin_multiplier: float = FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER
     occupancy_support_height_m: float = DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M
     occupancy_support_min_count: int = DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT
     occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
@@ -130,6 +131,10 @@ class RobotEnvelopeConfig:
         if self.free_carve_discipline not in FREE_CARVE_DISCIPLINES:
             raise RobotEnvelopeConfigError(
                 "free_carve_discipline must be one of: " + ", ".join(FREE_CARVE_DISCIPLINES)
+            )
+        if not _non_negative(self.free_carve_unverified_margin_multiplier):
+            raise RobotEnvelopeConfigError(
+                "free_carve_unverified_margin_multiplier must be a non-negative finite number"
             )
         if not _non_negative(self.occupancy_support_height_m):
             raise RobotEnvelopeConfigError("occupancy_support_height_m must be a non-negative finite number")
@@ -167,7 +172,9 @@ class RobotEnvelopeConfig:
             "band_height_m": self.band_height_m,
             "free_carve_margin_m": float(self.free_carve_margin_m),
             "free_carve_discipline": str(self.free_carve_discipline),
-            "free_carve_unverified_margin_multiplier": FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+            "free_carve_unverified_margin_multiplier": float(
+                self.free_carve_unverified_margin_multiplier
+            ),
             "occupancy_support_height_m": float(self.occupancy_support_height_m),
             "occupancy_support_min_count": int(self.occupancy_support_min_count),
             "occupancy_support_overrides_free": bool(self.occupancy_support_overrides_free),
@@ -227,6 +234,12 @@ def load_robot_envelope(
             free_carve_margin_m=float(data.get("free_carve_margin_m", DEFAULT_FREE_CARVE_MARGIN_M)),
             free_carve_full_column=bool(data.get("free_carve_full_column", DEFAULT_FREE_CARVE_FULL_COLUMN)),
             free_carve_discipline=str(data.get("free_carve_discipline", DEFAULT_FREE_CARVE_DISCIPLINE)),
+            free_carve_unverified_margin_multiplier=float(
+                data.get(
+                    "free_carve_unverified_margin_multiplier",
+                    FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+                )
+            ),
             occupancy_support_height_m=float(
                 data.get("occupancy_support_height_m", DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M)
             ),

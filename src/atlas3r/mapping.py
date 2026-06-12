@@ -124,7 +124,8 @@ def _free_carve_discipline_decision(
 
     ``base_margin_m`` is the deployed truncation constant
     (``RobotEnvelopeConfig.free_carve_margin_m``; 0.1 m in the canonical config).
-    The unverified multiplier is fixed by the brief at 3x.
+    The unverified multiplier defaults to the Phase 30 value but is config-driven
+    for pre-registered sweeps.
     """
     if discipline not in FREE_CARVE_DISCIPLINES:
         raise ValueError(f"unknown free_carve_discipline: {discipline}")
@@ -306,7 +307,9 @@ def fuse_static_map(
         uncertainty, rel_unc, np,
         free_carve_discipline=free_carve_discipline,
         free_carve_margin_m=float(envelope.free_carve_margin_m),
-        free_carve_unverified_margin_multiplier=FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+        free_carve_unverified_margin_multiplier=float(
+            envelope.free_carve_unverified_margin_multiplier
+        ),
     )
 
     # The candidate occupancy-estimation policy (free-carve truncation + gravity
@@ -524,7 +527,9 @@ def fuse_static_map(
             "policy_active": bool(envelope.policy_active),
             "free_carve_margin_m": float(envelope.free_carve_margin_m),
             "free_carve_discipline": str(envelope.free_carve_discipline),
-            "free_carve_unverified_margin_multiplier": FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+            "free_carve_unverified_margin_multiplier": float(
+                envelope.free_carve_unverified_margin_multiplier
+            ),
             "free_evidence_discipline": band_report.get("free_evidence_discipline", {"applied": False}),
             "occupancy_support_height_m": float(envelope.occupancy_support_height_m),
             "occupancy_support_min_count": int(envelope.occupancy_support_min_count),

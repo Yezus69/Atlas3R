@@ -2171,3 +2171,25 @@ preserved). Ingestion ledger (loop capture, timestamp spans): SfM ~74min
 (incl. ENOSPC casualty), backbone 92s, pose 140s, MVS 58s. Two cached
 teacher runs byte-identical; fast-falsifier metrics match recompute on both
 measured scenes; 31 tests + ruff green.
+
+### Phase 32 — margin-sweep falsifier PASSES; carve discipline ADOPTED canonically; the emitter's honest refusal names the next wall
+
+Fresh pre-registered sweep (M in {1.5,2,2.5,4}, registration written before
+any run): ALL of M<=2.5 pass the xyz bars; selection rule picks M=1.5
+(retention 0.941). CANONICAL ADOPTION (configs/robot_envelope.json:
+free_carve_discipline=truncated, multiplier 1.5; full rerun + scorecard
+fd68446b): xyz dangerous_free@5cm 0.327 -> 0.111 (10cm 0.0523) at 94.1%
+free-recall retention, solid F1/recall byte-stable, all five categories
+unchanged, fsc deltas in the expected free->unknown direction. The Phase-16
+5cm danger alarm NO LONGER FIRES on xyz — first scene to clear the
+materiality bar. Desk unchanged (0.567) per the Phase-30 two-wall diagnosis.
+
+FIRST DATASET EMISSION ATTEMPT: the emitter REFUSED all 5 scenes — verbatim:
+xyz relative_scale_uncertainty_too_high:0.310 (the council's conservative
+0.30 guard floor exceeds the emitter's authority bar); desk adds
+gravity_alignment_unverified; room/phones non-metric. This refusal is the
+honesty stack WORKING: labels are now safe on xyz but the scale band hasn't
+EARNED tightness. The binding wall is now exactly one thing: METRIC-ANCHOR
+COUNCIL CALIBRATION ROWS (2 of 8 minimum) — grow with public-GT scenes so
+the council can certify sharper bands per its own pre-registered promotion
+criteria. No thresholds were touched to force emission.
