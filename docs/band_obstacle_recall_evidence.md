@@ -2155,3 +2155,19 @@ Also landed and verified: --assets per-scene filter for teacher+evaluate
 NEXT (to pre-register fresh, not tune the old): (1) margin-sweep falsifier
 for truncated-on-xyz-class with the SAME retention bar; (2) desk-class
 verified-depth accuracy investigation (MVS bias) — the wall behind the wall.
+
+### Phase 31 — S1 throughput attack (Codex, verified): iteration loop 321s -> 119s (63% cut), falsifier 192s -> 1.3s
+
+Measured-first profiling then cuts, all identity-proven: m1/m2 input-hash
+caches (~0.2s warm, --force bypass); teacher --emit-stage-timings (per-stage
+table: refine 31s + two map-fusion passes ~48s = the next bottlenecks);
+teacher now exports deterministic comparison_field.npz consumed by the
+falsifier by default (1.3s vs 192s recompute; --recompute preserves the slow
+path; older exports lack the field -- regenerated on next canonical run);
+SfM A/B stability workspaces now OPT-IN (--stability-workspaces; they cost
+309s + 12GB per ingestion, only the stability trust tier consumes them) and
+--photometric-scope keyframes-sources for iteration runs (default all
+preserved). Ingestion ledger (loop capture, timestamp spans): SfM ~74min
+(incl. ENOSPC casualty), backbone 92s, pose 140s, MVS 58s. Two cached
+teacher runs byte-identical; fast-falsifier metrics match recompute on both
+measured scenes; 31 tests + ruff green.

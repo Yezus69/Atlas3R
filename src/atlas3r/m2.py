@@ -27,16 +27,20 @@ from .contracts import (
 )
 from .m1 import (
     DEFAULT_MANIFEST_PATH,
+    _build_input_cache_state,
+    _cache_hit,
     _evenly_spaced_ids,
     _jsonable,
     _resolve_asset_source,
     _resolve_path,
+    _write_cache_state,
     _write_json,
     load_canonical_assets,
 )
 
 DEFAULT_OUTPUT_DIR = Path("runs/m2")
 DEFAULT_M1_REPORT_DIR = Path("runs/m1")
+DEFAULT_CACHE_STATE_NAME = ".cache_state.json"
 
 RGB_INDEX_FILE = "rgb.txt"
 DEPTH_INDEX_FILE = "depth.txt"
@@ -162,14 +166,48 @@ def run_m2(
     m1_report_dir: str | Path = DEFAULT_M1_REPORT_DIR,
     max_packets: int = 8,
     max_rays_per_packet: int = 2048,
+    force: bool = False,
 ) -> dict[str, Any]:
     root = Path.cwd() if repo_root is None else Path(repo_root)
     output_path = _resolve_path(Path(output_dir), root)
     output_path.mkdir(parents=True, exist_ok=True)
 
     assets = load_canonical_assets(manifest_path, repo_root=root)
+    report_paths = {
+        asset.asset_id: output_path / f"{asset.asset_id}_measured_reference_report.json"
+        for asset in assets
+    }
+    registry_path = output_path / "measured_reference_registry_report.json"
+    m1_root = _resolve_path(Path(m1_report_dir), root)
+    m1_inputs: list[Path] = [m1_root / "asset_registry_report.json"]
+    for asset in assets:
+        m1_inputs.append(m1_root / f"{asset.asset_id}_inspection.json")
+        m1_inputs.append(m1_root / f"{asset.asset_id}_keyframes.json")
+    cache_state = _build_input_cache_state(
+        "m2",
+        manifest_path,
+        assets,
+        root,
+        {
+            "m1_report_dir": str(m1_root),
+            "max_packets": int(max_packets),
+            "max_rays_per_packet": int(max_rays_per_packet),
+        },
+        extra_paths=m1_inputs,
+    )
+    cache_path = output_path / DEFAULT_CACHE_STATE_NAME
+    cache_outputs = [registry_path, *report_paths.values()]
+    if not force and _cache_hit(cache_path, cache_state, cache_outputs):
+        return {
+            "registry_report": registry_path,
+            "measured_reference_reports": report_paths,
+            "reports": [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in report_paths.values()
+            ],
+            "cache_status": "hit",
+        }
     reports: list[dict[str, Any]] = []
-    report_paths: dict[str, Path] = {}
 
     for asset in assets:
         if asset.track_type is TrackType.REFERENCE_METRIC:
@@ -189,7 +227,6 @@ def run_m2(
         report_path = output_path / f"{asset.asset_id}_measured_reference_report.json"
         _write_json(report_path, report)
         reports.append(report)
-        report_paths[asset.asset_id] = report_path
 
     registry_report = {
         "manifest_path": str(_resolve_path(Path(manifest_path), root)),
@@ -210,13 +247,14 @@ def run_m2(
             for report in reports
         ],
     }
-    registry_path = output_path / "measured_reference_registry_report.json"
     _write_json(registry_path, registry_report)
+    _write_cache_state(cache_path, cache_state, cache_outputs)
 
     return {
         "registry_report": registry_path,
         "measured_reference_reports": report_paths,
         "reports": reports,
+        "cache_status": "miss",
     }
 
 
@@ -1404,6 +1442,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--m1-report-dir", default=str(DEFAULT_M1_REPORT_DIR))
     parser.add_argument("--max-packets", type=int, default=8)
     parser.add_argument("--max-rays-per-packet", type=int, default=2048)
+    parser.add_argument("--force", action="store_true", help="ignore the input cache")
     args = parser.parse_args(argv)
 
     result = run_m2(
@@ -1412,10 +1451,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         m1_report_dir=args.m1_report_dir,
         max_packets=args.max_packets,
         max_rays_per_packet=args.max_rays_per_packet,
+        force=args.force,
     )
     summary = {
         "registry_report": result["registry_report"],
         "measured_reference_reports": result["measured_reference_reports"],
+        "cache_status": result.get("cache_status", "unknown"),
     }
     print(json.dumps(_jsonable(summary), indent=2, sort_keys=True))
     return 0

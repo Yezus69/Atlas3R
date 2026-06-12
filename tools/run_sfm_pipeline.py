@@ -1,6 +1,6 @@
 """Production SfM pipeline: video frames -> loop-closed COLMAP model + MVS
-verified-depth workspaces (production + disjoint-half A/B for the
-perturbation-stability tier).
+verified-depth workspaces. Disjoint-half A/B workspaces for the
+perturbation-stability tier are opt-in with ``--stability-workspaces``.
 
 One tool for the chain that was previously hand-run per scene (measured
 across Phases 8-14, docs/band_obstacle_recall_evidence.md):
@@ -13,10 +13,11 @@ across Phases 8-14, docs/band_obstacle_recall_evidence.md):
   3. incremental mapper (pinned measured intrinsics, BA refine off -- the
      oracle recipe; or SIMPLE_RADIAL self-calibration for unknown cameras,
      BA refine on -- the internet-video path) -> largest model, TXT;
-  4. undistort -> photometric PatchMatch for ALL staged frames (the reusable
-     substrate) -> geometric pass for KEYFRAMES only (~2 s/keyframe marginal,
+  4. undistort -> photometric PatchMatch for ALL staged frames by default
+     (the reusable substrate; ``--photometric-scope keyframes-sources`` narrows
+     iteration runs) -> geometric pass for KEYFRAMES only (~2 s/keyframe marginal,
      identical verified coverage to a full run -- Phase 11);
-  5. A/B workspaces from disjoint temporal source halves (Phase 12) ->
+  5. optional A/B workspaces from disjoint temporal source halves (Phase 12) ->
      geometric passes, feeding run_mvs_depth_backend --stability-*.
 
 Downstream (unchanged): tools/run_colmap_pose_backend.py on
@@ -88,6 +89,28 @@ def write_keyframe_cfg(dense: Path, ref_names: list[str], all_names: list[str],
     (dense / "stereo/patch-match.cfg").write_text("\n".join(lines) + "\n")
 
 
+def keyframe_source_names(ref_names: list[str], all_names: list[str], n: int = 20) -> list[str]:
+    name_idx = {name: i for i, name in enumerate(all_names)}
+    keep = set(ref_names)
+    for name in ref_names:
+        if name not in name_idx:
+            continue
+        i = name_idx[name]
+        ranked = sorted(range(len(all_names)), key=lambda j: abs(j - i))[1:n + 1]
+        keep.update(all_names[j] for j in ranked)
+    return sorted(keep)
+
+
+def write_photometric_scope_cfg(dense: Path, ref_names: list[str], all_names: list[str]) -> int:
+    scoped = keyframe_source_names(ref_names, all_names)
+    lines = []
+    for name in scoped:
+        lines.append(name)
+        lines.append("__auto__, 20")
+    (dense / "stereo/patch-match.cfg").write_text("\n".join(lines) + "\n")
+    return len(scoped)
+
+
 def stage_ab_workspace(dense: Path, variant_dir: Path) -> None:
     """A/B workspace = images + sparse model + the photometric substrate."""
     if variant_dir.exists():
@@ -119,6 +142,17 @@ def main() -> int:
                         help="default runs/_diag/colmap_work/<asset>_sfm")
     parser.add_argument("--gpu", default="1")
     parser.add_argument("--seq-overlap", type=int, default=15)
+    parser.add_argument(
+        "--stability-workspaces",
+        action="store_true",
+        help="build disjoint-half dense_pa/dense_pb workspaces for the stability tier",
+    )
+    parser.add_argument(
+        "--photometric-scope",
+        choices=("all", "keyframes-sources"),
+        default="all",
+        help="photometric PatchMatch scope; default preserves the full substrate",
+    )
     args = parser.parse_args()
 
     if args.camera_mode == "pinned" and not args.camera_params:
@@ -197,12 +231,16 @@ def main() -> int:
     # failures, Phase 21 + phone_room_loop): dense costs ~16 MB/registered
     # frame at 720p, and the A/B stability workspaces copy the photometric
     # substrate twice more. Failing here loses minutes; mid-MVS, an hour.
-    need_bytes = int(registered * 16e6 * 3.2)
+    disk_multiplier = 3.2 if args.stability_workspaces else 1.2
+    need_bytes = int(registered * 16e6 * disk_multiplier)
     free_bytes = shutil.disk_usage(work).free
     if free_bytes < need_bytes:
         raise RuntimeError(
             f"insufficient disk for dense stage: ~{need_bytes / 1e9:.1f} GB needed "
-            f"({registered} registered frames x ~16 MB x 3.2 for dense + A/B + headroom), "
+            f"({registered} registered frames x ~16 MB x {disk_multiplier:.1f} "
+            "for dense"
+            + (" + A/B" if args.stability_workspaces else "")
+            + " + headroom), "
             f"{free_bytes / 1e9:.1f} GB free. Purge superseded workspaces "
             f"(stereo/ subdirs of old runs/_diag/colmap_work/* are regenerable) and rerun."
         )
@@ -212,24 +250,30 @@ def main() -> int:
          "--input_path", model, "--output_path", dense,
          "--output_type", "COLMAP", "--max_image_size", "2000"], log, "image_undistorter")
 
-    # Photometric substrate for ALL staged frames (sources need it), then
-    # geometric verification for keyframes only.
+    # Photometric substrate, then geometric verification for keyframes only.
+    undist_names = sorted(p.name for p in (dense / "images").glob("*"))
+    photometric_step = "patch_match_photometric_all"
+    if args.photometric_scope == "keyframes-sources":
+        scoped_count = write_photometric_scope_cfg(dense, ref_names, undist_names)
+        photometric_step = f"patch_match_photometric_keyframes_sources:{scoped_count}"
     run([COLMAP, "patch_match_stereo", "--workspace_path", dense,
          "--workspace_format", "COLMAP", "--PatchMatchStereo.max_image_size", "2000",
-         "--PatchMatchStereo.geom_consistency", "false"], log, "patch_match_photometric_all")
-    undist_names = sorted(p.name for p in (dense / "images").glob("*"))
+         "--PatchMatchStereo.geom_consistency", "false"], log, photometric_step)
     write_keyframe_cfg(dense, ref_names, undist_names, parity=None)
     run([COLMAP, "patch_match_stereo", "--workspace_path", dense,
          "--workspace_format", "COLMAP", "--PatchMatchStereo.max_image_size", "2000",
          "--PatchMatchStereo.geom_consistency", "true"], log, "patch_match_geometric_keyframes")
 
-    for variant, parity in (("dense_pa", 0), ("dense_pb", 1)):
-        vdir = work / variant
-        stage_ab_workspace(dense, vdir)
-        write_keyframe_cfg(vdir, ref_names, undist_names, parity=parity)
-        run([COLMAP, "patch_match_stereo", "--workspace_path", vdir,
-             "--workspace_format", "COLMAP", "--PatchMatchStereo.max_image_size", "2000",
-             "--PatchMatchStereo.geom_consistency", "true"], log, f"patch_match_{variant}")
+    stability_workspaces = []
+    if args.stability_workspaces:
+        for variant, parity in (("dense_pa", 0), ("dense_pb", 1)):
+            vdir = work / variant
+            stage_ab_workspace(dense, vdir)
+            write_keyframe_cfg(vdir, ref_names, undist_names, parity=parity)
+            run([COLMAP, "patch_match_stereo", "--workspace_path", vdir,
+                 "--workspace_format", "COLMAP", "--PatchMatchStereo.max_image_size", "2000",
+                 "--PatchMatchStereo.geom_consistency", "true"], log, f"patch_match_{variant}")
+            stability_workspaces.append(str(vdir.relative_to(ROOT)))
 
     report = {
         "status": "ok",
@@ -241,15 +285,21 @@ def main() -> int:
         "model_count": len(models),
         "sparse_model": str(model.relative_to(ROOT)),
         "dense_workspace": str(dense.relative_to(ROOT)),
-        "stability_workspaces": [str((work / v).relative_to(ROOT)) for v in ("dense_pa", "dense_pb")],
+        "stability_workspaces": stability_workspaces,
+        "stability_workspaces_enabled": bool(args.stability_workspaces),
+        "photometric_scope": args.photometric_scope,
         "steps": log,
         "next_commands": [
             f"python tools/run_colmap_pose_backend.py --asset-id {args.asset_id} "
             f"--colmap-model {model.relative_to(ROOT).as_posix()}",
             f"python tools/run_mvs_depth_backend.py --asset-id {args.asset_id} "
             f"--dense-workspace {dense.relative_to(ROOT).as_posix()} "
-            f"--stability-workspace-a {(work / 'dense_pa').relative_to(ROOT).as_posix()} "
-            f"--stability-workspace-b {(work / 'dense_pb').relative_to(ROOT).as_posix()}"
+            + (
+                f"--stability-workspace-a {(work / 'dense_pa').relative_to(ROOT).as_posix()} "
+                f"--stability-workspace-b {(work / 'dense_pb').relative_to(ROOT).as_posix()} "
+                if args.stability_workspaces
+                else ""
+            )
             + (" --source-sparse-model " + model.relative_to(ROOT).as_posix()
                if args.camera_mode == "self-calibrate" else ""),
         ],

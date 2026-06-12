@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from collections.abc import Mapping, Sequence
@@ -22,6 +23,7 @@ from .contracts import (
 
 DEFAULT_MANIFEST_PATH = Path("config/canonical_assets.json")
 DEFAULT_OUTPUT_DIR = Path("runs/m1")
+DEFAULT_CACHE_STATE_NAME = ".cache_state.json"
 CANONICAL_ASSET_IDS = ("reference_metric", "phone_room")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}
@@ -101,12 +103,50 @@ def run_m1(
     repo_root: str | Path | None = None,
     max_samples: int = 64,
     max_keyframes: int = 8,
+    force: bool = False,
 ) -> dict[str, Any]:
     root = Path.cwd() if repo_root is None else Path(repo_root)
     output_path = _resolve_path(Path(output_dir), root)
     output_path.mkdir(parents=True, exist_ok=True)
 
     assets = load_canonical_assets(manifest_path, repo_root=root)
+    registry_path = output_path / "asset_registry_report.json"
+    inspection_paths = {
+        asset.asset_id: output_path / f"{asset.asset_id}_inspection.json"
+        for asset in assets
+    }
+    keyframe_paths = {
+        asset.asset_id: output_path / f"{asset.asset_id}_keyframes.json"
+        for asset in assets
+    }
+    cache_state = _build_input_cache_state(
+        "m1",
+        manifest_path,
+        assets,
+        root,
+        {
+            "max_samples": int(max_samples),
+            "max_keyframes": int(max_keyframes),
+        },
+    )
+    cache_path = output_path / DEFAULT_CACHE_STATE_NAME
+    cache_outputs = [registry_path, *inspection_paths.values(), *keyframe_paths.values()]
+    if not force and _cache_hit(cache_path, cache_state, cache_outputs):
+        return {
+            "registry_report": registry_path,
+            "inspection_reports": inspection_paths,
+            "keyframe_reports": keyframe_paths,
+            "assets": assets,
+            "inspections": tuple(
+                VideoInspectionReport(**json.loads(path.read_text(encoding="utf-8")))
+                for path in inspection_paths.values()
+            ),
+            "keyframe_proposals": tuple(
+                KeyframeProposal(**json.loads(path.read_text(encoding="utf-8")))
+                for path in keyframe_paths.values()
+            ),
+            "cache_status": "hit",
+        }
     registry_assets = []
     inspections = []
     proposals = []
@@ -129,21 +169,17 @@ def run_m1(
         "report_dir": str(output_path),
         "assets": [_asset_registry_row(asset, report, proposal) for asset, report, proposal in zip(registry_assets, inspections, proposals)],
     }
-    _write_json(output_path / "asset_registry_report.json", registry_report)
+    _write_json(registry_path, registry_report)
+    _write_cache_state(cache_path, cache_state, cache_outputs)
 
     return {
-        "registry_report": output_path / "asset_registry_report.json",
-        "inspection_reports": {
-            report.asset_id: output_path / f"{report.asset_id}_inspection.json"
-            for report in inspections
-        },
-        "keyframe_reports": {
-            proposal.asset_id: output_path / f"{proposal.asset_id}_keyframes.json"
-            for proposal in proposals
-        },
+        "registry_report": registry_path,
+        "inspection_reports": inspection_paths,
+        "keyframe_reports": keyframe_paths,
         "assets": registry_assets,
         "inspections": inspections,
         "keyframe_proposals": proposals,
+        "cache_status": "miss",
     }
 
 
@@ -899,6 +935,121 @@ def _resolve_path(path: Path, repo_root: Path) -> Path:
     return path if path.is_absolute() else repo_root / path
 
 
+def _build_input_cache_state(
+    module: str,
+    manifest_path: str | Path,
+    assets: Sequence[VideoAsset],
+    root: Path,
+    params: Mapping[str, Any],
+    extra_paths: Sequence[str | Path] = (),
+) -> dict[str, Any]:
+    inputs = {
+        "module": module,
+        "version": 1,
+        "manifest": _file_fingerprint(_resolve_path(Path(manifest_path), root), root),
+        "params": _jsonable(params),
+        "assets": [
+            {
+                "manifest_entry": _jsonable(asset),
+                "source": _asset_source_fingerprint(asset, root),
+            }
+            for asset in assets
+        ],
+        "extra_paths": [
+            _path_fingerprint(_resolve_path(Path(path), root), root)
+            for path in extra_paths
+        ],
+    }
+    encoded = json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {
+        "module": module,
+        "version": 1,
+        "signature": hashlib.sha256(encoded).hexdigest(),
+        "inputs": inputs,
+    }
+
+
+def _cache_hit(cache_path: Path, state: Mapping[str, Any], outputs: Sequence[Path]) -> bool:
+    if not cache_path.exists() or not all(path.exists() for path in outputs):
+        return False
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return (
+        cached.get("version") == state.get("version")
+        and cached.get("signature") == state.get("signature")
+    )
+
+
+def _write_cache_state(
+    cache_path: Path,
+    state: Mapping[str, Any],
+    outputs: Sequence[Path],
+) -> None:
+    payload = {
+        **dict(state),
+        "outputs": [str(path) for path in outputs],
+    }
+    _write_json(cache_path, payload)
+
+
+def _path_fingerprint(path: Path | None, root: Path) -> dict[str, Any]:
+    if path is None:
+        return {"status": "unsupported_or_remote"}
+    resolved = _resolve_path(path, root)
+    if not resolved.exists():
+        return {
+            "path": _display_path(resolved, root),
+            "exists": False,
+        }
+    if resolved.is_file():
+        return _file_fingerprint(resolved, root)
+    st = resolved.stat()
+    return {
+        "path": _display_path(resolved, root),
+        "exists": True,
+        "type": "dir",
+        "size": int(st.st_size),
+        "mtime_ns": int(st.st_mtime_ns),
+    }
+
+
+def _asset_source_fingerprint(asset: VideoAsset, root: Path) -> dict[str, Any]:
+    resolved = _resolve_asset_source(asset, root)
+    base = _path_fingerprint(resolved, root)
+    frame_glob = asset.metadata.get("frame_glob")
+    if resolved is not None and resolved.exists() and resolved.is_dir() and frame_glob:
+        glob_parent = Path(str(frame_glob)).parent
+        frame_dir = resolved if str(glob_parent) == "." else resolved / glob_parent
+        base = {
+            **base,
+            "frame_glob": str(frame_glob),
+            "frame_dir": _path_fingerprint(frame_dir, root),
+        }
+    return base
+
+
+def _file_fingerprint(path: Path, root: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"path": _display_path(path, root), "exists": False}
+    st = path.stat()
+    return {
+        "path": _display_path(path, root),
+        "exists": True,
+        "type": "file",
+        "size": int(st.st_size),
+        "mtime_ns": int(st.st_mtime_ns),
+    }
+
+
+def _display_path(path: Path, root: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def _write_json(path: Path, value: Any) -> None:
     path.write_text(
         json.dumps(_jsonable(value), indent=2, sort_keys=True) + "\n",
@@ -940,6 +1091,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--max-samples", type=int, default=64)
     parser.add_argument("--max-keyframes", type=int, default=8)
+    parser.add_argument("--force", action="store_true", help="ignore the input cache")
     args = parser.parse_args(argv)
 
     result = run_m1(
@@ -947,11 +1099,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output_dir,
         max_samples=args.max_samples,
         max_keyframes=args.max_keyframes,
+        force=args.force,
     )
     summary = {
         "registry_report": result["registry_report"],
         "inspection_reports": result["inspection_reports"],
         "keyframe_reports": result["keyframe_reports"],
+        "cache_status": result.get("cache_status", "unknown"),
     }
     print(json.dumps(_jsonable(summary), indent=2, sort_keys=True))
     return 0

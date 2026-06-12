@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 import traceback
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
@@ -68,6 +69,7 @@ def run_teacher(
     m1_dir: str | Path = DEFAULT_M1_DIR,
     m2_dir: str | Path = DEFAULT_M2_DIR,
     assets: str | Sequence[str] | None = None,
+    emit_stage_timings: bool = False,
 ) -> dict[str, Any]:
     root_path = Path.cwd() if root is None else Path(root)
     output_path = _resolve_path(Path(output_dir), root_path)
@@ -118,6 +120,7 @@ def run_teacher(
             m2_dir=m2_dir,
             output_dir=output_path,
             envelope=envelope,
+            emit_stage_timings=emit_stage_timings,
         )
         report_path = output_path / f"{asset.asset_id}_teacher_report.json"
         _write_json(report_path, track_report)
@@ -179,6 +182,7 @@ def _run_track(
     m2_dir: str | Path,
     output_dir: Path,
     envelope: RobotEnvelopeConfig,
+    emit_stage_timings: bool = False,
 ) -> dict[str, Any]:
     asset_id = asset.asset_id
     is_reference = asset.track_type is TrackType.REFERENCE_METRIC
@@ -206,11 +210,15 @@ def _run_track(
         "final_category": "rejected",
         "exact_blockers": [],
     }
+    stage_timings: list[dict[str, Any]] | None = [] if emit_stage_timings else None
+    if stage_timings is not None:
+        report["stage_timings"] = stage_timings
 
     # (a) asset availability from M1
     availability = _stage(
         blockers, "asset_availability",
         lambda: _asset_availability(asset_id, root, m1_dir),
+        timings=stage_timings,
     )
     report["asset_availability"] = availability
 
@@ -219,6 +227,7 @@ def _run_track(
     measured_status = _stage(
         blockers, "measured_reference",
         lambda: _load_measured(asset_id, root, m2_dir) if is_reference else _not_applicable("not_reference_metric_track"),
+        timings=stage_timings,
     )
     if isinstance(measured_status, Mapping) and measured_status.get("status") == "loaded":
         measured_packets = list(measured_status.get("_packets", []))
@@ -228,6 +237,7 @@ def _run_track(
     geometry_status = _stage(
         blockers, "geometry_source",
         lambda: _load_geometry(asset_id, root, artifacts_dir),
+        timings=stage_timings,
     )
     monocular_packets = list(geometry_status.get("_packets", [])) if isinstance(geometry_status, Mapping) else []
     geometry_soft_evidence = geometry_status.get("_scale_evidence", []) if isinstance(geometry_status, Mapping) else []
@@ -251,6 +261,7 @@ def _run_track(
         refine_result = _stage(
             blockers, "refine_monocular",
             lambda: _refine(monocular_packets, fix_global_scale=monocular_has_metric_prior),
+            timings=stage_timings,
         )
         if isinstance(refine_result, Mapping):
             refined_monocular = refine_result.get("_packets", monocular_packets)
@@ -264,6 +275,7 @@ def _run_track(
         sd_result = _stage(
             blockers, "static_dynamic",
             lambda: _static_dynamic(refined_monocular, asset_id, root, artifacts_dir),
+            timings=stage_timings,
         )
         if isinstance(sd_result, Mapping):
             static_dynamic_states = sd_result.get("_states", [])
@@ -275,6 +287,7 @@ def _run_track(
     visibility_report = _stage(
         blockers, "visibility_residual",
         lambda: _visibility(candidate_packets) if candidate_packets else {"status": "blocked_no_packets", "blockers": ("no_candidate_packets_for_visibility",)},
+        timings=stage_timings,
     )
     report["visibility_residual_status"] = _strip_private(visibility_report)
 
@@ -287,6 +300,7 @@ def _run_track(
         lambda: _epipolar_audit_summary(candidate_packets, asset_id, root)
         if candidate_packets
         else {"status": "blocked_no_packets", "authority": "none"},
+        timings=stage_timings,
     )
 
     # Plane-ledger rigid-world drift audit (REPORTAGE ONLY: world-frame
@@ -298,6 +312,7 @@ def _run_track(
         lambda: _plane_ledger_summary(candidate_packets)
         if candidate_packets
         else {"status": "blocked_no_packets", "authority": "none"},
+        timings=stage_timings,
     )
 
     council_result = _stage(
@@ -311,6 +326,7 @@ def _run_track(
             "blockers": ("no_candidate_packets_for_metric_anchor_council",),
             "_scale_evidence": [],
         },
+        timings=stage_timings,
     )
     council_scale_evidence = (
         list(council_result.get("_scale_evidence", []))
@@ -330,6 +346,7 @@ def _run_track(
     report["injected_corruption_detection_limit"] = _stage(
         blockers, "detection_limit_certificate",
         lambda: _detection_limit_summary(asset_id, root),
+        timings=stage_timings,
     )
 
     # ------------------------------------------------------------------
@@ -356,6 +373,7 @@ def _run_track(
             blockers=blockers,
             label="measured_baseline",
             envelope=envelope,
+            stage_timings=stage_timings,
         )
         measured_comparison_field = baseline_result.get("_comparison_field")
 
@@ -385,6 +403,7 @@ def _run_track(
         prerefine_p90=_prerefine_p90(refine_report),
         measured_comparison_field=measured_comparison_field,
         measured_packets_for_band=(measured_packets if (is_reference and measured_packets) else None),
+        stage_timings=stage_timings,
     )
 
     # Honest comparison of the monocular candidate against the measured baseline.
@@ -480,6 +499,7 @@ def _run_pipeline(
     prerefine_p90: float | None = None,
     measured_comparison_field: Any = None,
     measured_packets_for_band: Sequence[Any] | None = None,
+    stage_timings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run scale -> map(per-voxel class) -> export -> visual proof -> validation.
 
@@ -503,6 +523,7 @@ def _run_pipeline(
     scale_result = _stage(
         local_blockers, f"{label}_scale_posterior",
         lambda: _scale(packets, scale_evidence) if packets else {"status": "blocked_no_packets", "blockers": ("no_packets_for_scale",)},
+        timings=stage_timings,
     )
     scale_posterior = scale_result.get("_posterior") if isinstance(scale_result, Mapping) else None
     provenance_label = _provenance_from_packets(packets, scale_posterior)
@@ -548,6 +569,7 @@ def _run_pipeline(
             metric_packets, scale_posterior, static_dynamic_states, envelope,
             apply_fusion_policy, camera_up_prior,
         ),
+        timings=stage_timings,
     )
     voxel_map = map_result.get("_voxel_map") if isinstance(map_result, Mapping) else None
     occupancy_grid = map_result.get("_grid") if isinstance(map_result, Mapping) else None
@@ -574,7 +596,14 @@ def _run_pipeline(
             asset_id, metric_packets, voxel_map, occupancy_grid, voxel_3d,
             static_dynamic_states, scale_posterior, out_dir, map_report,
         ),
+        timings=stage_timings,
     )
+    if isinstance(export_result, Mapping):
+        artifacts = export_result.setdefault("artifacts", {})
+        if isinstance(artifacts, dict):
+            artifacts["comparison_field"] = _write_comparison_field_artifact(
+                out_dir, comparison_field
+            )
     result["export_artifacts"] = _strip_private(export_result) if isinstance(export_result, Mapping) else export_result
 
     # VISUAL PROOF (top-down + per-channel PNG + index.md).
@@ -586,6 +615,7 @@ def _run_pipeline(
             report_path, export_result if isinstance(export_result, Mapping) else {},
             voxel_3d,
         ),
+        timings=stage_timings,
     )
     result["visual_proof"] = visual_result
 
@@ -601,6 +631,7 @@ def _run_pipeline(
             band3d_agreement,
             prerefine_p90,
         ),
+        timings=stage_timings,
     )
     final_category = validation_result.get("final_category", "rejected") if isinstance(validation_result, Mapping) else "rejected"
     result["validation_status"] = _strip_private(validation_result)
@@ -619,17 +650,33 @@ def _run_pipeline(
 # ---------------------------------------------------------------------------
 
 
-def _stage(blockers: list[str], name: str, fn) -> Any:
+def _stage(
+    blockers: list[str],
+    name: str,
+    fn,
+    *,
+    timings: list[dict[str, Any]] | None = None,
+) -> Any:
+    t0 = time.perf_counter()
+    result: Any
     try:
-        return fn()
+        result = fn()
     except Exception as exc:  # robust: a stage failure must not crash the run
         blockers.append(f"{name}_stage_exception:{type(exc).__name__}")
-        return {
+        result = {
             "status": f"{name}_stage_exception",
             "error": str(exc),
             "traceback": traceback.format_exc(limit=4),
             "blockers": (f"{name}_stage_exception",),
         }
+    if timings is not None:
+        entry = {"stage": name, "seconds": round(time.perf_counter() - t0, 3)}
+        if isinstance(result, Mapping):
+            entry["status"] = str(result.get("status", "ok"))
+        else:
+            entry["status"] = type(result).__name__
+        timings.append(entry)
+    return result
 
 
 def _asset_availability(asset_id: str, root: Path, m1_dir: str | Path) -> dict[str, Any]:
@@ -1041,6 +1088,53 @@ def _export(
         voxel_occupancy_3d=voxel_occupancy_3d,
         floor_align_rotation=map_report.get("floor_align_rotation") if isinstance(map_report, Mapping) else None,
     )
+
+
+def _write_comparison_field_artifact(
+    out_dir: Path,
+    comparison_field: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    path = out_dir / "comparison_field.npz"
+    if not comparison_field:
+        return {
+            "status": "blocked",
+            "reason": "no_comparison_field_to_export",
+            "path": str(path),
+        }
+    try:
+        import numpy as np  # lazy
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        arrays = {
+            "class": np.asarray(comparison_field["class"], dtype=np.int8),
+            "touched": np.asarray(comparison_field["touched"], dtype=bool),
+            "origin": np.asarray(comparison_field["origin"], dtype=np.float64),
+            "voxel": np.asarray(float(comparison_field["voxel"])),
+            "dims": np.asarray(comparison_field["dims"], dtype=np.int64),
+            "floor_axis": np.asarray(int(comparison_field["floor_axis"])),
+            "band_min_m": np.asarray(float(comparison_field["band_min_m"])),
+            "band_max_m": np.asarray(float(comparison_field["band_max_m"])),
+            "floor_normal": np.asarray(
+                comparison_field.get("floor_normal", (0.0, 0.0, 1.0)),
+                dtype=np.float64,
+            ),
+            "R_up": np.asarray(comparison_field.get("R_up", np.eye(3)), dtype=np.float64),
+            "up_aligned": np.asarray(bool(comparison_field.get("up_aligned", False))),
+            "alignment_path": np.asarray(str(comparison_field.get("alignment_path", "none"))),
+        }
+        np.savez_compressed(str(path), **arrays)
+    except Exception as exc:  # noqa: BLE001 - diagnostic artifact must not crash teacher
+        return {
+            "status": "blocked",
+            "reason": "comparison_field_export_failed",
+            "error": str(exc),
+            "path": str(path),
+        }
+    return {
+        "status": "written",
+        "path": str(path),
+        "size_bytes": path.stat().st_size if path.exists() else 0,
+    }
 
 
 def _visual_proof(
@@ -1791,6 +1885,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="comma-separated asset ids to run after manifest load (default: all)",
     )
+    parser.add_argument(
+        "--emit-stage-timings",
+        action="store_true",
+        help="include non-deterministic per-stage wall-clock seconds in each report",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -1801,6 +1900,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             m1_dir=args.m1_dir,
             m2_dir=args.m2_dir,
             assets=args.assets,
+            emit_stage_timings=args.emit_stage_timings,
         )
     except ValueError as exc:
         parser.error(str(exc))

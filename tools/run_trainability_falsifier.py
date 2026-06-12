@@ -19,6 +19,7 @@ Pure measurement: GT never touches the candidate path; nothing is tuned.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -29,15 +30,6 @@ sys.path.insert(0, str(ROOT / "src"))
 import numpy as np  # noqa: E402
 
 from atlas3r import teacher as T  # noqa: E402
-from atlas3r.config import load_robot_envelope  # noqa: E402
-from atlas3r.geometry_adapter import (  # noqa: E402
-    load_geometry_artifacts,
-    load_measured_packets_from_m2,
-)
-from atlas3r.mapping import fuse_static_map  # noqa: E402
-from atlas3r.refine import refine_scene  # noqa: E402
-from atlas3r.scale import estimate_scale_posterior  # noqa: E402
-from atlas3r.static_dynamic import infer_static_dynamic  # noqa: E402
 
 SPF = 4096
 FREE, OCC, MOV = 0, 1, 2
@@ -51,6 +43,12 @@ SCENES = [
 
 
 def fields_for(asset: str, envelope):
+    from atlas3r.geometry_adapter import load_geometry_artifacts, load_measured_packets_from_m2
+    from atlas3r.mapping import fuse_static_map
+    from atlas3r.refine import refine_scene
+    from atlas3r.scale import estimate_scale_posterior
+    from atlas3r.static_dynamic import infer_static_dynamic
+
     mono, grep = load_geometry_artifacts(asset, ROOT, artifacts_dir="external/teacher_artifacts")
     soft = grep.get("_scale_evidence", [])
     refined, _ = refine_scene(mono, fix_global_scale=bool(soft))
@@ -74,19 +72,125 @@ def fields_for(asset: str, envelope):
     return refined, cand_field, measured, meas_field
 
 
-def analyze(asset: str, role: str, envelope) -> dict:
-    refined, cf, measured, mf = fields_for(asset, envelope)
+def centers_from_packets(packets, field: dict) -> dict[int, np.ndarray]:
+    R_up = np.asarray(field.get("R_up", np.eye(3)), dtype=np.float64)
 
-    # --- alignment, identical math to _band3d_agreement (s=1 variant) ---
-    R_up_c = np.asarray(cf.get("R_up", np.eye(3)), dtype=np.float64)
-    R_up_m = np.asarray(mf.get("R_up", np.eye(3)), dtype=np.float64)
-
-    def center(p):
-        Tm = np.asarray(p.T_world_camera, dtype=np.float64).reshape((4, 4))
+    def center(packet):
+        Tm = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4))
         return Tm[:3, 3]
 
-    cand_by = {int(p.frame_id): R_up_c @ center(p) for p in refined}
-    meas_by = {int(p.frame_id): R_up_m @ center(p) for p in measured}
+    return {int(packet.frame_id): R_up @ center(packet) for packet in packets}
+
+
+def load_trajectory_centers(path: Path) -> dict[int, np.ndarray]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    out = {}
+    for frame in data.get("frames", []):
+        center = frame.get("camera_center_world")
+        if center is None:
+            Tm = np.asarray(frame["T_world_camera"], dtype=np.float64).reshape((4, 4))
+            center = Tm[:3, 3]
+        out[int(frame["frame_id"])] = np.asarray(center, dtype=np.float64)
+    return out
+
+
+def load_comparison_field(run_dir: Path) -> dict:
+    comparison = run_dir / "comparison_field.npz"
+    if comparison.exists():
+        with np.load(comparison, allow_pickle=False) as z:
+            return {
+                "class": np.asarray(z["class"], dtype=np.int8),
+                "touched": np.asarray(z["touched"], dtype=bool),
+                "origin": np.asarray(z["origin"], dtype=np.float64),
+                "voxel": float(np.asarray(z["voxel"]).item()),
+                "dims": tuple(int(v) for v in np.asarray(z["dims"]).tolist()),
+                "floor_axis": int(np.asarray(z["floor_axis"]).item()),
+                "band_min_m": float(np.asarray(z["band_min_m"]).item()),
+                "band_max_m": float(np.asarray(z["band_max_m"]).item()),
+                "floor_normal": tuple(float(v) for v in np.asarray(z["floor_normal"]).tolist()),
+                "R_up": np.asarray(z["R_up"], dtype=np.float64),
+                "up_aligned": bool(np.asarray(z["up_aligned"]).item()),
+                "alignment_path": str(np.asarray(z["alignment_path"]).item()),
+            }
+
+    exported = run_dir / "voxel_occupancy_3d.npz"
+    if not exported.exists():
+        raise FileNotFoundError(f"missing comparison field export under {run_dir}")
+    with np.load(exported, allow_pickle=False) as z:
+        p_free = np.asarray(z["P_free"], dtype=np.float64)
+        p_occ = np.asarray(z["P_occupied_static"], dtype=np.float64)
+        p_mov = np.asarray(z["P_movable_static"], dtype=np.float64)
+        p_dyn = np.asarray(z["P_dynamic"], dtype=np.float64)
+        surf = p_occ + p_mov + p_dyn
+        surf_pos = surf > 0.0
+        free_only = (~surf_pos) & (p_free > 0.0)
+        surf_cls = np.where(
+            (p_occ >= p_mov) & (p_occ >= p_dyn),
+            OCC,
+            np.where(p_mov >= p_dyn, MOV, 3),
+        )
+        cls = np.full(p_free.shape, 4, dtype=np.int8)
+        cls = np.where(free_only, np.int8(FREE), cls)
+        cls = np.where(surf_pos, surf_cls.astype(np.int8), cls)
+        return {
+            "class": cls,
+            "touched": surf_pos | (p_free > 0.0),
+            "origin": np.asarray(z["origin_world"], dtype=np.float64),
+            "voxel": float(np.asarray(z["voxel_size_m"]).item()),
+            "dims": tuple(int(v) for v in p_free.shape),
+            "floor_axis": int(np.asarray(z["floor_axis"]).item()),
+            "band_min_m": float(np.asarray(z["band_min_m"]).item()),
+            "band_max_m": float(np.asarray(z["band_max_m"]).item()),
+            "floor_normal": (0.0, 0.0, 1.0),
+            "R_up": np.eye(3),
+            "up_aligned": False,
+            "alignment_path": "band_export_fallback",
+        }
+
+
+def find_asset_run_dir(asset: str, teacher_dirs: list[Path]) -> Path:
+    for teacher_dir in teacher_dirs:
+        candidate = teacher_dir / asset
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        f"missing teacher export for {asset} in "
+        + ", ".join(str(path) for path in teacher_dirs)
+    )
+
+
+def analyze_from_exports(asset: str, role: str, teacher_dirs: list[Path]) -> dict:
+    asset_dir = find_asset_run_dir(asset, teacher_dirs)
+    measured_dir = asset_dir / "measured_baseline"
+    cf = load_comparison_field(asset_dir)
+    mf = load_comparison_field(measured_dir)
+    cand_by = load_trajectory_centers(asset_dir / "camera_trajectory.json")
+    meas_by = load_trajectory_centers(measured_dir / "camera_trajectory.json")
+    out = analyze_fields(asset, role, cf, mf, cand_by, meas_by)
+    out["input_source"] = "teacher_exports"
+    out["teacher_export_dir"] = str(asset_dir)
+    return out
+
+
+def analyze_recomputed(asset: str, role: str, envelope) -> dict:
+    refined, cf, measured, mf = fields_for(asset, envelope)
+    cand_by = centers_from_packets(refined, cf)
+    meas_by = centers_from_packets(measured, mf)
+    out = analyze_fields(asset, role, cf, mf, cand_by, meas_by)
+    out["input_source"] = "recomputed"
+    return out
+
+
+def analyze_fields(
+    asset: str,
+    role: str,
+    cf: dict,
+    mf: dict,
+    cand_by: dict[int, np.ndarray],
+    meas_by: dict[int, np.ndarray],
+) -> dict:
+
+    # --- alignment, identical math to _band3d_agreement (s=1 variant) ---
     common = sorted(set(cand_by) & set(meas_by))
     if len(common) < 3:
         return {"asset": asset, "status": "insufficient_overlap"}
@@ -197,10 +301,53 @@ def analyze(asset: str, role: str, envelope) -> dict:
     return out
 
 
-def main():
-    envelope, _prov = load_robot_envelope(root=ROOT)
-    results = [analyze(a, role, envelope) for a, role in SCENES]
-    out_path = ROOT / "runs/_diag/trainability_falsifier_results.json"
+def main(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--teacher-dir", default="runs/teacher")
+    parser.add_argument(
+        "--fallback-teacher-dir",
+        action="append",
+        default=[],
+        help="additional teacher export root to search for scenes missing from --teacher-dir",
+    )
+    parser.add_argument(
+        "--out-path",
+        default="runs/_diag/trainability_falsifier_results.json",
+    )
+    parser.add_argument("--recompute", action="store_true")
+    parser.add_argument(
+        "--recompute-missing",
+        action="store_true",
+        help="fall back to the slow reconstruction path if teacher exports are missing",
+    )
+    args = parser.parse_args(argv)
+
+    teacher_dirs = [ROOT / args.teacher_dir] + [ROOT / p for p in args.fallback_teacher_dir]
+    results = []
+    envelope = None
+    for asset, role in SCENES:
+        if args.recompute:
+            if envelope is None:
+                from atlas3r.config import load_robot_envelope
+
+                envelope, _prov = load_robot_envelope(root=ROOT)
+            results.append(analyze_recomputed(asset, role, envelope))
+            continue
+        try:
+            results.append(analyze_from_exports(asset, role, teacher_dirs))
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            if not args.recompute_missing:
+                raise
+            if envelope is None:
+                from atlas3r.config import load_robot_envelope
+
+                envelope, _prov = load_robot_envelope(root=ROOT)
+            out = analyze_recomputed(asset, role, envelope)
+            out["export_fallback_reason"] = str(exc)
+            results.append(out)
+
+    out_path = ROOT / args.out_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(json.dumps(results, indent=2))
 
