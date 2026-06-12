@@ -193,6 +193,20 @@ def main() -> int:
     registered = sum(1 for line in (model / "images.txt").read_text().splitlines()
                      if line.strip() and not line.startswith("#") and line.split()[0].isdigit())
 
+    # Pre-flight disk check before the dense stage (lesson from two ENOSPC
+    # failures, Phase 21 + phone_room_loop): dense costs ~16 MB/registered
+    # frame at 720p, and the A/B stability workspaces copy the photometric
+    # substrate twice more. Failing here loses minutes; mid-MVS, an hour.
+    need_bytes = int(registered * 16e6 * 3.2)
+    free_bytes = shutil.disk_usage(work).free
+    if free_bytes < need_bytes:
+        raise RuntimeError(
+            f"insufficient disk for dense stage: ~{need_bytes / 1e9:.1f} GB needed "
+            f"({registered} registered frames x ~16 MB x 3.2 for dense + A/B + headroom), "
+            f"{free_bytes / 1e9:.1f} GB free. Purge superseded workspaces "
+            f"(stereo/ subdirs of old runs/_diag/colmap_work/* are regenerable) and rerun."
+        )
+
     dense = work / "dense"
     run([COLMAP, "image_undistorter", "--image_path", work / "imgs",
          "--input_path", model, "--output_path", dense,

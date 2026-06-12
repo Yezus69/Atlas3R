@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Atlas3R Teacher Honesty Viewer</title>
+<style>
+:root{
+  --bg:#14161a; --panel:#1d2026; --panel2:#23262e; --edge:#34384200;
+  --fg:#d8dce4; --dim:#8b93a3; --warn:#ffb347; --bad:#ff6b6b; --ok:#7ad97a;
+  --accent:#5ab0ff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+  font:13px/1.45 "Segoe UI",system-ui,sans-serif;}
+body{display:flex;flex-direction:column;min-height:100vh}
+h3{margin:8px 0 4px;font-size:13px;color:var(--accent)}
+button{background:#2c313b;color:var(--fg);border:1px solid #3c424e;border-radius:4px;
+  padding:4px 10px;cursor:pointer;font-size:12px}
+button:hover{background:#39404d}
+button.active{background:#2a5d8f;border-color:#5ab0ff}
+select,input[type=text]{background:#2c313b;color:var(--fg);border:1px solid #3c424e;
+  border-radius:4px;padding:3px 6px;font-size:12px;max-width:100%}
+input[type=range]{width:120px;vertical-align:middle}
+label{user-select:none}
+code{background:#262a33;padding:0 4px;border-radius:3px;font-size:12px}
+details{background:var(--panel);border-top:1px solid #2c313b}
+details>summary{cursor:pointer;padding:7px 14px;font-weight:600;color:var(--accent);
+  list-style:none}
+details>summary::before{content:"\25B8  ";color:var(--dim)}
+details[open]>summary::before{content:"\25BE  "}
+.warnbox{background:#3a2c14;border:1px solid #7a5a1e;border-radius:4px;padding:5px 8px;
+  margin:3px 0;color:var(--warn);font-size:12px}
+.badbox{background:#3a1c1c;border:1px solid #7a2e2e;border-radius:4px;padding:5px 8px;
+  margin:3px 0;color:var(--bad);font-size:12px}
+.notebox{background:#1c2a3a;border:1px solid #2e4a7a;border-radius:4px;padding:5px 8px;
+  margin:3px 0;font-size:12px}
+/* banner */
+#banner{background:#181b21;border-bottom:2px solid #3c424e;padding:8px 14px}
+#banner .title{font-size:15px;font-weight:700}
+#banner .title .aid{color:var(--accent)}
+#banner .cls-totals span{margin-right:14px;white-space:nowrap}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;
+  vertical-align:-1px}
+/* main row */
+#main{display:flex;flex-direction:row;height:74vh;min-height:420px}
+#left{width:258px;min-width:258px;overflow-y:auto;background:var(--panel);
+  border-right:1px solid #2c313b;padding:8px 10px}
+#center{flex:1;position:relative;min-width:0;background:#0c0d10}
+#right{width:312px;min-width:312px;overflow-y:auto;background:var(--panel);
+  border-left:1px solid #2c313b;padding:8px 10px}
+#glcanvas{width:100%;height:100%;display:block;cursor:crosshair}
+#glfail{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  text-align:center;padding:40px;font-size:15px;color:var(--bad)}
+/* overlays in 3D view */
+#legend{position:absolute;left:10px;bottom:42px;background:rgba(20,22,26,.88);
+  border:1px solid #3c424e;border-radius:4px;padding:6px 8px;font-size:11px;display:none}
+#legend canvas{display:block;margin:3px 0}
+#scalebarwrap{position:absolute;right:14px;bottom:14px;text-align:center;font-size:11px;
+  color:#fff;text-shadow:0 0 3px #000}
+#scalebar{height:5px;background:#fff;border:1px solid #000;margin-top:2px}
+#measureLabel{position:absolute;display:none;background:rgba(20,40,20,.92);
+  border:1px solid var(--ok);border-radius:4px;padding:4px 8px;font-size:12px;
+  pointer-events:none;white-space:nowrap;color:var(--ok)}
+#hoverTip{position:absolute;display:none;background:rgba(20,22,26,.92);
+  border:1px solid #3c424e;border-radius:4px;padding:2px 7px;font-size:11px;
+  pointer-events:none;white-space:nowrap}
+#viewbtns{position:absolute;top:10px;left:10px;display:flex;gap:6px}
+#modeHint{position:absolute;top:10px;right:10px;font-size:11px;color:var(--dim);
+  background:rgba(20,22,26,.8);padding:3px 8px;border-radius:4px}
+.ctlgroup{border-bottom:1px solid #2c313b;padding:6px 0;margin-bottom:4px}
+.ctlrow{margin:3px 0}
+.kv{width:100%;border-collapse:collapse;font-size:11px}
+.kv td{padding:1px 4px;vertical-align:top;border-bottom:1px solid #262a33}
+.kv td:first-child{color:var(--dim);white-space:nowrap}
+.kv td:last-child{word-break:break-all;font-family:Consolas,monospace}
+/* 2D panel */
+#panel2dBody{display:flex;gap:16px;padding:10px 14px;flex-wrap:wrap}
+#canvas2dwrap{position:relative}
+#canvas2d{image-rendering:pixelated;border:1px solid #3c424e;cursor:crosshair}
+#grid2dOverlay{position:absolute;left:0;top:0;pointer-events:none}
+#readout2d{font-family:Consolas,monospace;font-size:12px;min-height:34px}
+/* report tree */
+#reportBody{padding:10px 14px;max-height:60vh;overflow:auto;font-family:Consolas,monospace;
+  font-size:12px}
+.jt{margin-left:14px}
+.jt-k{color:var(--accent);cursor:pointer}
+.jt-k.leaf{cursor:default}
+.jt-v{color:#c9a866;word-break:break-all;white-space:pre-wrap}
+.jt-t{color:var(--dim);font-style:italic}
+.jt-c{display:none}
+.jt.open>.jt-c{display:block}
+.jt.hidden{display:none}
+/* footer */
+#footer{background:#181b21;border-top:2px solid #3c424e;padding:8px 14px;font-size:12px;
+  color:var(--dim)}
+#footer b{color:var(--fg)}
+.howto li{margin:5px 0}
+#inspectorBody table{width:100%}
+</style>
+</head>
+<body>
+
+<div id="banner">
+  <div class="title">Atlas3R teacher honesty viewer &mdash; asset <span class="aid" id="bAsset"></span>
+    <span style="font-weight:400;color:var(--dim)"> &mdash; shows everything the teacher output; nothing curated, nothing subsampled.</span></div>
+  <div id="bCategory" class="warnbox"></div>
+  <div id="bGridFrame" class="badbox" style="display:none"></div>
+  <div id="bCalib" class="warnbox"></div>
+  <div id="bUnknown" class="notebox"></div>
+  <div class="cls-totals" id="bClassTotals" style="margin-top:4px"></div>
+</div>
+
+<div id="main">
+  <div id="left">
+    <div class="ctlgroup">
+      <h3>Voxel color mode</h3>
+      <select id="colorMode" style="width:100%"></select>
+      <div class="ctlrow" id="threshRow" style="display:none">
+        Threshold &ge; <span id="threshVal">0</span><br>
+        <input type="range" id="thresh" min="0" max="1000" value="0" style="width:200px">
+      </div>
+    </div>
+    <div class="ctlgroup">
+      <h3>Class visibility</h3>
+      <div id="classChecks"></div>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">
+        Only "touched" voxels are drawn (any evidence&gt;0 or class&ne;unknown).
+        Every untouched voxel is exactly the unknown prior &mdash; nothing was dropped.</div>
+    </div>
+    <div class="ctlgroup">
+      <h3>Band slices (axis 1 = height)</h3>
+      slice <span id="sliceLo">0</span>..<span id="sliceHi">10</span><br>
+      min <input type="range" id="sliceMin" min="0" max="10" value="0"><br>
+      max <input type="range" id="sliceMax" min="0" max="10" value="10">
+      <div style="font-size:11px;color:var(--dim)" id="bandNote"></div>
+    </div>
+    <div class="ctlgroup">
+      <h3>Layers</h3>
+      <div class="ctlrow"><label><input type="checkbox" id="togCloud" checked> surface point cloud (RGB)</label></div>
+      <div class="ctlrow"><label><input type="checkbox" id="togMesh"> mesh (flat shaded)</label></div>
+      <div class="ctlrow"><label><input type="checkbox" id="togTraj" checked> camera trajectory <span style="color:var(--dim)">(your walking path)</span></label></div>
+      <div class="ctlrow"><label><input type="checkbox" id="togGrid" checked> 1 m grid + axes</label></div>
+      <div id="meshNote" class="warnbox" style="display:none"></div>
+    </div>
+    <div class="ctlgroup">
+      <h3>Measure</h3>
+      <button id="measureBtn">Measure: OFF</button>
+      <button id="measureClear">clear</button>
+      <div style="font-size:11px;color:var(--dim);margin-top:3px">
+        Click 2 points (snaps to nearest visible voxel center or cloud point).
+        Distance is reported with the &plusmn;1&sigma; scale band.</div>
+    </div>
+    <div class="ctlgroup">
+      <h3>Grid metadata (verbatim)</h3>
+      <table class="kv" id="gridMeta"></table>
+    </div>
+    <div class="ctlgroup">
+      <h3>Trajectory metadata (verbatim)</h3>
+      <table class="kv" id="trajMeta"></table>
+    </div>
+  </div>
+
+  <div id="center">
+    <canvas id="glcanvas"></canvas>
+    <div id="glfail"></div>
+    <div id="viewbtns">
+      <button id="topdownBtn">TOP-DOWN</button>
+      <button id="resetBtn">reset view</button>
+    </div>
+    <div id="modeHint">left-drag orbit &middot; right/shift-drag pan &middot; wheel zoom &middot; click inspect</div>
+    <div id="legend"><div id="legendTitle"></div><canvas id="legendCanvas" width="180" height="12"></canvas>
+      <span id="legendMin"></span> <span style="float:right" id="legendMax"></span>
+      <div id="legendNote" style="color:var(--dim)"></div></div>
+    <div id="scalebarwrap"><span id="scalebarLabel"></span><div id="scalebar"></div></div>
+    <div id="measureLabel"></div>
+    <div id="hoverTip"></div>
+  </div>
+
+  <div id="right">
+    <h3>Inspector</h3>
+    <div id="inspectorBody" style="font-size:12px;color:var(--dim)">
+      Click a voxel in the 3D view to see the EXACT values of all 12 channels.
+      Click a trajectory marker to see that frame's pose.
+    </div>
+    <details class="howto" open style="margin-top:10px;background:var(--panel2);border:1px solid #2c313b;border-radius:4px">
+      <summary>How to verify your home</summary>
+      <ul style="padding:4px 18px;margin:4px 0">
+        <li>Walk the cyan trajectory in your head &mdash; it should follow the path you actually walked.</li>
+        <li>Walls and furniture should appear as <b style="color:#ff4136">occupied (red)</b> voxels where they really stand; doorways and walkable floor as <b style="color:#2ecc40">free (green)</b>.</li>
+        <li>Use Measure on a span you can tape-measure (a door width is usually 0.8&ndash;0.9 m; a hallway width). The real value should fall inside the &plusmn;1&sigma; band the tool prints. If it does not, the teacher's scale claim is wrong.</li>
+        <li>The voxel band only covers heights <span id="howtoBand"></span> &mdash; a ~28 cm slab near the floor. Tall objects appear only by their lowest part.</li>
+        <li>Anything the camera never saw should be gray/<b>unknown</b>, NOT free. If unseen space shows up green, the teacher is lying.</li>
+        <li>Floor alignment FAILED on this scene (see red banner) &mdash; the slab is axis-aligned and may be tilted versus your true floor.</li>
+      </ul>
+    </details>
+  </div>
+</div>
+
+<details id="panel2d">
+  <summary>2D top-down occupancy channels (all 7, dense, float32-exact)</summary>
+  <div id="panel2dBody">
+    <div>
+      <div class="ctlrow">channel <select id="chan2d"></select>
+        <label style="margin-left:10px"><input type="checkbox" id="grid2dTog" checked> meter grid</label></div>
+      <div id="canvas2dwrap">
+        <canvas id="canvas2d"></canvas>
+        <canvas id="grid2dOverlay"></canvas>
+      </div>
+      <div id="readout2d">hover for cell value + world coords</div>
+    </div>
+    <div style="max-width:380px">
+      <div><canvas id="legend2dCanvas" width="180" height="12"></canvas>
+        <span id="legend2dMin"></span> <span style="float:right" id="legend2dMax"></span></div>
+      <h3>2D grid metadata (verbatim)</h3>
+      <table class="kv" id="grid2dMeta"></table>
+      <div class="notebox">Non-finite cells (Inf/NaN, e.g. height channels where nothing was seen) are drawn dark purple and reported verbatim in the readout.</div>
+    </div>
+  </div>
+</details>
+
+<details id="panelReport">
+  <summary>Full teacher report (verbatim, every field) + provenance</summary>
+  <div style="padding:8px 14px">
+    <input type="text" id="reportSearch" placeholder="filter keys/values..." style="width:320px">
+    <button id="reportExpand">expand all</button>
+    <button id="reportCollapse">collapse all</button>
+  </div>
+  <div id="reportBody"></div>
+  <div style="padding:8px 14px">
+    <h3>Provenance (this HTML was built from exactly these files)</h3>
+    <table class="kv" id="provTable"></table>
+  </div>
+</details>
+
+<div id="footer"><span id="footerText">loading...</span></div>
+
+<script type="application/json" id="atlas3r-payload">__ATLAS3R_PAYLOAD__</script>
+<script>
+"use strict";
+/* ============================================================ payload */
+function b64ToBytes(b64){
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function b64F32(b64){ return new Float32Array(b64ToBytes(b64).buffer); }
+function b64U32(b64){ return new Uint32Array(b64ToBytes(b64).buffer); }
+function b64U8(b64){ return b64ToBytes(b64); }
+
+const P = JSON.parse(document.getElementById("atlas3r-payload").textContent);
+const V = P.voxel;
+const SIGMA = V.scale_uncertainty;
+const SHAPE = V.shape;             // [188,11,184]
+const VS = V.voxel_size_m;
+const ORG = V.origin_world;
+const NSLICE = SHAPE[1];
+
+const CH_NAMES = ["P_free","P_occupied_static","P_movable_static","P_dynamic","P_unknown",
+  "map_confidence","evidence_occupied_static_count","evidence_movable_count",
+  "evidence_dynamic_count","evidence_free_count","evidence_verified_occupied_count",
+  "evidence_verified_movable_count"];
+const EVIDENCE_SET = new Set(CH_NAMES.slice(6));
+const CLASS_NAMES = ["free","occupied_static","movable_static","dynamic","unknown"];
+const CLASS_COLORS = [[0.18,0.80,0.25],[1.0,0.25,0.21],[1.0,0.52,0.10],[0.94,0.07,0.75],[0.55,0.55,0.55]];
+const CLASS_CSS = ["#2ecc40","#ff4136","#ff851b","#f012be","#8c8c8c"];
+const CLASS_ALPHA = [0.18,0.95,0.95,0.95,0.16];
+
+const vIdx = b64U32(V.indices_b64);
+const vClass = b64U8(V.argmax_class_b64);
+const vChan = {};
+for (const n of CH_NAMES) vChan[n] = b64F32(V.channels[n]);
+const NV = vIdx.length;
+
+/* positions + slice index */
+const vPos = new Float32Array(NV*3);
+const vSlice = new Float32Array(NV);
+{
+  const s12 = SHAPE[1]*SHAPE[2], s2 = SHAPE[2];
+  for (let k=0;k<NV;k++){
+    const li = vIdx[k];
+    const i0 = (li / s12) | 0, r = li % s12, i1 = (r / s2) | 0, i2 = r % s2;
+    vPos[3*k]   = ORG[0] + (i0+0.5)*VS;
+    vPos[3*k+1] = ORG[1] + (i1+0.5)*VS;
+    vPos[3*k+2] = ORG[2] + (i2+0.5)*VS;
+    vSlice[k] = i1;
+  }
+}
+const touchedMap = new Map();   // linear index -> sparse position
+for (let k=0;k<NV;k++) touchedMap.set(vIdx[k], k);
+
+/* cloud */
+const cloudPos = b64F32(P.cloud.positions_b64);
+const cloudNrm = b64F32(P.cloud.normals_b64);
+const cloudCol = b64U8(P.cloud.colors_b64);
+const NC = P.cloud.count;
+
+/* mesh */
+let meshPos=null, meshNrm=null, meshIdx=null;
+if (P.mesh.present){
+  meshPos = b64F32(P.mesh.positions_b64);
+  meshNrm = b64F32(P.mesh.normals_b64);
+  meshIdx = b64U32(P.mesh.indices_b64);
+}
+
+/* trajectory */
+const TRAJ = P.trajectory;
+const NF = TRAJ.frames.length;
+const trajCenters = new Float32Array(NF*3);
+for (let i=0;i<NF;i++){
+  const c = TRAJ.frames[i].camera_center_world;
+  trajCenters[3*i]=c[0]; trajCenters[3*i+1]=c[1]; trajCenters[3*i+2]=c[2];
+}
+
+/* 2D */
+const G2 = P.grid2d;
+const CH2_NAMES = ["P_free","P_occupied_static","P_movable_static","P_dynamic","P_unknown",
+  "height_min_m","height_max_m"];
+const g2 = {};
+for (const n of CH2_NAMES) g2[n] = b64F32(G2.channels[n]);
+
+/* ============================================================ banner / static UI */
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function fmtNum(x){
+  if (typeof x !== "number") return esc(x);
+  if (!isFinite(x)) return String(x);
+  if (x !== 0 && (Math.abs(x) < 1e-4 || Math.abs(x) >= 1e6)) return x.toExponential(5);
+  return String(Math.round(x*1e6)/1e6);
+}
+document.getElementById("bAsset").textContent = P.meta.asset_id;
+{
+  const cat = V.acceptance_category;
+  let catTxt = "final acceptance category: \"" + cat + "\"";
+  if (cat === "metric_pseudo_label"){
+    catTxt += " — scale comes from a learned prior, NOT a measured reference. Distances carry ±"
+      + (SIGMA*100).toFixed(1) + "% relative scale std (1 sigma).";
+  } else {
+    catTxt += " — scale uncertainty (relative std, 1 sigma): ±" + (SIGMA*100).toFixed(1) + "%.";
+  }
+  document.getElementById("bCategory").textContent = catTxt;
+
+  if (String(V.grid_frame).indexOf("not_floor_aligned") >= 0){
+    const gf = document.getElementById("bGridFrame");
+    gf.style.display = "block";
+    gf.textContent = "grid_frame = \"" + V.grid_frame + "\" — floor detection did NOT pass on this scene; "
+      + "the height band is axis-aligned and may be tilted versus your true floor.";
+  }
+  const cal = document.getElementById("bCalib");
+  if (V.confidence_calibration === "uncalibrated_heuristic"){
+    cal.textContent = "confidence_calibration = \"uncalibrated_heuristic\" — the confidence channel is an uncalibrated heuristic, not a probability.";
+  } else {
+    cal.textContent = "confidence_calibration = \"" + V.confidence_calibration + "\".";
+  }
+  const cc = V.class_counts; // full-grid argmax counts [free,occ,mov,dyn,unk]
+  const total = cc.reduce((a,b)=>a+b,0);
+  const unkPct = (100*cc[4]/total).toFixed(1);
+  document.getElementById("bUnknown").innerHTML =
+    "<b>" + unkPct + "% of the band volume is UNKNOWN</b> — the teacher only claims what it saw. "
+    + "Touched voxels: " + NV.toLocaleString() + " / " + total.toLocaleString()
+    + " (" + (100*NV/total).toFixed(1) + "%); every untouched voxel is exactly the unknown prior.";
+  let h = "";
+  for (let c=0;c<5;c++){
+    h += "<span><span class='swatch' style='background:"+CLASS_CSS[c]+"'></span>"
+       + CLASS_NAMES[c] + ": <b>" + cc[c].toLocaleString() + "</b></span>";
+  }
+  document.getElementById("bClassTotals").innerHTML = h + "<span style='color:var(--dim)'>(argmax of the 5 P_* channels over the full grid)</span>";
+}
+document.getElementById("howtoBand").textContent =
+  "[" + V.band_min_m.toFixed(3) + " m, " + V.band_max_m.toFixed(3) + " m]";
+document.getElementById("bandNote").textContent =
+  "band " + V.band_min_m.toFixed(4) + " m .. " + V.band_max_m.toFixed(4) + " m (world Y), "
+  + NSLICE + " slices of " + VS + " m";
+
+function fillKV(elId, obj){
+  const el = document.getElementById(elId);
+  let h = "";
+  for (const k in obj){
+    h += "<tr><td>"+esc(k)+"</td><td>"+esc(typeof obj[k]==="object"?JSON.stringify(obj[k]):obj[k])+"</td></tr>";
+  }
+  el.innerHTML = h;
+}
+fillKV("gridMeta", {
+  shape: JSON.stringify(SHAPE), origin_world: JSON.stringify(ORG),
+  voxel_size_m: V.voxel_size_m, floor_axis: V.floor_axis,
+  band_min_m: V.band_min_m, band_max_m: V.band_max_m,
+  grid_frame: V.grid_frame, acceptance_category: V.acceptance_category,
+  confidence_calibration: V.confidence_calibration, scale_uncertainty: V.scale_uncertainty
+});
+fillKV("trajMeta", {
+  asset_id: TRAJ.asset_id, convention: TRAJ.convention,
+  timestamp_meaning: TRAJ.timestamp_meaning, frame_count: TRAJ.frame_count
+});
+fillKV("grid2dMeta", {
+  shape: JSON.stringify(G2.shape), origin_world: JSON.stringify(G2.origin_world),
+  resolution_m: G2.resolution_m, grid_frame: G2.grid_frame,
+  scale_uncertainty: G2.scale_uncertainty,
+  acceptance_status_weight: G2.acceptance_status_weight
+});
+
+/* class checkboxes */
+const classVis = [true,true,true,true,false]; // unknown off by default
+{
+  const wrap = document.getElementById("classChecks");
+  for (let c=0;c<5;c++){
+    const d = document.createElement("div"); d.className="ctlrow";
+    d.innerHTML = "<label><input type='checkbox' "+(classVis[c]?"checked":"")+" data-c='"+c+"'>"
+      + "<span class='swatch' style='background:"+CLASS_CSS[c]+"'></span>"+CLASS_NAMES[c]
+      + (c===0?" <span style='color:var(--dim)'>(low alpha)</span>":"")
+      + (c===4?" <span style='color:var(--dim)'>(touched-but-unknown only)</span>":"")+"</label>";
+    d.querySelector("input").addEventListener("change", e=>{
+      classVis[+e.target.dataset.c] = e.target.checked; needRedraw=true;
+    });
+    wrap.appendChild(d);
+  }
+}
+
+/* color mode dropdown */
+const modeSel = document.getElementById("colorMode");
+{
+  const optC = document.createElement("option"); optC.value="class"; optC.textContent="class (argmax)";
+  modeSel.appendChild(optC);
+  for (const n of CH_NAMES){
+    const o = document.createElement("option"); o.value=n;
+    o.textContent = n + (EVIDENCE_SET.has(n) ? " (log scale)" : "");
+    modeSel.appendChild(o);
+  }
+}
+
+/* ============================================================ tiny mat4 lib (column-major) */
+function m4ident(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+function m4mul(a,b){
+  const o = new Float32Array(16);
+  for (let c=0;c<4;c++) for (let r=0;r<4;r++){
+    o[c*4+r] = a[r]*b[c*4] + a[4+r]*b[c*4+1] + a[8+r]*b[c*4+2] + a[12+r]*b[c*4+3];
+  }
+  return o;
+}
+function m4persp(fovy, aspect, near, far){
+  const f = 1/Math.tan(fovy/2), o = new Float32Array(16);
+  o[0]=f/aspect; o[5]=f; o[10]=(far+near)/(near-far); o[11]=-1;
+  o[14]=2*far*near/(near-far);
+  return o;
+}
+function m4ortho(l,r,b,t,n,f){
+  const o = new Float32Array(16);
+  o[0]=2/(r-l); o[5]=2/(t-b); o[10]=-2/(f-n); o[15]=1;
+  o[12]=-(r+l)/(r-l); o[13]=-(t+b)/(t-b); o[14]=-(f+n)/(f-n);
+  return o;
+}
+function v3sub(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function v3cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function v3norm(a){ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; }
+function m4lookAt(eye, ctr, up){
+  const z = v3norm(v3sub(eye,ctr));
+  const x = v3norm(v3cross(up,z));
+  const y = v3cross(z,x);
+  return new Float32Array([
+    x[0],y[0],z[0],0,  x[1],y[1],z[1],0,  x[2],y[2],z[2],0,
+    -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+    -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+    -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1]);
+}
+function m4invert(m){
+  const inv = new Float32Array(16);
+  inv[0]=m[5]*m[10]*m[15]-m[5]*m[11]*m[14]-m[9]*m[6]*m[15]+m[9]*m[7]*m[14]+m[13]*m[6]*m[11]-m[13]*m[7]*m[10];
+  inv[4]=-m[4]*m[10]*m[15]+m[4]*m[11]*m[14]+m[8]*m[6]*m[15]-m[8]*m[7]*m[14]-m[12]*m[6]*m[11]+m[12]*m[7]*m[10];
+  inv[8]=m[4]*m[9]*m[15]-m[4]*m[11]*m[13]-m[8]*m[5]*m[15]+m[8]*m[7]*m[13]+m[12]*m[5]*m[11]-m[12]*m[7]*m[9];
+  inv[12]=-m[4]*m[9]*m[14]+m[4]*m[10]*m[13]+m[8]*m[5]*m[14]-m[8]*m[6]*m[13]-m[12]*m[5]*m[10]+m[12]*m[6]*m[9];
+  inv[1]=-m[1]*m[10]*m[15]+m[1]*m[11]*m[14]+m[9]*m[2]*m[15]-m[9]*m[3]*m[14]-m[13]*m[2]*m[11]+m[13]*m[3]*m[10];
+  inv[5]=m[0]*m[10]*m[15]-m[0]*m[11]*m[14]-m[8]*m[2]*m[15]+m[8]*m[3]*m[14]+m[12]*m[2]*m[11]-m[12]*m[3]*m[10];
+  inv[9]=-m[0]*m[9]*m[15]+m[0]*m[11]*m[13]+m[8]*m[1]*m[15]-m[8]*m[3]*m[13]-m[12]*m[1]*m[11]+m[12]*m[3]*m[9];
+  inv[13]=m[0]*m[9]*m[14]-m[0]*m[10]*m[13]-m[8]*m[1]*m[14]+m[8]*m[2]*m[13]+m[12]*m[1]*m[10]-m[12]*m[2]*m[9];
+  inv[2]=m[1]*m[6]*m[15]-m[1]*m[7]*m[14]-m[5]*m[2]*m[15]+m[5]*m[3]*m[14]+m[13]*m[2]*m[7]-m[13]*m[3]*m[6];
+  inv[6]=-m[0]*m[6]*m[15]+m[0]*m[7]*m[14]+m[4]*m[2]*m[15]-m[4]*m[3]*m[14]-m[12]*m[2]*m[7]+m[12]*m[3]*m[6];
+  inv[10]=m[0]*m[5]*m[15]-m[0]*m[7]*m[13]-m[4]*m[1]*m[15]+m[4]*m[3]*m[13]+m[12]*m[1]*m[7]-m[12]*m[3]*m[5];
+  inv[14]=-m[0]*m[5]*m[14]+m[0]*m[6]*m[13]+m[4]*m[1]*m[14]-m[4]*m[2]*m[13]-m[12]*m[1]*m[6]+m[12]*m[2]*m[5];
+  inv[3]=-m[1]*m[6]*m[11]+m[1]*m[7]*m[10]+m[5]*m[2]*m[11]-m[5]*m[3]*m[10]-m[9]*m[2]*m[7]+m[9]*m[3]*m[6];
+  inv[7]=m[0]*m[6]*m[11]-m[0]*m[7]*m[10]-m[4]*m[2]*m[11]+m[4]*m[3]*m[10]+m[8]*m[2]*m[7]-m[8]*m[3]*m[6];
+  inv[11]=-m[0]*m[5]*m[11]+m[0]*m[7]*m[9]+m[4]*m[1]*m[11]-m[4]*m[3]*m[9]-m[8]*m[1]*m[7]+m[8]*m[3]*m[5];
+  inv[15]=m[0]*m[5]*m[10]-m[0]*m[6]*m[9]-m[4]*m[1]*m[10]+m[4]*m[2]*m[9]+m[8]*m[1]*m[6]-m[8]*m[2]*m[5];
+  let det = m[0]*inv[0]+m[1]*inv[4]+m[2]*inv[8]+m[3]*inv[12];
+  if (det === 0) return m4ident();
+  det = 1/det;
+  for (let i=0;i<16;i++) inv[i] *= det;
+  return inv;
+}
+function m4xform(m, v){ // v = [x,y,z,w] -> [x,y,z,w]
+  return [
+    m[0]*v[0]+m[4]*v[1]+m[8]*v[2]+m[12]*v[3],
+    m[1]*v[0]+m[5]*v[1]+m[9]*v[2]+m[13]*v[3],
+    m[2]*v[0]+m[6]*v[1]+m[10]*v[2]+m[14]*v[3],
+    m[3]*v[0]+m[7]*v[1]+m[11]*v[2]+m[15]*v[3]];
+}
+
+/* ============================================================ WebGL setup */
+const canvas = document.getElementById("glcanvas");
+const gl = canvas.getContext("webgl2", {antialias:true, alpha:false});
+let needRedraw = true;
+if (!gl){
+  document.getElementById("glfail").style.display = "flex";
+  document.getElementById("glfail").textContent =
+    "WebGL2 is not available in this browser. The 2D panel, report panel and stats below still show all data; the 3D view requires WebGL2.";
+}
+canvas.addEventListener("webglcontextlost", e=>{
+  e.preventDefault();
+  const f = document.getElementById("glfail");
+  f.style.display = "flex";
+  f.textContent = "WebGL context lost. Reload the page to restore the 3D view (all data is inline; nothing is lost).";
+});
+canvas.addEventListener("webglcontextrestored", ()=>{ location.reload(); });
+
+function makeProg(vsSrc, fsSrc){
+  function sh(type, src){
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      throw new Error("shader: " + gl.getShaderInfoLog(s));
+    return s;
+  }
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error("link: " + gl.getProgramInfoLog(p));
+  return p;
+}
+
+let progVox, progCloud, progMesh, progFlat;
+let vaoVox, vaoCloud, vaoMesh, vaoGridLines, vaoTriad, vaoTrajLine, vaoTrajPts, vaoCones, vaoMeasure;
+let bufVoxVal, bufMeasure;
+let gridLineCount=0, coneVertCount=0, triadSegs=[];
+
+const VOX_VS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in float a_class;
+layout(location=2) in float a_val;
+layout(location=3) in float a_slice;
+uniform mat4 u_mvp;
+uniform float u_pscale;
+uniform float u_classVis[5];
+uniform vec2 u_slice;
+uniform int u_mode;          // 0=class, 1=channel
+uniform vec2 u_range;        // vmin,vmax
+uniform float u_thresh;
+uniform float u_vsize;
+out vec4 v_color;
+vec3 viridis(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c0=vec3(0.267,0.005,0.329), c1=vec3(0.231,0.322,0.545), c2=vec3(0.129,0.567,0.551),
+       c3=vec3(0.369,0.788,0.384), c4=vec3(0.993,0.906,0.144);
+  if (t<0.25) return mix(c0,c1,t*4.0);
+  if (t<0.5)  return mix(c1,c2,(t-0.25)*4.0);
+  if (t<0.75) return mix(c2,c3,(t-0.5)*4.0);
+  return mix(c3,c4,(t-0.75)*4.0);
+}
+void main(){
+  int ci = int(a_class + 0.5);
+  bool hide = (u_classVis[ci] < 0.5) || (a_slice < u_slice.x - 0.5) || (a_slice > u_slice.y + 0.5);
+  if (u_mode == 1 && a_val < u_thresh) hide = true;
+  if (hide){ gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; v_color = vec4(0.0); return; }
+  gl_Position = u_mvp * vec4(a_pos, 1.0);
+  float w = max(gl_Position.w, 1e-4);
+  gl_PointSize = clamp(u_vsize * u_pscale / w, 1.5, 64.0);
+  if (u_mode == 0){
+    vec3 cols[5];
+    cols[0]=vec3(0.18,0.80,0.25); cols[1]=vec3(1.0,0.25,0.21); cols[2]=vec3(1.0,0.52,0.10);
+    cols[3]=vec3(0.94,0.07,0.75); cols[4]=vec3(0.55,0.55,0.55);
+    float alphas[5];
+    alphas[0]=0.18; alphas[1]=0.95; alphas[2]=0.95; alphas[3]=0.95; alphas[4]=0.16;
+    v_color = vec4(cols[ci], alphas[ci]);
+  } else {
+    float t = (a_val - u_range.x) / max(u_range.y - u_range.x, 1e-12);
+    v_color = vec4(viridis(t), 0.85);
+  }
+}`;
+const VOX_FS = `#version 300 es
+precision highp float;
+in vec4 v_color; out vec4 o;
+void main(){ if (v_color.a <= 0.0) discard; o = v_color; }`;
+
+const CLOUD_VS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec3 a_col;
+uniform mat4 u_mvp; uniform float u_psize;
+out vec3 v_col;
+void main(){
+  gl_Position = u_mvp * vec4(a_pos,1.0);
+  gl_PointSize = u_psize;
+  v_col = a_col;
+}`;
+const CLOUD_FS = `#version 300 es
+precision highp float;
+in vec3 v_col; out vec4 o;
+void main(){ o = vec4(v_col, 1.0); }`;
+
+const MESH_VS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec3 a_nrm;
+uniform mat4 u_mvp;
+out vec3 v_nrm;
+void main(){ gl_Position = u_mvp * vec4(a_pos,1.0); v_nrm = a_nrm; }`;
+const MESH_FS = `#version 300 es
+precision highp float;
+in vec3 v_nrm; out vec4 o;
+void main(){
+  vec3 L = normalize(vec3(0.4, 0.8, 0.5));
+  float d = abs(dot(normalize(v_nrm), L));
+  vec3 base = vec3(0.62, 0.68, 0.78);
+  o = vec4(base * (0.25 + 0.75*d), 1.0);
+}`;
+
+const FLAT_VS = `#version 300 es
+layout(location=0) in vec3 a_pos;
+uniform mat4 u_mvp; uniform float u_psize;
+void main(){ gl_Position = u_mvp * vec4(a_pos,1.0); gl_PointSize = u_psize; }`;
+const FLAT_FS = `#version 300 es
+precision highp float;
+uniform vec4 u_color; out vec4 o;
+void main(){ o = u_color; }`;
+
+function staticBuf(target, data){
+  const b = gl.createBuffer(); gl.bindBuffer(target, b);
+  gl.bufferData(target, data, gl.STATIC_DRAW); return b;
+}
+
+if (gl){
+  progVox = makeProg(VOX_VS, VOX_FS);
+  progCloud = makeProg(CLOUD_VS, CLOUD_FS);
+  progMesh = makeProg(MESH_VS, MESH_FS);
+  progFlat = makeProg(FLAT_VS, FLAT_FS);
+
+  /* voxels */
+  vaoVox = gl.createVertexArray(); gl.bindVertexArray(vaoVox);
+  staticBuf(gl.ARRAY_BUFFER, vPos);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  staticBuf(gl.ARRAY_BUFFER, vClass);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.UNSIGNED_BYTE,false,0,0);
+  bufVoxVal = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufVoxVal);
+  gl.bufferData(gl.ARRAY_BUFFER, NV*4, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,0,0);
+  staticBuf(gl.ARRAY_BUFFER, vSlice);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,0,0);
+
+  /* cloud */
+  vaoCloud = gl.createVertexArray(); gl.bindVertexArray(vaoCloud);
+  staticBuf(gl.ARRAY_BUFFER, cloudPos);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  staticBuf(gl.ARRAY_BUFFER, cloudCol);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.UNSIGNED_BYTE,true,0,0);
+
+  /* mesh */
+  if (P.mesh.present){
+    vaoMesh = gl.createVertexArray(); gl.bindVertexArray(vaoMesh);
+    staticBuf(gl.ARRAY_BUFFER, meshPos);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    staticBuf(gl.ARRAY_BUFFER, meshNrm);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+    staticBuf(gl.ELEMENT_ARRAY_BUFFER, meshIdx);
+  }
+
+  /* 1m grid lines on the band_min plane + integer-meter alignment */
+  {
+    const y = V.band_min_m;
+    const x0 = ORG[0], x1 = ORG[0]+SHAPE[0]*VS, z0 = ORG[2], z1 = ORG[2]+SHAPE[2]*VS;
+    const lines = [];
+    for (let x = Math.ceil(x0); x <= Math.floor(x1); x++){ lines.push(x,y,z0, x,y,z1); }
+    for (let z = Math.ceil(z0); z <= Math.floor(z1); z++){ lines.push(x0,y,z, x1,y,z); }
+    // grid AABB outline at band_min and band_max heights
+    for (const yy of [V.band_min_m, V.band_max_m]){
+      lines.push(x0,yy,z0, x1,yy,z0,  x1,yy,z0, x1,yy,z1,  x1,yy,z1, x0,yy,z1,  x0,yy,z1, x0,yy,z0);
+    }
+    gridLineCount = lines.length/3;
+    vaoGridLines = gl.createVertexArray(); gl.bindVertexArray(vaoGridLines);
+    staticBuf(gl.ARRAY_BUFFER, new Float32Array(lines));
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  }
+
+  /* axis triad at grid origin: X red, Y green-ish white, Z blue (0.5 m) */
+  {
+    const o = ORG, L = 0.5;
+    triadSegs = [
+      {col:[1,0.3,0.3,1], v:[o[0],o[1],o[2], o[0]+L,o[1],o[2]]},
+      {col:[0.4,1,0.4,1], v:[o[0],o[1],o[2], o[0],o[1]+L,o[2]]},
+      {col:[0.4,0.55,1,1], v:[o[0],o[1],o[2], o[0],o[1],o[2]+L]},
+    ];
+    for (const s of triadSegs){
+      s.vao = gl.createVertexArray(); gl.bindVertexArray(s.vao);
+      staticBuf(gl.ARRAY_BUFFER, new Float32Array(s.v));
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+    }
+  }
+
+  /* trajectory line + points + cones */
+  vaoTrajLine = gl.createVertexArray(); gl.bindVertexArray(vaoTrajLine);
+  staticBuf(gl.ARRAY_BUFFER, trajCenters);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  vaoTrajPts = vaoTrajLine; // same buffer, drawn as POINTS
+
+  {
+    const tri = [];
+    for (let i=0;i<NF;i++){
+      const f = TRAJ.frames[i];
+      const q = f.quaternion_xyzw, c = f.camera_center_world;
+      const x=q[0],y=q[1],z=q[2],w=q[3];
+      // camera-to-world rotation applied to camera +Z (forward)
+      const fwd = [2*(x*z+y*w), 2*(y*z-x*w), 1-2*(x*x+y*y)];
+      const fn = v3norm(fwd);
+      let up = Math.abs(fn[1]) < 0.95 ? [0,1,0] : [1,0,0];
+      const u = v3norm(v3cross(up, fn));
+      const v = v3cross(fn, u);
+      const apex = [c[0]+fn[0]*0.16, c[1]+fn[1]*0.16, c[2]+fn[2]*0.16];
+      const R = 0.045, SEG = 8;
+      for (let s=0;s<SEG;s++){
+        const a0=2*Math.PI*s/SEG, a1=2*Math.PI*(s+1)/SEG;
+        const p0=[c[0]+R*(u[0]*Math.cos(a0)+v[0]*Math.sin(a0)),
+                  c[1]+R*(u[1]*Math.cos(a0)+v[1]*Math.sin(a0)),
+                  c[2]+R*(u[2]*Math.cos(a0)+v[2]*Math.sin(a0))];
+        const p1=[c[0]+R*(u[0]*Math.cos(a1)+v[0]*Math.sin(a1)),
+                  c[1]+R*(u[1]*Math.cos(a1)+v[1]*Math.sin(a1)),
+                  c[2]+R*(u[2]*Math.cos(a1)+v[2]*Math.sin(a1))];
+        tri.push(...p0, ...p1, ...apex);
+      }
+    }
+    coneVertCount = tri.length/3;
+    vaoCones = gl.createVertexArray(); gl.bindVertexArray(vaoCones);
+    staticBuf(gl.ARRAY_BUFFER, new Float32Array(tri));
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  }
+
+  /* measure line dynamic buffer */
+  vaoMeasure = gl.createVertexArray(); gl.bindVertexArray(vaoMeasure);
+  bufMeasure = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bufMeasure);
+  gl.bufferData(gl.ARRAY_BUFFER, 6*4, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  gl.bindVertexArray(null);
+}
+
+/* ============================================================ value buffer / color mode */
+let curMode = "class";          // "class" or channel name
+let curVals = null;             // Float32Array of values currently in GPU buffer (log for evidence)
+let curRange = [0,1];
+let curThresh = -Infinity;
+
+function setColorMode(name){
+  curMode = name;
+  const threshRow = document.getElementById("threshRow");
+  const legend = document.getElementById("legend");
+  if (name === "class"){
+    threshRow.style.display = "none";
+    legend.style.display = "none";
+    curThresh = -Infinity;
+  } else {
+    const src = vChan[name];
+    const isLog = EVIDENCE_SET.has(name);
+    const vals = new Float32Array(NV);
+    let mn = Infinity, mx = -Infinity;
+    for (let i=0;i<NV;i++){
+      let v = src[i];
+      if (isLog) v = Math.log10(1+v);
+      vals[i] = v;
+      if (isFinite(v)){ if (v<mn) mn=v; if (v>mx) mx=v; }
+    }
+    if (!isFinite(mn)){ mn=0; mx=1; }
+    if (mx===mn) mx=mn+1e-9;
+    curVals = vals; curRange = [mn,mx];
+    if (gl){
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufVoxVal);
+      gl.bufferData(gl.ARRAY_BUFFER, vals, gl.DYNAMIC_DRAW);
+    }
+    threshRow.style.display = "block";
+    document.getElementById("thresh").value = 0;
+    updateThresh();
+    /* legend */
+    legend.style.display = "block";
+    document.getElementById("legendTitle").textContent = name;
+    const lc = document.getElementById("legendCanvas").getContext("2d");
+    for (let x=0;x<180;x++){
+      lc.fillStyle = viridisCSS(x/179); lc.fillRect(x,0,1,12);
+    }
+    if (isLog){
+      document.getElementById("legendMin").textContent = "raw " + fmtNum(Math.pow(10,mn)-1);
+      document.getElementById("legendMax").textContent = "raw " + fmtNum(Math.pow(10,mx)-1);
+      document.getElementById("legendNote").textContent =
+        "LOG SCALE: color = log10(1+count), range [" + mn.toFixed(3) + ", " + mx.toFixed(3) + "]";
+    } else {
+      document.getElementById("legendMin").textContent = fmtNum(mn);
+      document.getElementById("legendMax").textContent = fmtNum(mx);
+      document.getElementById("legendNote").textContent = "linear scale";
+    }
+  }
+  needRedraw = true;
+}
+function viridisCSS(t){
+  t = Math.max(0, Math.min(1, t));
+  const st = [[0.267,0.005,0.329],[0.231,0.322,0.545],[0.129,0.567,0.551],[0.369,0.788,0.384],[0.993,0.906,0.144]];
+  const i = Math.min(3, Math.floor(t*4)), f = t*4 - i;
+  const c = [0,1,2].map(k => st[i][k]+(st[i+1][k]-st[i][k])*f);
+  return "rgb(" + c.map(x=>Math.round(x*255)).join(",") + ")";
+}
+function updateThresh(){
+  const t = +document.getElementById("thresh").value / 1000;
+  curThresh = curRange[0] + t*(curRange[1]-curRange[0]);
+  const isLog = EVIDENCE_SET.has(curMode);
+  document.getElementById("threshVal").textContent =
+    isLog ? ("raw " + fmtNum(Math.pow(10,curThresh)-1)) : fmtNum(curThresh);
+  needRedraw = true;
+}
+modeSel.addEventListener("change", ()=>setColorMode(modeSel.value));
+document.getElementById("thresh").addEventListener("input", updateThresh);
+
+/* slice sliders */
+let sliceLo = 0, sliceHi = NSLICE-1;
+document.getElementById("sliceMax").value = NSLICE-1;
+document.getElementById("sliceMax").max = NSLICE-1;
+document.getElementById("sliceMin").max = NSLICE-1;
+document.getElementById("sliceHi").textContent = NSLICE-1;
+function updateSlices(){
+  sliceLo = +document.getElementById("sliceMin").value;
+  sliceHi = +document.getElementById("sliceMax").value;
+  if (sliceHi < sliceLo){ const t=sliceLo; sliceLo=sliceHi; sliceHi=t; }
+  document.getElementById("sliceLo").textContent = sliceLo;
+  document.getElementById("sliceHi").textContent = sliceHi;
+  needRedraw = true;
+}
+document.getElementById("sliceMin").addEventListener("input", updateSlices);
+document.getElementById("sliceMax").addEventListener("input", updateSlices);
+
+/* layer toggles */
+const tog = id => document.getElementById(id);
+["togCloud","togMesh","togTraj","togGrid"].forEach(id =>
+  tog(id).addEventListener("change", ()=>{ needRedraw = true; }));
+if (!P.mesh.present){
+  tog("togMesh").disabled = true;
+  const n = document.getElementById("meshNote");
+  n.style.display = "block";
+  n.textContent = "mesh.ply was NOT found at export time: " + (P.mesh.note || "absent");
+}
+
+/* ============================================================ camera */
+const gridCenter = [ORG[0]+SHAPE[0]*VS/2, ORG[1]+SHAPE[1]*VS/2, ORG[2]+SHAPE[2]*VS/2];
+const gridDiag = Math.hypot(SHAPE[0]*VS, SHAPE[1]*VS, SHAPE[2]*VS);
+const cam = { target: gridCenter.slice(), yaw: Math.PI*0.25, pitch: -0.6,
+              dist: gridDiag*1.1, topdown:false, fov: Math.PI/4 };
+const camSaved = {};
+function resetCam(){
+  cam.target = gridCenter.slice(); cam.yaw = Math.PI*0.25; cam.pitch = -0.6;
+  cam.dist = gridDiag*1.1; cam.topdown = false;
+  document.getElementById("topdownBtn").classList.remove("active");
+  needRedraw = true;
+}
+document.getElementById("resetBtn").addEventListener("click", resetCam);
+document.getElementById("topdownBtn").addEventListener("click", ()=>{
+  cam.topdown = !cam.topdown;
+  document.getElementById("topdownBtn").classList.toggle("active", cam.topdown);
+  needRedraw = true;
+});
+
+let viewMat = m4ident(), projMat = m4ident(), mvp = m4ident();
+function computeCamera(w, h){
+  const aspect = w/h;
+  if (cam.topdown){
+    const eye = [cam.target[0], cam.target[1] + Math.max(cam.dist, 0.5), cam.target[2]];
+    viewMat = m4lookAt(eye, cam.target, [0,0,-1]);
+    const hh = cam.dist * Math.tan(cam.fov/2);
+    projMat = m4ortho(-hh*aspect, hh*aspect, -hh, hh, 0.01, cam.dist*4 + 100);
+  } else {
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const eye = [
+      cam.target[0] + cam.dist*cp*Math.sin(cam.yaw),
+      cam.target[1] - cam.dist*sp,
+      cam.target[2] + cam.dist*cp*Math.cos(cam.yaw)];
+    viewMat = m4lookAt(eye, cam.target, [0,1,0]);
+    projMat = m4persp(cam.fov, aspect, Math.max(0.01, cam.dist*0.001), cam.dist*20 + 100);
+  }
+  mvp = m4mul(projMat, viewMat);
+}
+
+/* input */
+let dragging = null, lastXY = [0,0], downXY = [0,0], downT = 0;
+canvas.addEventListener("contextmenu", e=>e.preventDefault());
+canvas.addEventListener("mousedown", e=>{
+  dragging = (e.button === 2 || e.shiftKey) ? "pan" : "orbit";
+  lastXY = [e.clientX, e.clientY]; downXY = [e.clientX, e.clientY]; downT = Date.now();
+});
+window.addEventListener("mouseup", e=>{
+  if (dragging && Math.hypot(e.clientX-downXY[0], e.clientY-downXY[1]) < 5
+      && Date.now()-downT < 500 && e.target === canvas){
+    handleClick(e);
+  }
+  dragging = null;
+});
+window.addEventListener("mousemove", e=>{
+  if (dragging){
+    const dx = e.clientX - lastXY[0], dy = e.clientY - lastXY[1];
+    lastXY = [e.clientX, e.clientY];
+    if (dragging === "orbit" && !cam.topdown){
+      cam.yaw -= dx*0.008; cam.pitch -= dy*0.008;
+      cam.pitch = Math.max(-1.55, Math.min(1.55, cam.pitch));
+    } else {
+      const wpp = 2*cam.dist*Math.tan(cam.fov/2)/canvas.clientHeight;
+      // camera right/up in world space from inverse view
+      const iv = m4invert(viewMat);
+      const right = [iv[0],iv[1],iv[2]], up = [iv[4],iv[5],iv[6]];
+      cam.target[0] -= (dx*right[0] - dy*up[0])*wpp;
+      cam.target[1] -= (dx*right[1] - dy*up[1])*wpp;
+      cam.target[2] -= (dx*right[2] - dy*up[2])*wpp;
+    }
+    needRedraw = true;
+  } else {
+    handleHover(e);
+  }
+});
+canvas.addEventListener("wheel", e=>{
+  e.preventDefault();
+  cam.dist *= Math.exp(e.deltaY*0.0012);
+  cam.dist = Math.max(0.05, Math.min(cam.dist, gridDiag*20));
+  needRedraw = true;
+}, {passive:false});
+
+/* ============================================================ picking */
+function projectPoint(px, py, pz, w, h){
+  const c = m4xform(mvp, [px,py,pz,1]);
+  if (c[3] <= 0) return null;
+  return [(c[0]/c[3]*0.5+0.5)*w, (0.5-c[1]/c[3]*0.5)*h, c[3]];
+}
+function voxelVisible(k){
+  const ci = vClass[k];
+  if (!classVis[ci]) return false;
+  const s = vSlice[k];
+  if (s < sliceLo || s > sliceHi) return false;
+  if (curMode !== "class" && curVals[k] < curThresh) return false;
+  return true;
+}
+function pickNearest(mx, my, includeCloud){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  let best = null, bestD = 14; // px snap radius
+  for (let k=0;k<NV;k++){
+    if (!voxelVisible(k)) continue;
+    const p = projectPoint(vPos[3*k], vPos[3*k+1], vPos[3*k+2], w, h);
+    if (!p) continue;
+    const d = Math.hypot(p[0]-mx, p[1]-my);
+    if (d < bestD){ bestD = d; best = {type:"voxel", k, world:[vPos[3*k],vPos[3*k+1],vPos[3*k+2]]}; }
+  }
+  if (includeCloud && tog("togCloud").checked){
+    for (let k=0;k<NC;k++){
+      const p = projectPoint(cloudPos[3*k], cloudPos[3*k+1], cloudPos[3*k+2], w, h);
+      if (!p) continue;
+      const d = Math.hypot(p[0]-mx, p[1]-my);
+      if (d < bestD){ bestD = d; best = {type:"cloud", k, world:[cloudPos[3*k],cloudPos[3*k+1],cloudPos[3*k+2]]}; }
+    }
+  }
+  return best;
+}
+function pickFrame(mx, my){
+  if (!tog("togTraj").checked) return null;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  let best=null, bestD=10;
+  for (let i=0;i<NF;i++){
+    const p = projectPoint(trajCenters[3*i], trajCenters[3*i+1], trajCenters[3*i+2], w, h);
+    if (!p) continue;
+    const d = Math.hypot(p[0]-mx, p[1]-my);
+    if (d < bestD){ bestD=d; best=i; }
+  }
+  return best;
+}
+/* ray walk for untouched voxels */
+function rayThroughPixel(mx, my){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const nx = mx/w*2-1, ny = 1-my/h*2;
+  const inv = m4invert(mvp);
+  const p0 = m4xform(inv, [nx,ny,-1,1]), p1 = m4xform(inv, [nx,ny,1,1]);
+  const a = [p0[0]/p0[3], p0[1]/p0[3], p0[2]/p0[3]];
+  const b = [p1[0]/p1[3], p1[1]/p1[3], p1[2]/p1[3]];
+  return [a, v3norm(v3sub(b,a))];
+}
+function pickUntouched(mx, my){
+  const [ro, rd] = rayThroughPixel(mx, my);
+  const lo = ORG, hi = [ORG[0]+SHAPE[0]*VS, ORG[1]+SHAPE[1]*VS, ORG[2]+SHAPE[2]*VS];
+  let tmin = -Infinity, tmax = Infinity;
+  for (let a=0;a<3;a++){
+    if (Math.abs(rd[a]) < 1e-12){
+      if (ro[a] < lo[a] || ro[a] > hi[a]) return null;
+    } else {
+      let t0 = (lo[a]-ro[a])/rd[a], t1 = (hi[a]-ro[a])/rd[a];
+      if (t0>t1){ const t=t0;t0=t1;t1=t; }
+      tmin = Math.max(tmin,t0); tmax = Math.min(tmax,t1);
+    }
+  }
+  if (tmax < Math.max(tmin,0)) return null;
+  const step = VS*0.4;
+  for (let t = Math.max(tmin,0)+step*0.5; t < tmax; t += step){
+    const px = ro[0]+rd[0]*t, py = ro[1]+rd[1]*t, pz = ro[2]+rd[2]*t;
+    const i0 = Math.floor((px-ORG[0])/VS), i1 = Math.floor((py-ORG[1])/VS), i2 = Math.floor((pz-ORG[2])/VS);
+    if (i0<0||i1<0||i2<0||i0>=SHAPE[0]||i1>=SHAPE[1]||i2>=SHAPE[2]) continue;
+    const li = (i0*SHAPE[1]+i1)*SHAPE[2]+i2;
+    return {idx:[i0,i1,i2], li, touched: touchedMap.has(li)};
+  }
+  return null;
+}
+
+/* ============================================================ measure */
+let measureOn = false;
+let measurePts = [];   // world coords
+document.getElementById("measureBtn").addEventListener("click", ()=>{
+  measureOn = !measureOn;
+  document.getElementById("measureBtn").textContent = "Measure: " + (measureOn?"ON":"OFF");
+  document.getElementById("measureBtn").classList.toggle("active", measureOn);
+});
+document.getElementById("measureClear").addEventListener("click", ()=>{
+  measurePts = []; document.getElementById("measureLabel").style.display="none"; needRedraw=true;
+});
+function rectXY(e){
+  const r = canvas.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+function handleClick(e){
+  if (!gl) return;
+  const [mx,my] = rectXY(e);
+  if (measureOn){
+    const hit = pickNearest(mx, my, true);
+    if (!hit) return;
+    if (measurePts.length >= 2) measurePts = [];
+    measurePts.push(hit.world);
+    if (measurePts.length === 2 && gl){
+      gl.bindBuffer(gl.ARRAY_BUFFER, bufMeasure);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([...measurePts[0], ...measurePts[1]]), gl.DYNAMIC_DRAW);
+    }
+    needRedraw = true;
+    return;
+  }
+  const fi = pickFrame(mx,my);
+  if (fi !== null){ showFrameInspector(fi); return; }
+  const hit = pickNearest(mx, my, false);
+  if (hit && hit.type === "voxel"){ showVoxelInspector(hit.k); return; }
+  const ut = pickUntouched(mx,my);
+  if (ut){
+    if (ut.touched) showVoxelInspector(touchedMap.get(ut.li));
+    else showUntouchedInspector(ut);
+  }
+}
+function handleHover(e){
+  if (!gl) return;
+  const tip = document.getElementById("hoverTip");
+  if (e.target !== canvas){ tip.style.display="none"; return; }
+  const [mx,my] = rectXY(e);
+  const fi = pickFrame(mx,my);
+  if (fi !== null){
+    tip.style.display = "block";
+    tip.style.left = (mx+12)+"px"; tip.style.top = (my+8)+"px";
+    tip.textContent = "frame_id " + TRAJ.frames[fi].frame_id + " (click for pose)";
+  } else tip.style.display = "none";
+}
+
+/* ============================================================ inspector */
+function voxelIdxFromSparse(k){
+  const li = vIdx[k];
+  const s12 = SHAPE[1]*SHAPE[2];
+  return [(li/s12)|0, ((li%s12)/SHAPE[2])|0, li%SHAPE[2]];
+}
+function showVoxelInspector(k){
+  const [i0,i1,i2] = voxelIdxFromSparse(k);
+  const wx = ORG[0]+(i0+0.5)*VS, wy = ORG[1]+(i1+0.5)*VS, wz = ORG[2]+(i2+0.5)*VS;
+  let h = "<b>Voxel ["+i0+", "+i1+", "+i2+"]</b> (touched)<br>"
+    + "world ["+wx.toFixed(4)+", "+wy.toFixed(4)+", "+wz.toFixed(4)+"] m<br>"
+    + "derived class: <b style='color:"+CLASS_CSS[vClass[k]]+"'>"+CLASS_NAMES[vClass[k]]+"</b>"
+    + " <span style='color:var(--dim)'>(argmax of P_*)</span>"
+    + "<table class='kv'>";
+  for (const n of CH_NAMES){
+    h += "<tr><td>"+n+"</td><td>"+fmtNum(vChan[n][k])+"</td></tr>";
+  }
+  h += "</table><div style='color:var(--dim);font-size:11px'>values are the float32 cast of the exact npz float64 values</div>";
+  document.getElementById("inspectorBody").innerHTML = h;
+}
+function showUntouchedInspector(ut){
+  const [i0,i1,i2] = ut.idx;
+  const wx = ORG[0]+(i0+0.5)*VS, wy = ORG[1]+(i1+0.5)*VS, wz = ORG[2]+(i2+0.5)*VS;
+  let h = "<b>Voxel ["+i0+", "+i1+", "+i2+"]</b><br>"
+    + "world ["+wx.toFixed(4)+", "+wy.toFixed(4)+", "+wz.toFixed(4)+"] m<br>"
+    + "<b style='color:var(--warn)'>untouched: exact unknown prior</b> (no ray evidence ever hit this voxel)"
+    + "<table class='kv'>";
+  for (const n of CH_NAMES){
+    h += "<tr><td>"+n+"</td><td>"+fmtNum(V.untouched_prior[n])+"</td></tr>";
+  }
+  h += "</table>";
+  document.getElementById("inspectorBody").innerHTML = h;
+}
+function showFrameInspector(i){
+  const f = TRAJ.frames[i];
+  let h = "<b>Trajectory frame "+i+"</b> (your walking path)<table class='kv'>"
+    + "<tr><td>frame_id</td><td>"+esc(f.frame_id)+"</td></tr>"
+    + "<tr><td>camera_center_world</td><td>"+esc(JSON.stringify(f.camera_center_world))+"</td></tr>"
+    + "<tr><td>quaternion_xyzw</td><td>"+esc(JSON.stringify(f.quaternion_xyzw))+"</td></tr>"
+    + "<tr><td>T_world_camera</td><td>"+esc(JSON.stringify(f.T_world_camera))+"</td></tr>"
+    + "<tr><td>convention</td><td>"+esc(TRAJ.convention)+"</td></tr></table>";
+  document.getElementById("inspectorBody").innerHTML = h;
+}
+
+/* ============================================================ render loop */
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w*dpr) || canvas.height !== Math.round(h*dpr)){
+    canvas.width = Math.round(w*dpr); canvas.height = Math.round(h*dpr);
+    needRedraw = true;
+  }
+}
+function updateScaleBar(){
+  const wpp = 2*cam.dist*Math.tan(cam.fov/2)/canvas.clientHeight; // world m per CSS px
+  let len = 1;
+  const targetPx = 110;
+  const raw = wpp*targetPx;
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1,2,5,10]){ if (pow*m >= raw){ len = pow*m; break; } len = pow*10; }
+  const px = len/wpp;
+  document.getElementById("scalebar").style.width = px.toFixed(0)+"px";
+  document.getElementById("scalebarLabel").textContent =
+    (len>=1? len.toFixed(len<10&&len%1?1:0)+" m" : (len*100).toFixed(0)+" cm")
+    + "  (nominal; true scale ±" + (SIGMA*100).toFixed(1) + "% 1σ)";
+}
+function updateMeasureLabel(){
+  const lab = document.getElementById("measureLabel");
+  if (measurePts.length !== 2){ if (measurePts.length===0) lab.style.display="none"; return; }
+  const a = measurePts[0], b = measurePts[1];
+  const d = Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]);
+  const lo = d*(1-SIGMA), hi = d*(1+SIGMA);
+  lab.innerHTML = d.toFixed(2)+" m nominal; ±1σ scale band ["+lo.toFixed(2)+"–"+hi.toFixed(2)+" m]";
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const m = projectPoint((a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2, w, h);
+  if (m){
+    lab.style.display = "block";
+    lab.style.left = (m[0]+10)+"px"; lab.style.top = (m[1]-10)+"px";
+  } else lab.style.display = "none";
+}
+
+function draw(){
+  requestAnimationFrame(draw);
+  if (!gl || gl.isContextLost()) return;
+  resize();
+  if (!needRedraw) { updateScaleBar(); updateMeasureLabel(); return; }
+  needRedraw = false;
+  computeCamera(canvas.clientWidth, canvas.clientHeight);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.clearColor(0.047,0.051,0.063,1);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const dpr = window.devicePixelRatio || 1;
+
+  /* grid + triad */
+  if (tog("togGrid").checked){
+    gl.useProgram(progFlat);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progFlat,"u_mvp"), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(progFlat,"u_psize"), 1);
+    gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), 0.27,0.30,0.36,1);
+    gl.bindVertexArray(vaoGridLines);
+    gl.drawArrays(gl.LINES, 0, gridLineCount);
+    for (const s of triadSegs){
+      gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), ...s.col);
+      gl.bindVertexArray(s.vao);
+      gl.drawArrays(gl.LINES, 0, 2);
+    }
+  }
+
+  /* mesh */
+  if (tog("togMesh").checked && P.mesh.present){
+    gl.useProgram(progMesh);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progMesh,"u_mvp"), false, mvp);
+    gl.bindVertexArray(vaoMesh);
+    gl.drawElements(gl.TRIANGLES, P.mesh.face_count*3, gl.UNSIGNED_INT, 0);
+  }
+
+  /* cloud */
+  if (tog("togCloud").checked){
+    gl.useProgram(progCloud);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progCloud,"u_mvp"), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(progCloud,"u_psize"), 2.5*dpr);
+    gl.bindVertexArray(vaoCloud);
+    gl.drawArrays(gl.POINTS, 0, NC);
+  }
+
+  /* voxels */
+  {
+    gl.useProgram(progVox);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progVox,"u_mvp"), false, mvp);
+    gl.uniform1f(gl.getUniformLocation(progVox,"u_pscale"), canvas.height*projMat[5]*0.5);
+    gl.uniform1fv(gl.getUniformLocation(progVox,"u_classVis"),
+      new Float32Array(classVis.map(b=>b?1:0)));
+    gl.uniform2f(gl.getUniformLocation(progVox,"u_slice"), sliceLo, sliceHi);
+    gl.uniform1i(gl.getUniformLocation(progVox,"u_mode"), curMode==="class"?0:1);
+    gl.uniform2f(gl.getUniformLocation(progVox,"u_range"), curRange[0], curRange[1]);
+    gl.uniform1f(gl.getUniformLocation(progVox,"u_thresh"), isFinite(curThresh)?curThresh:-1e30);
+    gl.uniform1f(gl.getUniformLocation(progVox,"u_vsize"), VS);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(vaoVox);
+    gl.drawArrays(gl.POINTS, 0, NV);
+    gl.disable(gl.BLEND);
+  }
+
+  /* trajectory */
+  if (tog("togTraj").checked){
+    gl.useProgram(progFlat);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progFlat,"u_mvp"), false, mvp);
+    gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), 0.2,0.9,1.0,1);
+    gl.uniform1f(gl.getUniformLocation(progFlat,"u_psize"), 8*dpr);
+    gl.bindVertexArray(vaoTrajLine);
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.LINE_STRIP, 0, NF);
+    gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), 1.0,0.95,0.3,1);
+    gl.drawArrays(gl.POINTS, 0, NF);
+    gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), 1.0,0.8,0.1,1);
+    gl.bindVertexArray(vaoCones);
+    gl.drawArrays(gl.TRIANGLES, 0, coneVertCount);
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  /* measure line */
+  if (measurePts.length === 2){
+    gl.useProgram(progFlat);
+    gl.uniformMatrix4fv(gl.getUniformLocation(progFlat,"u_mvp"), false, mvp);
+    gl.uniform4f(gl.getUniformLocation(progFlat,"u_color"), 0.4,1.0,0.4,1);
+    gl.uniform1f(gl.getUniformLocation(progFlat,"u_psize"), 9*dpr);
+    gl.bindVertexArray(vaoMeasure);
+    gl.disable(gl.DEPTH_TEST);
+    gl.drawArrays(gl.LINES, 0, 2);
+    gl.drawArrays(gl.POINTS, 0, 2);
+    gl.enable(gl.DEPTH_TEST);
+  }
+
+  gl.bindVertexArray(null);
+  updateScaleBar();
+  updateMeasureLabel();
+}
+
+/* ============================================================ 2D panel */
+const c2 = document.getElementById("canvas2d");
+const c2o = document.getElementById("grid2dOverlay");
+const SC2 = 3;
+c2.width = G2.shape[0]*SC2; c2.height = G2.shape[1]*SC2;
+c2o.width = c2.width; c2o.height = c2.height;
+const sel2 = document.getElementById("chan2d");
+for (const n of CH2_NAMES){
+  const o = document.createElement("option"); o.value = n; o.textContent = n; sel2.appendChild(o);
+}
+let cur2dRange = [0,1];
+function draw2d(){
+  const name = sel2.value;
+  const arr = g2[name];
+  const W = G2.shape[0], H = G2.shape[1];
+  let mn=Infinity, mx=-Infinity;
+  for (let i=0;i<arr.length;i++){
+    const v = arr[i];
+    if (isFinite(v)){ if (v<mn) mn=v; if (v>mx) mx=v; }
+  }
+  if (!isFinite(mn)){ mn=0; mx=1; }
+  if (mx===mn) mx=mn+1e-9;
+  cur2dRange = [mn,mx];
+  const ctx = c2.getContext("2d");
+  const img = ctx.createImageData(W, H);
+  for (let i0=0;i0<W;i0++) for (let i2=0;i2<H;i2++){
+    const v = arr[i0*H+i2];
+    const px = (i2*W+i0)*4;
+    if (!isFinite(v)){
+      img.data[px]=40; img.data[px+1]=10; img.data[px+2]=55; img.data[px+3]=255;
+    } else {
+      const t = (v-mn)/(mx-mn);
+      const css = viridisCSS(t).match(/\d+/g);
+      img.data[px]=+css[0]; img.data[px+1]=+css[1]; img.data[px+2]=+css[2]; img.data[px+3]=255;
+    }
+  }
+  /* scale up via temp canvas */
+  const tmp = document.createElement("canvas"); tmp.width=W; tmp.height=H;
+  tmp.getContext("2d").putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0,0,c2.width,c2.height);
+  ctx.drawImage(tmp, 0,0, c2.width, c2.height);
+  /* legend */
+  const lc = document.getElementById("legend2dCanvas").getContext("2d");
+  for (let x=0;x<180;x++){ lc.fillStyle = viridisCSS(x/179); lc.fillRect(x,0,1,12); }
+  document.getElementById("legend2dMin").textContent = fmtNum(mn);
+  document.getElementById("legend2dMax").textContent = fmtNum(mx);
+  /* meter grid overlay */
+  const oc = c2o.getContext("2d");
+  oc.clearRect(0,0,c2o.width,c2o.height);
+  if (document.getElementById("grid2dTog").checked){
+    oc.strokeStyle = "rgba(255,255,255,0.35)"; oc.lineWidth = 1;
+    const res = G2.resolution_m, o0 = G2.origin_world[0], o2 = G2.origin_world[2];
+    for (let x = Math.ceil(o0); x <= o0+W*res; x++){
+      const px = (x-o0)/res*SC2;
+      oc.beginPath(); oc.moveTo(px,0); oc.lineTo(px,c2o.height); oc.stroke();
+    }
+    for (let z = Math.ceil(o2); z <= o2+H*res; z++){
+      const py = (z-o2)/res*SC2;
+      oc.beginPath(); oc.moveTo(0,py); oc.lineTo(c2o.width,py); oc.stroke();
+    }
+  }
+}
+sel2.addEventListener("change", draw2d);
+document.getElementById("grid2dTog").addEventListener("change", draw2d);
+c2.addEventListener("mousemove", e=>{
+  const r = c2.getBoundingClientRect();
+  const i0 = Math.floor((e.clientX-r.left)/SC2), i2 = Math.floor((e.clientY-r.top)/SC2);
+  if (i0<0||i2<0||i0>=G2.shape[0]||i2>=G2.shape[1]) return;
+  const v = g2[sel2.value][i0*G2.shape[1]+i2];
+  const wx = G2.origin_world[0]+(i0+0.5)*G2.resolution_m;
+  const wz = G2.origin_world[2]+(i2+0.5)*G2.resolution_m;
+  document.getElementById("readout2d").textContent =
+    "cell ["+i0+", "+i2+"]  world [x="+wx.toFixed(3)+", z="+wz.toFixed(3)+"] m  "
+    + sel2.value + " = " + (isFinite(v)? fmtNum(v) : String(v));
+});
+draw2d();
+
+/* ============================================================ report tree */
+function buildTree(key, val){
+  const node = document.createElement("div"); node.className = "jt";
+  const k = document.createElement("span"); k.className = "jt-k";
+  k.textContent = key;
+  node.appendChild(k);
+  if (val !== null && typeof val === "object"){
+    const isArr = Array.isArray(val);
+    const keys = isArr ? val.map((_,i)=>i) : Object.keys(val);
+    const t = document.createElement("span"); t.className = "jt-t";
+    t.textContent = isArr ? "  [array, "+keys.length+"]" : "  {object, "+keys.length+" keys}";
+    node.appendChild(t);
+    const c = document.createElement("div"); c.className = "jt-c";
+    for (const kk of keys) c.appendChild(buildTree(String(kk), val[kk]));
+    node.appendChild(c);
+    k.addEventListener("click", ()=>node.classList.toggle("open"));
+    node.dataset.st = key.toLowerCase();
+  } else {
+    k.className += " leaf";
+    const v = document.createElement("span"); v.className = "jt-v";
+    v.textContent = ": " + (typeof val === "string" ? JSON.stringify(val) : String(val));
+    node.appendChild(v);
+    node.dataset.st = (key + " " + String(val)).toLowerCase();
+  }
+  return node;
+}
+{
+  const body = document.getElementById("reportBody");
+  const root = buildTree("teacher_report", P.report);
+  root.classList.add("open");
+  body.appendChild(root);
+  function filterTree(node, term){
+    // returns true if node or descendant matches
+    let selfMatch = term === "" || (node.dataset.st || "").indexOf(term) >= 0;
+    let childMatch = false;
+    const c = node.querySelector(":scope > .jt-c");
+    if (c){
+      for (const ch of c.children){
+        if (filterTree(ch, term)) childMatch = true;
+      }
+    }
+    const show = selfMatch || childMatch;
+    node.classList.toggle("hidden", !show);
+    if (term !== "" && childMatch) node.classList.add("open");
+    if (term !== "" && selfMatch && c){
+      // show all children of a matching container
+      for (const ch of c.children) ch.classList.remove("hidden");
+    }
+    return show;
+  }
+  document.getElementById("reportSearch").addEventListener("input", e=>{
+    filterTree(root, e.target.value.toLowerCase().trim());
+  });
+  document.getElementById("reportExpand").addEventListener("click", ()=>{
+    body.querySelectorAll(".jt").forEach(n=>n.classList.add("open"));
+  });
+  document.getElementById("reportCollapse").addEventListener("click", ()=>{
+    body.querySelectorAll(".jt").forEach(n=>n.classList.remove("open"));
+    root.classList.add("open");
+  });
+}
+/* provenance */
+{
+  let h = "<tr><td>export timestamp</td><td>"+esc(P.meta.export_timestamp)+"</td></tr>"
+        + "<tr><td>git commit</td><td>"+esc(P.meta.git_commit)+"</td></tr>";
+  for (const f of P.meta.provenance){
+    h += "<tr><td>"+esc(f.path)+"</td><td>sha256 "+esc(f.sha256)
+       + "<br>mtime "+esc(f.mtime)+" &middot; "+f.bytes.toLocaleString()+" bytes</td></tr>";
+  }
+  document.getElementById("provTable").innerHTML = h;
+}
+
+/* ============================================================ footer */
+{
+  const cc = V.class_counts, total = cc.reduce((a,b)=>a+b,0);
+  let s = "<b>Voxels</b> (full grid argmax): ";
+  for (let c=0;c<5;c++) s += CLASS_NAMES[c]+" <b>"+cc[c].toLocaleString()+"</b> &middot; ";
+  s += "touched <b>"+NV.toLocaleString()+"</b>/"+total.toLocaleString()
+    + " ("+(100*NV/total).toFixed(1)+"%) &mdash; "
+    + "<b>Cloud</b> "+NC.toLocaleString()+" pts &mdash; "
+    + "<b>Mesh</b> " + (P.mesh.present? (P.mesh.vertex_count.toLocaleString()+" verts / "+P.mesh.face_count.toLocaleString()+" faces") : "ABSENT")
+    + " &mdash; <b>Trajectory</b> "+NF+" frames<br><b>Payload</b> (raw binary bytes): ";
+  for (const k in P.sizes) s += k+" "+P.sizes[k].toLocaleString()+" &middot; ";
+  s += "<br><b>All values are the float32 cast of the exact npz values; nothing was subsampled or smoothed.</b>";
+  document.getElementById("footerText").innerHTML = s;
+}
+
+setColorMode("class");
+if (gl) requestAnimationFrame(draw);
+</script>
+</body>
+</html>
