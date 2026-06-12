@@ -2133,3 +2133,25 @@ H_PRIOR=1.35 m — capture style varies too much for a fixed prior; the anchor
 stays reportage-only (guard intact). Possible rescue (NOT pre-registered,
 needs design): per-corpus or per-creator height calibration, or pitch-aware
 priors. Home-truth ledger at 3.50: span 9.6 m, path 25.5 m, loop drift 5.7 cm.
+
+### Phase 30 — carve-discipline falsifier: FAILED as pre-registered, and the wall splits in two
+
+Three flag-gated variants (verified_only / truncated x3-margin / both), full
+table runs/_diag/carve_metric_table.json + codex_carve_report.md. Verdict
+FAILED on the pre-registered bars — no variant adopted, default off. But the
+table is the most diagnostic negative result yet:
+- xyz: dangerous_free@5cm 0.327 -> 0.0000 under EVERY variant (10cm too) —
+  unverified-ray flooding is 100% of xyz's danger, and discipline eliminates
+  it. The miss was the free-recall guardrail: truncated retained 0.591 vs
+  the 0.60 bar (by 0.009). Bars are bars; no post-hoc tuning.
+- desk: 0.567 -> 0.504 best — danger survives verified-only carving, so
+  desk's dangerous free is carved by VERIFIED-but-WRONG depth (the Phase-12
+  perturbation-stable PatchMatch bias). No carve policy can fix
+  mismeasurement: desk-class danger needs verified-depth ACCURACY work.
+- occupied_static_iou rose (0.030 -> up to 0.240) but via denominator shift
+  (free->unknown), recorded as definitional, not claimed as a win.
+Also landed and verified: --assets per-scene filter for teacher+evaluate
+(byte-identity proven) — falsifier cycles now 5x cheaper.
+NEXT (to pre-register fresh, not tune the old): (1) margin-sweep falsifier
+for truncated-on-xyz-class with the SAME retention bar; (2) desk-class
+verified-depth accuracy investigation (MVS bias) — the wall behind the wall.

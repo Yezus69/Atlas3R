@@ -67,6 +67,7 @@ def run_teacher(
     artifacts_dir: str | Path = DEFAULT_ARTIFACTS_DIR,
     m1_dir: str | Path = DEFAULT_M1_DIR,
     m2_dir: str | Path = DEFAULT_M2_DIR,
+    assets: str | Sequence[str] | None = None,
 ) -> dict[str, Any]:
     root_path = Path.cwd() if root is None else Path(root)
     output_path = _resolve_path(Path(output_dir), root_path)
@@ -76,7 +77,7 @@ def run_teacher(
     envelope, envelope_meta = load_robot_envelope(root=root_path)
 
     try:
-        assets = load_canonical_assets(manifest, repo_root=root_path)
+        manifest_assets = load_canonical_assets(manifest, repo_root=root_path)
     except (FileNotFoundError, ValueError) as exc:
         summary = {
             "module": "Atlas3R Teacher",
@@ -87,9 +88,28 @@ def run_teacher(
         _write_json(output_path / "teacher_summary.json", summary)
         return summary
 
+    selected_asset_ids = _parse_asset_filter(assets)
+    if selected_asset_ids is None:
+        run_assets = manifest_assets
+    else:
+        by_id = {asset.asset_id: asset for asset in manifest_assets}
+        unknown = [asset_id for asset_id in selected_asset_ids if asset_id not in by_id]
+        if unknown:
+            summary = {
+                "module": "Atlas3R Teacher",
+                "status": "blocked_unknown_assets",
+                "error": f"unknown asset id(s): {', '.join(unknown)}",
+                "requested_assets": list(selected_asset_ids),
+                "available_assets": [asset.asset_id for asset in manifest_assets],
+                "tracks": [],
+            }
+            _write_json(output_path / "teacher_summary.json", summary)
+            return summary
+        run_assets = [by_id[asset_id] for asset_id in selected_asset_ids]
+
     per_track: list[dict[str, Any]] = []
     report_paths: dict[str, str] = {}
-    for asset in assets:
+    for asset in run_assets:
         track_report = _run_track(
             asset,
             root_path,
@@ -108,6 +128,7 @@ def run_teacher(
         "module": "Atlas3R Teacher",
         "status": "complete",
         "robot_envelope": envelope_meta,
+        "requested_assets": [asset.asset_id for asset in run_assets],
         "track_reports": report_paths,
         "tracks": [
             {
@@ -132,6 +153,21 @@ def run_teacher(
     _write_json(output_path / "teacher_summary.json", summary)
     _print_summary(summary)
     return summary
+
+
+def _parse_asset_filter(assets: str | Sequence[str] | None) -> tuple[str, ...] | None:
+    if assets is None:
+        return None
+    if isinstance(assets, str):
+        raw_values = assets.split(",")
+    else:
+        raw_values = []
+        for value in assets:
+            raw_values.extend(str(value).split(","))
+    selected = [value.strip() for value in raw_values if value.strip()]
+    if not selected:
+        raise ValueError("--assets must name at least one asset id")
+    return tuple(_dedupe(selected))
 
 
 def _run_track(
@@ -1750,15 +1786,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--artifacts-dir", default=DEFAULT_ARTIFACTS_DIR)
     parser.add_argument("--m1-dir", default=DEFAULT_M1_DIR)
     parser.add_argument("--m2-dir", default=DEFAULT_M2_DIR)
+    parser.add_argument(
+        "--assets",
+        default=None,
+        help="comma-separated asset ids to run after manifest load (default: all)",
+    )
     args = parser.parse_args(argv)
 
-    run_teacher(
-        args.manifest,
-        args.output_dir,
-        artifacts_dir=args.artifacts_dir,
-        m1_dir=args.m1_dir,
-        m2_dir=args.m2_dir,
-    )
+    try:
+        run_teacher(
+            args.manifest,
+            args.output_dir,
+            artifacts_dir=args.artifacts_dir,
+            m1_dir=args.m1_dir,
+            m2_dir=args.m2_dir,
+            assets=args.assets,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     return 0
 
 

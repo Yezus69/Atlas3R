@@ -20,7 +20,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from .config import RobotEnvelopeConfig
+from .config import (
+    FREE_CARVE_DISCIPLINES,
+    FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+    RobotEnvelopeConfig,
+)
 from .contracts import (
     ContractValidationError,
     FrameRayPacket,
@@ -39,6 +43,9 @@ DEFAULT_VOXEL_SIZE_M = 0.05
 CLASS_OCCUPIED_STATIC = 0
 CLASS_MOVABLE_STATIC = 1
 CLASS_DYNAMIC = 2
+FREE_CARVE_BAND_BOTTOM = "bottom_half"
+FREE_CARVE_BAND_UPPER = "upper_half"
+FREE_CARVE_BAND_OUTSIDE = "outside_band"
 # A per-sample movable_static probability above this (from the M5 state's
 # ``residual_summary["movable_probability"]``) tags the sample movable_static.
 MOVABLE_PROB_THRESHOLD = 0.5
@@ -103,6 +110,41 @@ CAMERA_UP_PRIOR_MAX_ANGLE_DEG = 30.0
 # gate inputs; it records a separate export-alignment provenance block.
 GRAVITY_CONSENSUS_PRIOR_CONE_DEG = 45.0
 GRAVITY_CONSENSUS_MAX_AGREEMENT_DEG = 10.0
+
+
+def _free_carve_discipline_decision(
+    discipline: str,
+    *,
+    terminal_verified: bool,
+    band_position: str,
+    base_margin_m: float,
+    unverified_margin_multiplier: float = FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+) -> dict[str, Any]:
+    """Pure policy decision for one ray/free-sample context.
+
+    ``base_margin_m`` is the deployed truncation constant
+    (``RobotEnvelopeConfig.free_carve_margin_m``; 0.1 m in the canonical config).
+    The unverified multiplier is fixed by the brief at 3x.
+    """
+    if discipline not in FREE_CARVE_DISCIPLINES:
+        raise ValueError(f"unknown free_carve_discipline: {discipline}")
+    if discipline == "off":
+        return {"create_free_evidence": True, "truncation_margin_m": 0.0}
+    if discipline == "verified_only":
+        return {"create_free_evidence": bool(terminal_verified), "truncation_margin_m": 0.0}
+    if discipline == "truncated":
+        multiplier = 1.0 if terminal_verified else float(unverified_margin_multiplier)
+        return {
+            "create_free_evidence": True,
+            "truncation_margin_m": float(base_margin_m) * multiplier,
+        }
+    if band_position == FREE_CARVE_BAND_BOTTOM:
+        return {"create_free_evidence": bool(terminal_verified), "truncation_margin_m": 0.0}
+    multiplier = 1.0 if terminal_verified else float(unverified_margin_multiplier)
+    return {
+        "create_free_evidence": True,
+        "truncation_margin_m": float(base_margin_m) * multiplier,
+    }
 
 
 def fuse_static_map(
@@ -253,7 +295,8 @@ def fuse_static_map(
 
     # Fuse each sample by class: free along static/movable rays, occupied at the
     # surface, dynamic in its own channel (never static, never free-carving).
-    _fuse_rays(
+    free_carve_discipline = str(envelope.free_carve_discipline) if apply_fusion_policy else "off"
+    free_evidence_report = _fuse_rays(
         surfaces, origins, ray_dirs, classes, verified,
         grid_min, effective_voxel, dims,
         tsdf_value, tsdf_weight, log_odds,
@@ -261,6 +304,9 @@ def fuse_static_map(
         occupied_static_count, movable_count, dynamic_count,
         verified_occupied_count, verified_movable_count,
         uncertainty, rel_unc, np,
+        free_carve_discipline=free_carve_discipline,
+        free_carve_margin_m=float(envelope.free_carve_margin_m),
+        free_carve_unverified_margin_multiplier=FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
     )
 
     # The candidate occupancy-estimation policy (free-carve truncation + gravity
@@ -330,6 +376,7 @@ def fuse_static_map(
         grid_min, effective_voxel, dims,
         floor_info, scale_posterior, coordinate_frame, envelope, np,
         apply_fusion_policy=apply_fusion_policy,
+        free_evidence_report=free_evidence_report,
     )
     # Stamp the alignment onto the comparison field so the band-agreement step can
     # bring camera centres into THIS field's (per-reconstruction) aligned frame.
@@ -476,6 +523,9 @@ def fuse_static_map(
             "apply_fusion_policy": bool(apply_fusion_policy),
             "policy_active": bool(envelope.policy_active),
             "free_carve_margin_m": float(envelope.free_carve_margin_m),
+            "free_carve_discipline": str(envelope.free_carve_discipline),
+            "free_carve_unverified_margin_multiplier": FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
+            "free_evidence_discipline": band_report.get("free_evidence_discipline", {"applied": False}),
             "occupancy_support_height_m": float(envelope.occupancy_support_height_m),
             "occupancy_support_min_count": int(envelope.occupancy_support_min_count),
             "occupancy_close_voxels": int(envelope.occupancy_close_voxels),
@@ -627,6 +677,63 @@ def _movable_probability(state: StaticDynamicState, n: int, np: Any) -> Any:
     return arr
 
 
+def _accumulate_free_count(
+    free_count,
+    origins,
+    seg,
+    dist,
+    num,
+    carve,
+    verified,
+    grid_min,
+    inv_voxel,
+    dims,
+    flat_strides,
+    np,
+    *,
+    discipline: str,
+    base_margin_m: float,
+    unverified_margin_multiplier: float,
+):
+    nx, ny, nz = dims
+    ver = np.asarray(verified, dtype=bool)
+    if discipline == "verified_only":
+        carve = carve & ver
+    elif discipline not in {"off", "truncated"}:
+        raise ValueError(f"unsupported free count accumulation discipline: {discipline}")
+
+    misses = np.zeros(nx * ny * nz, dtype=np.int64)
+    _CHUNK_POINTS = 2_000_000  # bounds transient memory (~100 MB) per slab
+    for num_value in np.unique(num[carve]):
+        rows = np.nonzero(carve & (num == num_value))[0]
+        # Same sample points as the loop form: linspace over [0,1) with the
+        # final (near-surface) sample EXCLUDED -- identical floats, identical
+        # floor indices when discipline is OFF.
+        ts = np.linspace(0.0, 1.0, num=int(num_value), endpoint=False)[:-1]
+        chunk_rows = max(1, _CHUNK_POINTS // max(1, ts.shape[0]))
+        for start in range(0, rows.shape[0], chunk_rows):
+            sel = rows[start:start + chunk_rows]
+            pts = origins[sel][:, None, :] + ts[None, :, None] * seg[sel][:, None, :]
+            free_idx = np.floor((pts - grid_min[None, None, :]) * inv_voxel).astype(np.int64)
+            ok = (
+                (free_idx[..., 0] >= 0) & (free_idx[..., 0] < nx)
+                & (free_idx[..., 1] >= 0) & (free_idx[..., 1] < ny)
+                & (free_idx[..., 2] >= 0) & (free_idx[..., 2] < nz)
+            )
+            if discipline == "truncated":
+                margin = np.where(
+                    ver[sel],
+                    float(base_margin_m),
+                    float(base_margin_m) * float(unverified_margin_multiplier),
+                )
+                stop_fraction = 1.0 - margin / np.maximum(dist[sel], 1e-12)
+                ok = ok & (ts[None, :] < stop_fraction[:, None])
+            flat_free = (free_idx @ flat_strides)[ok]
+            np.add.at(free_count.reshape(-1), flat_free, 1.0)
+            np.add.at(misses, flat_free, 1)
+    return misses
+
+
 def _fuse_rays(
     surfaces, origins, ray_dirs, classes, verified,
     grid_min, voxel, dims,
@@ -635,6 +742,10 @@ def _fuse_rays(
     occupied_static_count, movable_count, dynamic_count,
     verified_occupied_count, verified_movable_count,
     uncertainty, rel_unc, np,
+    *,
+    free_carve_discipline: str = "off",
+    free_carve_margin_m: float = 0.0,
+    free_carve_unverified_margin_multiplier: float = FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
 ):
     nx, ny, nz = dims
     inv_voxel = 1.0 / voxel
@@ -715,27 +826,32 @@ def _fuse_rays(
     carve = (~is_dyn) & (dist > voxel) & (n_steps > 1)
     num = np.minimum(n_steps, 64)
 
-    misses = np.zeros(nx * ny * nz, dtype=np.int64)
-    _CHUNK_POINTS = 2_000_000  # bounds transient memory (~100 MB) per slab
-    for num_value in np.unique(num[carve]):
-        rows = np.nonzero(carve & (num == num_value))[0]
-        # Same sample points as the loop form: linspace over [0,1) with the
-        # final (near-surface) sample EXCLUDED -- identical floats, identical
-        # floor indices.
-        ts = np.linspace(0.0, 1.0, num=int(num_value), endpoint=False)[:-1]
-        chunk_rows = max(1, _CHUNK_POINTS // max(1, ts.shape[0]))
-        for start in range(0, rows.shape[0], chunk_rows):
-            sel = rows[start:start + chunk_rows]
-            pts = origins[sel][:, None, :] + ts[None, :, None] * seg[sel][:, None, :]
-            free_idx = np.floor((pts - grid_min[None, None, :]) * inv_voxel).astype(np.int64)
-            ok = (
-                (free_idx[..., 0] >= 0) & (free_idx[..., 0] < nx)
-                & (free_idx[..., 1] >= 0) & (free_idx[..., 1] < ny)
-                & (free_idx[..., 2] >= 0) & (free_idx[..., 2] < nz)
-            )
-            flat_free = (free_idx @ flat_strides)[ok]
-            np.add.at(free_count.reshape(-1), flat_free, 1.0)
-            np.add.at(misses, flat_free, 1)
+    alternates: dict[str, Any] = {}
+    if free_carve_discipline == "both":
+        verified_only_free = np.zeros_like(free_count)
+        misses = _accumulate_free_count(
+            free_count, origins, seg, dist, num, carve, verified,
+            grid_min, inv_voxel, dims, flat_strides, np,
+            discipline="truncated",
+            base_margin_m=free_carve_margin_m,
+            unverified_margin_multiplier=free_carve_unverified_margin_multiplier,
+        )
+        _accumulate_free_count(
+            verified_only_free, origins, seg, dist, num, carve, verified,
+            grid_min, inv_voxel, dims, flat_strides, np,
+            discipline="verified_only",
+            base_margin_m=free_carve_margin_m,
+            unverified_margin_multiplier=free_carve_unverified_margin_multiplier,
+        )
+        alternates["verified_only_free_count"] = verified_only_free
+    else:
+        misses = _accumulate_free_count(
+            free_count, origins, seg, dist, num, carve, verified,
+            grid_min, inv_voxel, dims, flat_strides, np,
+            discipline=free_carve_discipline,
+            base_margin_m=free_carve_margin_m,
+            unverified_margin_multiplier=free_carve_unverified_margin_multiplier,
+        )
 
     # log_odds pass 2, EXACT: per voxel, m equal -LOG_ODDS_MISS decrements with
     # per-step clipping, replayed as a bounded vectorized loop. Saturation at
@@ -758,6 +874,12 @@ def _fuse_rays(
                 # every remaining step is an exact no-op (clip(-C + miss) = -C).
                 break
         lo_flat[idx_active] = vals
+    return {
+        "discipline": str(free_carve_discipline),
+        "base_margin_m": float(free_carve_margin_m),
+        "unverified_margin_multiplier": float(free_carve_unverified_margin_multiplier),
+        **{f"_{k}": v for k, v in alternates.items()},
+    }
 
 
 def _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):
@@ -767,6 +889,38 @@ def _band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):
     hi_face = lo_face + voxel
     in_band = (hi_face > band_min) & (lo_face < band_max)
     return np.nonzero(in_band)[0]
+
+
+def _bottom_half_band_indices(floor_axis, band_min, band_max, grid_min, voxel, dims, np):
+    """Floor-axis slices whose centers lie in the bottom half of the collision band."""
+    nf = dims[floor_axis]
+    centers = grid_min[floor_axis] + (np.arange(nf) + 0.5) * voxel
+    mid = band_min + 0.5 * (band_max - band_min)
+    in_bottom = (centers >= band_min) & (centers < mid)
+    return np.nonzero(in_bottom)[0]
+
+
+def _select_both_discipline_free_count(
+    verified_only_free_count,
+    truncated_free_count,
+    floor_axis,
+    band_min,
+    band_max,
+    grid_min,
+    voxel,
+    dims,
+    np,
+):
+    free_count = np.asarray(truncated_free_count, dtype=np.float64).copy()
+    bottom_idx = _bottom_half_band_indices(
+        floor_axis, band_min, band_max, grid_min, voxel, dims, np
+    )
+    if bottom_idx.shape[0] == 0:
+        return free_count, bottom_idx
+    fm = np.moveaxis(free_count, floor_axis, 0)
+    vm = np.moveaxis(np.asarray(verified_only_free_count, dtype=np.float64), floor_axis, 0)
+    fm[bottom_idx] = vm[bottom_idx]
+    return free_count, bottom_idx
 
 
 def _apply_band_free_truncation(
@@ -1429,6 +1583,7 @@ def _build_voxel_occupancy_3d(
     grid_min, voxel, dims,
     floor_info, scale_posterior, coordinate_frame, envelope, np,
     apply_fusion_policy: bool = False,
+    free_evidence_report: Mapping[str, Any] | None = None,
 ) -> tuple[VoxelOccupancyGrid3D | None, dict[str, Any] | None, dict[str, Any], dict[str, Any]]:
     """Crop the fused volume to the robot collision band and build the per-voxel
     ``VoxelOccupancyGrid3D``.
@@ -1446,6 +1601,37 @@ def _build_voxel_occupancy_3d(
     floor_value = float(floor_info["floor_value"])
     band_min = floor_value
     band_max = floor_value + float(envelope.band_height_m)
+    free_evidence_report = dict(free_evidence_report or {"discipline": "off"})
+    free_carve_discipline = str(free_evidence_report.get("discipline", "off"))
+    free_carve_discipline_report: dict[str, Any] = {
+        "applied": bool(apply_fusion_policy and free_carve_discipline != "off"),
+        "discipline": free_carve_discipline,
+        "base_margin_m": float(free_evidence_report.get("base_margin_m", 0.0)),
+        "unverified_margin_multiplier": float(
+            free_evidence_report.get(
+                "unverified_margin_multiplier", FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER
+            )
+        ),
+    }
+    if apply_fusion_policy and free_carve_discipline == "both":
+        v1_free = free_evidence_report.get("_verified_only_free_count")
+        if v1_free is not None:
+            free_count, bottom_idx = _select_both_discipline_free_count(
+                v1_free, free_count, floor_axis, band_min, band_max, grid_min, voxel, dims, np
+            )
+            free_carve_discipline_report.update(
+                {
+                    "bottom_half_policy": "verified_only",
+                    "upper_half_policy": "truncated",
+                    "outside_band_policy": "truncated",
+                    "bottom_half_slice_count": int(bottom_idx.shape[0]),
+                    "bottom_half_free_voxels": int(
+                        np.count_nonzero(np.moveaxis(free_count, floor_axis, 0)[bottom_idx] > 0.0)
+                    ),
+                }
+            )
+        else:
+            free_carve_discipline_report["blocker"] = "missing_v3_verified_only_free_count"
 
     # Candidate occupancy-estimation policy (apply_fusion_policy), applied on COPIES
     # so the caller's raw counts (and the measured GT field) are never mutated:
@@ -1639,6 +1825,7 @@ def _build_voxel_occupancy_3d(
         "unknown_fraction": unknown_vox / band_total if band_total else 0.0,
         "movable_inferred": mov_vox > 0,
         "dynamic_inferred": dyn_vox > 0,
+        "free_evidence_discipline": free_carve_discipline_report,
         "free_carve_truncation": free_carve_truncation_report,
         "occupancy_completion": occupancy_completion_report,
         "blockers": (),

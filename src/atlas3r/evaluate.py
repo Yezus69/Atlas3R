@@ -112,18 +112,37 @@ def _rel(path: Path, root: Path) -> str:
         return path.as_posix()
 
 
+def _parse_assets_arg(raw: str | None) -> tuple[str, ...] | None:
+    if raw is None:
+        return None
+    selected = [asset_id.strip() for asset_id in raw.split(",") if asset_id.strip()]
+    if not selected:
+        raise ValueError("--assets must name at least one asset id")
+    deduped = tuple(dict.fromkeys(selected))
+    unknown = [asset_id for asset_id in deduped if asset_id not in CANONICAL_TRACKS]
+    if unknown:
+        raise ValueError(f"unknown asset id(s): {', '.join(unknown)}")
+    return deduped
+
+
 # ---------------------------------------------------------------------------
 # Running / locating the teacher run
 # ---------------------------------------------------------------------------
-def run_teacher_subprocess(root: Path, teacher_dir: Path) -> dict[str, Any]:
+def run_teacher_subprocess(
+    root: Path, teacher_dir: Path, selected_tracks: Sequence[str] | None = None
+) -> dict[str, Any]:
     """Invoke ``python -m atlas3r.teacher`` (do NOT re-run its logic in-process; just
     drive its CLI, then aggregate its outputs)."""
     cmd = [sys.executable, "-m", "atlas3r.teacher", "--output-dir", str(teacher_dir)]
+    if selected_tracks is not None:
+        cmd.extend(["--assets", ",".join(selected_tracks)])
     proc = subprocess.run(cmd, cwd=str(root), check=False)
     return {"command": cmd, "returncode": proc.returncode}
 
 
-def load_teacher_run(root: Path, teacher_dir: Path) -> dict[str, Any]:
+def load_teacher_run(
+    root: Path, teacher_dir: Path, selected_tracks: Sequence[str] | None = None
+) -> dict[str, Any]:
     """Resolve the latest teacher run from ``teacher_summary.json`` and load both
     per-track reports. Returns an explicit blocker dict if anything is missing -- never
     fabricates a run."""
@@ -141,7 +160,14 @@ def load_teacher_run(root: Path, teacher_dir: Path) -> dict[str, Any]:
     report_bytes: dict[str, bytes] = {}
     report_rel: dict[str, str] = {}
     missing: list[str] = []
-    for asset_id, raw_path in track_report_paths.items():
+    if selected_tracks is None:
+        report_items = track_report_paths.items()
+    else:
+        report_items = [(asset_id, track_report_paths.get(asset_id)) for asset_id in selected_tracks]
+    for asset_id, raw_path in report_items:
+        if raw_path is None:
+            missing.append(f"{asset_id}:missing_from_teacher_summary")
+            continue
         rp = Path(raw_path)
         if not rp.is_absolute():
             rp = root / rp
@@ -505,14 +531,16 @@ def build_asset_provenance(reports: dict[str, dict[str, Any]]) -> dict[str, Any]
     return out
 
 
-def build_scorecard(root: Path, run: dict[str, Any]) -> dict[str, Any]:
+def build_scorecard(
+    root: Path, run: dict[str, Any], selected_tracks: Sequence[str] = CANONICAL_TRACKS
+) -> dict[str, Any]:
     reports = run["reports"]
     report_bytes = run["report_bytes"]
     report_rel = run["report_rel"]
 
     tracks: dict[str, Any] = {}
     track_status: dict[str, Any] = {}
-    for asset_id in CANONICAL_TRACKS:
+    for asset_id in selected_tracks:
         if asset_id in reports:
             tracks[asset_id] = extract_track(reports[asset_id])
             track_status[asset_id] = "aggregated"
@@ -544,7 +572,7 @@ def build_scorecard(root: Path, run: dict[str, Any]) -> dict[str, Any]:
         "source_run_summary": run.get("summary_path", NOT_REPORTED),
         "source_reports": source_reports,
         "track_status": track_status,
-        "tracks_present": [a for a in CANONICAL_TRACKS if a in reports],
+        "tracks_present": [a for a in selected_tracks if a in reports],
         "missing_reports": run.get("missing_reports", []),
     }
 
@@ -627,7 +655,11 @@ def _dotted(track: dict[str, Any], dotted: str) -> Any:
     return _pluck(track, *dotted.split("."), default=NOT_REPORTED)
 
 
-def diff_scorecards(new: dict[str, Any], prev: dict[str, Any] | None) -> dict[str, Any]:
+def diff_scorecards(
+    new: dict[str, Any],
+    prev: dict[str, Any] | None,
+    selected_tracks: Sequence[str] = CANONICAL_TRACKS,
+) -> dict[str, Any]:
     if prev is None:
         return {"status": "baseline_run", "note": "no previous scorecard; nothing to diff against"}
     # Recompute both content hashes rather than trusting the stored field, so the
@@ -643,7 +675,7 @@ def diff_scorecards(new: dict[str, Any], prev: dict[str, Any] | None) -> dict[st
         "identical": new_hash == prev_hash,
         "tracks": {},
     }
-    for asset_id in CANONICAL_TRACKS:
+    for asset_id in selected_tracks:
         new_t = _pluck(new, "tracks", asset_id, default={})
         prev_t = _pluck(prev, "tracks", asset_id, default={})
         numeric: dict[str, Any] = {}
@@ -685,7 +717,11 @@ def _fmt_delta(delta: Any) -> str:
 
 
 def render_summary(
-    scorecard: dict[str, Any], diff: dict[str, Any], generated_at: str, git_tree_dirty: Any
+    scorecard: dict[str, Any],
+    diff: dict[str, Any],
+    generated_at: str,
+    git_tree_dirty: Any,
+    selected_tracks: Sequence[str] = CANONICAL_TRACKS,
 ) -> str:
     meta = scorecard["meta"]
     lines: list[str] = []
@@ -715,7 +751,7 @@ def render_summary(
         lines.append(f"- [!] MISSING REPORTS: {meta['missing_reports']}")
     lines.append("")
 
-    for asset_id in CANONICAL_TRACKS:
+    for asset_id in selected_tracks:
         track = scorecard["tracks"].get(asset_id, {})
         lines.append(f"## {asset_id}")
         if track.get("status") == "missing_track_report":
@@ -922,7 +958,7 @@ def render_summary(
     lines.append(f"- identical_to_previous: {_fmt(diff.get('identical'))}")
     lines.append("")
     any_change = False
-    for asset_id in CANONICAL_TRACKS:
+    for asset_id in selected_tracks:
         td = diff.get("tracks", {}).get(asset_id, {})
         numeric = td.get("numeric", {})
         categorical = td.get("categorical", {})
@@ -958,15 +994,17 @@ def evaluate(
     *,
     no_run: bool,
     generated_at: str,
+    selected_tracks: Sequence[str] | None = None,
 ) -> dict[str, Any]:
+    active_tracks = CANONICAL_TRACKS if selected_tracks is None else selected_tracks
     if not no_run:
-        run_teacher_subprocess(root, teacher_dir)
+        run_teacher_subprocess(root, teacher_dir, selected_tracks)
 
-    run = load_teacher_run(root, teacher_dir)
+    run = load_teacher_run(root, teacher_dir, selected_tracks)
     if run["status"] in {"missing_teacher_run"}:
         return {"status": run["status"], "blocker": run.get("blocker")}
 
-    scorecard = build_scorecard(root, run)
+    scorecard = build_scorecard(root, run, active_tracks)
 
     eval_path = root / eval_dir
     scorecard_path = eval_path / SCORECARD_NAME
@@ -976,7 +1014,7 @@ def evaluate(
     if scorecard_path.is_file():
         prev = json.loads(scorecard_path.read_text(encoding="utf-8"))
 
-    diff = diff_scorecards(scorecard, prev)
+    diff = diff_scorecards(scorecard, prev, active_tracks)
 
     # Rotate the current scorecard to .prev BEFORE overwriting, so there is always
     # exactly one prior to diff against next time.
@@ -990,7 +1028,7 @@ def evaluate(
     # shown in the human .md header but never embedded in the hashed scorecard.json.
     git_porcelain = _run_git(["status", "--porcelain"], root)
     git_tree_dirty = bool(git_porcelain) if git_porcelain is not None else NOT_REPORTED
-    summary_md = render_summary(scorecard, diff, generated_at, git_tree_dirty)
+    summary_md = render_summary(scorecard, diff, generated_at, git_tree_dirty, active_tracks)
     (eval_path / SUMMARY_NAME).write_text(summary_md, encoding="utf-8")
 
     return {
@@ -1021,7 +1059,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--teacher-dir", default=str(DEFAULT_TEACHER_DIR))
     parser.add_argument("--eval-dir", default=str(DEFAULT_EVAL_DIR))
     parser.add_argument("--root", default=None, help="repo root (default: current working directory)")
+    parser.add_argument(
+        "--assets",
+        default=None,
+        help="comma-separated canonical asset ids to run/aggregate (default: all)",
+    )
     args = parser.parse_args(argv)
+    try:
+        selected_tracks = _parse_assets_arg(args.assets)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     root = Path.cwd() if args.root is None else Path(args.root)
     result = evaluate(
@@ -1030,6 +1077,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         Path(args.eval_dir),
         no_run=args.no_run,
         generated_at=_now_iso(),
+        selected_tracks=selected_tracks,
     )
 
     if result["status"] != "ok":

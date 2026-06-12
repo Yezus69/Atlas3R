@@ -8,6 +8,7 @@ only after the council estimate is produced, to check scale-error coverage.
 from __future__ import annotations
 
 import json
+import math
 import sys
 import time
 import traceback
@@ -22,6 +23,10 @@ from atlas3r.geometry_adapter import (  # noqa: E402
     load_measured_packets_from_m2,
 )
 from atlas3r.metric_council import run_metric_anchor_council  # noqa: E402
+from atlas3r.metric_council import (  # noqa: E402
+    _camera_height_floor_prior_anchor,
+    load_registered_pose_frames,
+)
 from atlas3r.refine import refine_scene  # noqa: E402
 from atlas3r.scale import estimate_scale_posterior  # noqa: E402
 
@@ -30,9 +35,17 @@ SCENES = (
     ("reference_metric_desk", "calibration"),
     ("reference_metric_room", "held_out"),
     ("phone_room", "target_no_gt"),
+    ("phone_room_loop", "target_ruler_check"),
+)
+HEIGHT_FALSIFIER_SCENES = (
+    ("reference_metric", "calibration"),
+    ("reference_metric_room", "held_out"),
+    ("reference_metric_desk", "floor_unavailable_control"),
+    ("phone_room_loop", "target_ruler_check"),
 )
 MEASURED = {"reference_metric", "reference_metric_desk", "reference_metric_room"}
 MIN_CALIBRATION_SCENES_FOR_PROMOTION = 8
+PHONE_ROOM_LOOP_RULER_SCALE = 3.44
 
 
 def _consensus(report: dict) -> dict:
@@ -57,6 +70,56 @@ def _scale_error(asset: str, refined) -> dict | None:
     }
 
 
+def _teacher_map_inputs(asset: str) -> tuple[dict | None, object | None, dict]:
+    path = ROOT / "runs/teacher" / f"{asset}_teacher_report.json"
+    if not path.exists():
+        return None, None, {
+            "status": "missing_teacher_report",
+            "path": str(path),
+            "blockers": (f"missing_teacher_report:{asset}",),
+        }
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, None, {
+            "status": "invalid_teacher_report",
+            "path": str(path),
+            "error": f"{type(exc).__name__}: {exc}",
+            "blockers": (f"invalid_teacher_report:{asset}",),
+        }
+    map_report = report.get("map_occupancy_status")
+    if not isinstance(map_report, dict):
+        return None, None, {
+            "status": "missing_map_occupancy_status",
+            "path": str(path),
+            "blockers": (f"missing_map_occupancy_status:{asset}",),
+        }
+    floor = map_report.get("floor")
+    if not isinstance(floor, dict):
+        return None, map_report.get("floor_align_rotation"), {
+            "status": "missing_floor_report",
+            "path": str(path),
+            "blockers": (f"missing_floor_report:{asset}",),
+        }
+    floor_payload = dict(floor)
+    up = map_report.get("up_alignment")
+    if isinstance(up, dict):
+        floor_payload["up_alignment"] = up
+        export = up.get("export_alignment")
+        if isinstance(export, dict) and "export_alignment" not in floor_payload:
+            floor_payload["export_alignment"] = export
+    return floor_payload, map_report.get("floor_align_rotation"), {
+        "status": "loaded",
+        "path": str(path),
+        "floor_status": {
+            "up_alignment_applied": floor_payload.get("up_alignment_applied"),
+            "method": floor_payload.get("method"),
+            "inlier_ratio": floor_payload.get("inlier_ratio"),
+        },
+        "blockers": (),
+    }
+
+
 def _row(asset: str, split: str) -> dict:
     t0 = time.time()
     mono, adapter = load_geometry_artifacts(asset, ROOT, artifacts_dir="external/teacher_artifacts")
@@ -69,11 +132,16 @@ def _row(asset: str, split: str) -> dict:
         }
     soft = adapter.get("_scale_evidence", [])
     refined, refine_report = refine_scene(mono, fix_global_scale=bool(soft))
+    floor_report, floor_rotation, floor_status = _teacher_map_inputs(asset)
+    pose_frames, pose_status = load_registered_pose_frames(asset, ROOT)
     evidence, council = run_metric_anchor_council(
         asset,
         refined,
         ROOT,
         primary_artifacts_dir="external/teacher_artifacts",
+        floor_report=floor_report,
+        registered_pose_frames=pose_frames if pose_status.get("status") == "loaded" else None,
+        floor_align_rotation=floor_rotation,
     )
     posterior, posterior_report = estimate_scale_posterior(refined, evidence)
     scale_check = _scale_error(asset, refined)
@@ -109,6 +177,10 @@ def _row(asset: str, split: str) -> dict:
         "refined_packets": len(refined),
         "refine_status": refine_report.get("status"),
         "council": council,
+        "height_anchor_inputs": {
+            "floor_report": floor_status,
+            "registered_poses": pose_status,
+        },
         "scale_evidence": [T._jsonable(e) if hasattr(T, "_jsonable") else str(e) for e in evidence],
         "posterior": {
             "status": posterior.metric_acceptance_status.value,
@@ -297,7 +369,192 @@ def _risk_certificate(rows: list[dict]) -> dict:
     }
 
 
+def _cached_true_scale(asset: str) -> tuple[float | None, dict]:
+    if asset == "phone_room_loop":
+        return PHONE_ROOM_LOOP_RULER_SCALE, {
+            "status": "ruler_measured_phone_room_loop",
+            "true_scale": PHONE_ROOM_LOOP_RULER_SCALE,
+            "provenance": "docs/band_obstacle_recall_evidence.md Phase 28 ruler scale",
+        }
+    path = ROOT / "runs/_diag/metric_anchor_council_report.json"
+    if not path.exists():
+        return None, {
+            "status": "missing_metric_anchor_council_report",
+            "path": str(path),
+        }
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return None, {
+            "status": "invalid_metric_anchor_council_report",
+            "path": str(path),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    rows = report.get("rows")
+    if not isinstance(rows, list):
+        return None, {"status": "metric_anchor_council_rows_missing", "path": str(path)}
+    for row in rows:
+        if not isinstance(row, dict) or row.get("asset") != asset:
+            continue
+        check = row.get("gt_scale_check")
+        if not isinstance(check, dict):
+            continue
+        true_scale = check.get("true_scale_from_camera_sim3")
+        if isinstance(true_scale, (int, float)) and true_scale > 0.0:
+            return float(true_scale), {
+                "status": "cached_gt_camera_sim3_scale",
+                "true_scale": float(true_scale),
+                "path": str(path),
+            }
+    return None, {"status": "true_scale_not_found", "path": str(path)}
+
+
+def _height_anchor_row(asset: str, split: str) -> dict:
+    floor_report, floor_rotation, floor_status = _teacher_map_inputs(asset)
+    pose_frames, pose_status = load_registered_pose_frames(asset, ROOT)
+    anchor = _camera_height_floor_prior_anchor(
+        asset,
+        floor_report,
+        pose_frames if pose_status.get("status") == "loaded" else None,
+        floor_align_rotation=floor_rotation,
+    )
+    true_scale, truth = _cached_true_scale(asset)
+    scale_pred = anchor.get("estimated_metric_scale")
+    rel_unc = anchor.get("relative_scale_uncertainty")
+    available = anchor.get("status") in {"accepted", "weak"}
+    log_error = None
+    error_pass = None
+    coverage_pass = None
+    if available and isinstance(scale_pred, (int, float)) and true_scale:
+        log_error = abs(math.log(float(scale_pred) / float(true_scale)))
+        error_pass = bool(log_error <= 0.25)
+        coverage_pass = bool(isinstance(rel_unc, (int, float)) and log_error <= float(rel_unc))
+    expected_unavailable = asset == "reference_metric_desk"
+    return {
+        "asset": asset,
+        "split": split,
+        "status": anchor.get("status"),
+        "available": bool(available),
+        "expected_unavailable": expected_unavailable,
+        "availability_pass": (not available) if expected_unavailable else None,
+        "anchor": anchor,
+        "floor_report_input": floor_status,
+        "registered_pose_input": pose_status,
+        "true_scale": true_scale,
+        "truth": truth,
+        "scale_pred": scale_pred if isinstance(scale_pred, (int, float)) else None,
+        "relative_uncertainty": rel_unc if isinstance(rel_unc, (int, float)) else None,
+        "abs_log_scale_error": log_error,
+        "error_pass": error_pass,
+        "coverage_pass": coverage_pass,
+    }
+
+
+def _height_anchor_falsifier() -> dict:
+    rows = [_height_anchor_row(asset, split) for asset, split in HEIGHT_FALSIFIER_SCENES]
+    available = [
+        row for row in rows
+        if row.get("available")
+        and isinstance(row.get("abs_log_scale_error"), (int, float))
+    ]
+    error_pass = bool(available) and all(row.get("error_pass") is True for row in available)
+    coverage_pass = bool(available) and all(row.get("coverage_pass") is True for row in available)
+    enough_rows = len(available) >= 2
+    desk_rows = [row for row in rows if row.get("asset") == "reference_metric_desk"]
+    desk_unavailable_pass = bool(desk_rows and desk_rows[0].get("availability_pass") is True)
+    passed = bool(error_pass and coverage_pass and enough_rows and desk_unavailable_pass)
+    return {
+        "module": "camera_height_floor_prior_falsifier",
+        "pre_registered_rule": (
+            "PASS requires abs(log(scale_pred/scale_true)) <= 0.25 on every "
+            "available row, at least two available rows, and 0.20 relative "
+            "uncertainty covering every observed error. Unavailable floor rows "
+            "must stay unavailable."
+        ),
+        "rows": rows,
+        "available_row_count": len(available),
+        "minimum_available_rows": 2,
+        "error_threshold_abs_log": 0.25,
+        "coverage_relative_uncertainty": 0.20,
+        "desk_unavailable_pass": desk_unavailable_pass,
+        "verdict": "PASSED" if passed else "FAILED",
+        "promotion_status": (
+            "promotion_to_soft_evidence_candidate_allowed"
+            if passed
+            else "reportage_only_guard_remains"
+        ),
+    }
+
+
+def _fmt(value) -> str:
+    if value is None:
+        return "N/A"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return f"{float(value):.4f}"
+    return str(value)
+
+
+def _write_height_anchor_markdown(report: dict) -> Path:
+    out = ROOT / "runs/_diag/codex_height_anchor_report.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Camera Height Floor Prior Falsifier",
+        "",
+        f"Verdict: **{report['verdict']}**",
+        "",
+        report["pre_registered_rule"],
+        "",
+        "| asset | status | h_med units | IQR | scale_pred | scale_true | abs log err | <=0.25 | covered by 0.20 |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+    ]
+    for row in report["rows"]:
+        anchor = row.get("anchor") if isinstance(row.get("anchor"), dict) else {}
+        stat = anchor.get("height_statistic") if isinstance(anchor.get("height_statistic"), dict) else {}
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(row.get("asset")),
+                    str(row.get("status")),
+                    _fmt(stat.get("height_median_reconstruction_units")),
+                    _fmt(stat.get("height_iqr_reconstruction_units")),
+                    _fmt(row.get("scale_pred")),
+                    _fmt(row.get("true_scale")),
+                    _fmt(row.get("abs_log_scale_error")),
+                    _fmt(row.get("error_pass")),
+                    _fmt(row.get("coverage_pass")),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            f"Available rows: {report['available_row_count']} / {report['minimum_available_rows']} required.",
+            f"Desk unavailable control: {_fmt(report['desk_unavailable_pass'])}.",
+            f"Promotion status: `{report['promotion_status']}`.",
+            "",
+            "The anchor remains guarded by `_calibration_guard`; uncalibrated height agreement is reportage only.",
+        ]
+    )
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
+
+
 def main() -> int:
+    if "--height-only" in sys.argv:
+        height_report = _height_anchor_falsifier()
+        out = _write_height_anchor_markdown(height_report)
+        print(f"[metric_anchor_council] wrote {out}")
+        print(json.dumps({
+            "verdict": height_report["verdict"],
+            "promotion_status": height_report["promotion_status"],
+            "available_row_count": height_report["available_row_count"],
+        }, default=str), flush=True)
+        return 0
+
     rows = []
     for asset, split in SCENES:
         print(f"[metric_anchor_council] {asset} ({split}) ...", flush=True)
@@ -330,11 +587,14 @@ def main() -> int:
         "rows": rows,
         "analysis": _analysis(rows),
         "scale_risk_certificate": _risk_certificate(rows),
+        "height_anchor_falsifier": _height_anchor_falsifier(),
     }
     out = ROOT / "runs/_diag/metric_anchor_council_report.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    height_out = _write_height_anchor_markdown(report["height_anchor_falsifier"])
     print(f"[metric_anchor_council] wrote {out}")
+    print(f"[metric_anchor_council] wrote {height_out}")
     return 0
 
 

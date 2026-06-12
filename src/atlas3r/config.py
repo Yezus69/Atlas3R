@@ -62,6 +62,9 @@ DEFAULT_VOXEL_SIZE_M = 0.05
 # Candidate occupancy-estimation policy. OFF by default -> prior fuser reproduced.
 DEFAULT_FREE_CARVE_MARGIN_M = 0.0
 DEFAULT_FREE_CARVE_FULL_COLUMN = False
+DEFAULT_FREE_CARVE_DISCIPLINE = "off"
+FREE_CARVE_DISCIPLINES = ("off", "verified_only", "truncated", "both")
+FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER = 3.0
 DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M = 0.0
 DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT = 1
 DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE = False
@@ -107,6 +110,7 @@ class RobotEnvelopeConfig:
     voxel_size_m: float = DEFAULT_VOXEL_SIZE_M
     free_carve_margin_m: float = DEFAULT_FREE_CARVE_MARGIN_M
     free_carve_full_column: bool = DEFAULT_FREE_CARVE_FULL_COLUMN
+    free_carve_discipline: str = DEFAULT_FREE_CARVE_DISCIPLINE
     occupancy_support_height_m: float = DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M
     occupancy_support_min_count: int = DEFAULT_OCCUPANCY_SUPPORT_MIN_COUNT
     occupancy_support_overrides_free: bool = DEFAULT_OCCUPANCY_SUPPORT_OVERRIDES_FREE
@@ -123,6 +127,10 @@ class RobotEnvelopeConfig:
             raise RobotEnvelopeConfigError("voxel_size_m must be a positive finite number")
         if not _non_negative(self.free_carve_margin_m):
             raise RobotEnvelopeConfigError("free_carve_margin_m must be a non-negative finite number")
+        if self.free_carve_discipline not in FREE_CARVE_DISCIPLINES:
+            raise RobotEnvelopeConfigError(
+                "free_carve_discipline must be one of: " + ", ".join(FREE_CARVE_DISCIPLINES)
+            )
         if not _non_negative(self.occupancy_support_height_m):
             raise RobotEnvelopeConfigError("occupancy_support_height_m must be a non-negative finite number")
         if not isinstance(self.occupancy_support_min_count, int) or isinstance(self.occupancy_support_min_count, bool) or self.occupancy_support_min_count < 1:
@@ -146,6 +154,7 @@ class RobotEnvelopeConfig:
         """True when any candidate occupancy-estimation lever is engaged."""
         return (
             float(self.free_carve_margin_m) > 0.0
+            or self.free_carve_discipline != "off"
             or float(self.occupancy_support_height_m) > 0.0
             or int(self.occupancy_close_voxels) > 0
         )
@@ -157,6 +166,8 @@ class RobotEnvelopeConfig:
             "voxel_size_m": float(self.voxel_size_m),
             "band_height_m": self.band_height_m,
             "free_carve_margin_m": float(self.free_carve_margin_m),
+            "free_carve_discipline": str(self.free_carve_discipline),
+            "free_carve_unverified_margin_multiplier": FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER,
             "occupancy_support_height_m": float(self.occupancy_support_height_m),
             "occupancy_support_min_count": int(self.occupancy_support_min_count),
             "occupancy_support_overrides_free": bool(self.occupancy_support_overrides_free),
@@ -215,6 +226,7 @@ def load_robot_envelope(
             voxel_size_m=float(data.get("voxel_size_m", DEFAULT_VOXEL_SIZE_M)),
             free_carve_margin_m=float(data.get("free_carve_margin_m", DEFAULT_FREE_CARVE_MARGIN_M)),
             free_carve_full_column=bool(data.get("free_carve_full_column", DEFAULT_FREE_CARVE_FULL_COLUMN)),
+            free_carve_discipline=str(data.get("free_carve_discipline", DEFAULT_FREE_CARVE_DISCIPLINE)),
             occupancy_support_height_m=float(
                 data.get("occupancy_support_height_m", DEFAULT_OCCUPANCY_SUPPORT_HEIGHT_M)
             ),
@@ -257,6 +269,8 @@ def _non_negative(value: Any) -> bool:
 __all__ = [
     "RobotEnvelopeConfig",
     "RobotEnvelopeConfigError",
+    "FREE_CARVE_DISCIPLINES",
+    "FREE_CARVE_UNVERIFIED_MARGIN_MULTIPLIER",
     "load_robot_envelope",
     "DEFAULT_CONFIG_PATH",
 ]

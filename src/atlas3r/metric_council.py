@@ -1,14 +1,16 @@
-"""Metric anchor council for learned metric priors.
+"""Metric anchor council for soft metric priors.
 
 The council compares a candidate reconstruction against independent metric
 anchor artifacts already staged on disk. It estimates scale from real packet
 geometry: same-frame depth agreement plus cross-view projection residuals after
-a fixed-scale camera alignment. Learned anchors remain soft evidence; they
-never become measured evidence.
+a fixed-scale camera alignment. It can also report pre-registered scene priors
+such as camera height above a detected floor. All anchors remain soft evidence;
+they never become measured evidence.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +48,15 @@ PIXEL_MATCH_NORM = 0.018
 SINGLE_FRAME_CAP = 768
 CROSS_VIEW_CAP = 384
 CALIBRATED_LEARNED_SCALE_ENABLED = False
+CAMERA_HEIGHT_FLOOR_PRIOR_ID = "camera_height_floor_prior"
+CAMERA_HEIGHT_PRIOR_M = 1.35
+CAMERA_HEIGHT_PRIOR_RELATIVE_STD = 0.20
+CAMERA_HEIGHT_PRIOR_CONFIDENCE = 0.50
+CAMERA_HEIGHT_PRIOR_PROVENANCE = (
+    "pre_registered_codex_brief_height_anchor_2026_06_12:"
+    "handheld_walking_capture_camera_height_prior_H_1p35m_rel_std_0p20;"
+    "not_tuned_against_gt"
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +74,9 @@ def run_metric_anchor_council(
     *,
     primary_artifacts_dir: str | Path,
     extra_anchors: Sequence[Mapping[str, Any]] | None = None,
+    floor_report: Mapping[str, Any] | None = None,
+    registered_pose_frames: Sequence[Any] | None = None,
+    floor_align_rotation: Any | None = None,
 ) -> tuple[list[ScaleEvidence], dict[str, Any]]:
     """Return council-derived soft scale evidence and a JSONable report."""
     root_path = Path(root)
@@ -126,6 +140,14 @@ def run_metric_anchor_council(
             )
         )
 
+    anchor_reports.append(
+        _camera_height_floor_prior_anchor(
+            asset_id,
+            floor_report,
+            registered_pose_frames,
+            floor_align_rotation=floor_align_rotation,
+        )
+    )
     consensus = _consensus(anchor_reports)
     evidence: list[ScaleEvidence] = []
     if consensus.get("status") != "no_usable_anchors":
@@ -136,9 +158,9 @@ def run_metric_anchor_council(
         evidence.append(
             ScaleEvidence(
                 evidence_id=f"{asset_id}_metric_anchor_council_consensus",
-                evidence_type=ScaleEvidenceType.LEARNED_METRIC_DEPTH_PRIOR,
+                evidence_type=_consensus_evidence_type(consensus),
                 measured=False,
-                source="metric_anchor_council:learned_metric_priors",
+                source="metric_anchor_council:soft_metric_priors",
                 frame_ids=frame_ids,
                 confidence=confidence,
                 scale_mean=scale_mean,
@@ -150,9 +172,12 @@ def run_metric_anchor_council(
                     "weak_anchor_ids": tuple(consensus.get("weak_anchor_ids", ())),
                     "outlier_anchor_ids": tuple(consensus.get("outlier_anchor_ids", ())),
                     "anchor_count": len(anchor_reports),
+                    "anchor_families": tuple(
+                        sorted({str(a.get("anchor_family")) for a in anchor_reports})
+                    ),
                     "scale_mean_semantics": (
                         "multiplicative correction from candidate packet units "
-                        "to the council's learned metric gauge"
+                        "to the council's soft metric-prior gauge"
                     ),
                     "uncertainty_basis": consensus.get("uncertainty_basis"),
                     "calibration_status": (
@@ -211,6 +236,273 @@ def _anchor_specs(
         seen.add(key)
         out.append(spec)
     return tuple(out)
+
+
+def load_registered_pose_frames(
+    asset_id: str,
+    root: str | Path,
+    *,
+    artifacts_dir: str | Path = "external/teacher_artifacts",
+) -> tuple[tuple[Mapping[str, Any], ...], dict[str, Any]]:
+    """Load all pose-backend registered frames for a scene artifact."""
+    root_path = Path(root)
+    pose_path = _resolve_path(Path(artifacts_dir), root_path) / asset_id / "poses.json"
+    if not pose_path.exists():
+        return (), {
+            "status": "missing_registered_pose_file",
+            "path": str(pose_path),
+            "blockers": (f"missing_registered_pose_file:{asset_id}",),
+        }
+    try:
+        data = json.loads(pose_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return (), {
+            "status": "invalid_registered_pose_file",
+            "path": str(pose_path),
+            "error": f"{type(exc).__name__}: {exc}",
+            "blockers": (f"invalid_registered_pose_file:{asset_id}",),
+        }
+    frames_raw = data.get("frames")
+    if not isinstance(frames_raw, Sequence) or isinstance(frames_raw, (str, bytes, bytearray)):
+        return (), {
+            "status": "invalid_registered_pose_file",
+            "path": str(pose_path),
+            "blockers": (f"registered_pose_frames_missing:{asset_id}",),
+        }
+    frames = tuple(f for f in frames_raw if isinstance(f, Mapping))
+    return frames, {
+        "status": "loaded",
+        "path": str(pose_path),
+        "registered_frame_count": len(frames),
+        "translation_units_reported": data.get("translation_units"),
+        "pose_source": data.get("source"),
+        "pose_provenance": data.get("pose_provenance"),
+        "blockers": (),
+    }
+
+
+def _camera_height_floor_prior_anchor(
+    asset_id: str,
+    floor_report: Mapping[str, Any] | None,
+    registered_pose_frames: Sequence[Any] | None,
+    *,
+    floor_align_rotation: Any | None = None,
+) -> dict[str, Any]:
+    """Camera-height scale prior from registered camera centers and a floor plane."""
+    base = {
+        "anchor_id": CAMERA_HEIGHT_FLOOR_PRIOR_ID,
+        "anchor_family": CAMERA_HEIGHT_FLOOR_PRIOR_ID,
+        "status": "unavailable",
+        "verdict": "unavailable",
+        "independent_metric_anchor": True,
+        "consensus_role": "independent_metric_anchor",
+        "measured": False,
+        "height_prior_m": float(CAMERA_HEIGHT_PRIOR_M),
+        "prior_relative_std": float(CAMERA_HEIGHT_PRIOR_RELATIVE_STD),
+        "prior_provenance": CAMERA_HEIGHT_PRIOR_PROVENANCE,
+        "threshold_authority": (
+            "pre_registered_handheld_height_prior; calibration underpowered, "
+            "therefore guarded to reportage-only until measured coverage passes"
+        ),
+    }
+    if floor_report is None:
+        return {
+            **base,
+            "blockers": ("camera_height_floor_prior_floor_report_unavailable",),
+        }
+    path = _floor_alignment_path(floor_report)
+    if path not in {"legacy", "consensus"}:
+        return {
+            **base,
+            "floor_alignment": {
+                "path": path,
+                "up_alignment_applied": bool(floor_report.get("up_alignment_applied", False)),
+                "method": floor_report.get("method"),
+                "inlier_ratio": floor_report.get("inlier_ratio"),
+            },
+            "blockers": (f"camera_height_floor_prior_floor_unavailable:{path}",),
+        }
+    if registered_pose_frames is None:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "blockers": ("camera_height_floor_prior_registered_pose_frames_unavailable",),
+        }
+
+    try:
+        import numpy as np  # type: ignore
+    except ModuleNotFoundError as exc:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "blockers": (f"missing_numpy_for_camera_height_floor_prior:{exc.name}",),
+        }
+
+    centers, pose_frame_ids = _pose_centers(registered_pose_frames, np)
+    if centers.shape[0] < 2:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "pose_frame_count": int(centers.shape[0]),
+            "blockers": (
+                f"camera_height_floor_prior_registered_pose_count_too_low:{centers.shape[0]}",
+            ),
+        }
+    rotation = _as_rotation(floor_align_rotation, np)
+    centers_for_floor = centers @ rotation.T if rotation is not None else centers
+    try:
+        axis = int(floor_report.get("floor_axis", 2))
+        if axis not in (0, 1, 2):
+            raise ValueError("floor_axis_out_of_range")
+        floor_value = float(floor_report["floor_value"])
+    except (KeyError, TypeError, ValueError) as exc:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "blockers": (f"camera_height_floor_prior_invalid_floor_report:{exc}",),
+        }
+    normal_raw = floor_report.get("normal")
+    if normal_raw is None:
+        normal = np.zeros(3, dtype=np.float64)
+        normal[axis] = 1.0
+    else:
+        try:
+            normal = np.asarray(normal_raw, dtype=np.float64).reshape((3,))
+        except (TypeError, ValueError) as exc:
+            return {
+                **base,
+                "floor_alignment": {"path": path},
+                "blockers": (f"camera_height_floor_prior_invalid_floor_normal:{exc}",),
+            }
+        norm = float(np.linalg.norm(normal))
+        if not np.isfinite(norm) or norm <= 1e-9:
+            return {
+                **base,
+                "floor_alignment": {"path": path},
+                "blockers": ("camera_height_floor_prior_invalid_floor_normal_zero",),
+            }
+        normal = normal / norm
+    point = np.zeros(3, dtype=np.float64)
+    point[axis] = floor_value
+    heights = (centers_for_floor - point[None, :]) @ normal
+    finite = np.isfinite(heights)
+    heights = heights[finite]
+    finite_ids = tuple(int(pose_frame_ids[i]) for i, ok in enumerate(finite) if bool(ok))
+    if heights.size and float(np.median(heights)) < 0.0:
+        heights = -heights
+    positive = np.isfinite(heights) & (heights > 0.0)
+    heights = heights[positive]
+    ids = tuple(finite_ids[i] for i, ok in enumerate(positive) if bool(ok))
+    if heights.size < 2:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "pose_frame_count": int(centers.shape[0]),
+            "positive_height_count": int(heights.size),
+            "blockers": (
+                f"camera_height_floor_prior_positive_heights_too_low:{heights.size}",
+            ),
+        }
+    h_med = float(np.median(heights))
+    if h_med <= 0.0:
+        return {
+            **base,
+            "floor_alignment": {"path": path},
+            "pose_frame_count": int(centers.shape[0]),
+            "blockers": ("camera_height_floor_prior_nonpositive_median_height",),
+        }
+    h_q25 = float(np.percentile(heights, 25.0))
+    h_q75 = float(np.percentile(heights, 75.0))
+    scale = float(CAMERA_HEIGHT_PRIOR_M / h_med)
+    rel = float(CAMERA_HEIGHT_PRIOR_RELATIVE_STD)
+    return {
+        **base,
+        "status": "weak",
+        "verdict": "weak",
+        "estimated_metric_scale": scale,
+        "scale_std": float(scale * rel),
+        "relative_scale_uncertainty": rel,
+        "confidence": float(CAMERA_HEIGHT_PRIOR_CONFIDENCE),
+        "height_statistic": {
+            "height_median_reconstruction_units": h_med,
+            "height_iqr_reconstruction_units": float(h_q75 - h_q25),
+            "height_q25_reconstruction_units": h_q25,
+            "height_q75_reconstruction_units": h_q75,
+            "positive_height_count": int(heights.size),
+            "registered_pose_count": int(centers.shape[0]),
+            "frame_ids_used": ids,
+            "pose_source": "all_registered_pose_backend_frames",
+            "height_units": "candidate_reconstruction_units",
+        },
+        "floor_alignment": {
+            "path": path,
+            "up_alignment_applied": bool(floor_report.get("up_alignment_applied", False)),
+            "method": floor_report.get("method"),
+            "inlier_ratio": floor_report.get("inlier_ratio"),
+            "floor_axis": axis,
+            "floor_value": floor_value,
+            "rotation_to_floor_frame_applied": rotation is not None,
+        },
+        "blockers": (),
+    }
+
+
+def _floor_alignment_path(floor_report: Mapping[str, Any]) -> str:
+    export = floor_report.get("export_alignment")
+    if isinstance(export, Mapping):
+        path = export.get("path")
+        if isinstance(path, str) and path:
+            return path
+    up = floor_report.get("up_alignment")
+    if isinstance(up, Mapping):
+        path = up.get("alignment_path")
+        if isinstance(path, str) and path:
+            return path
+        path = up.get("path")
+        if isinstance(path, str) and path:
+            return path
+        if bool(up.get("applied", False)):
+            return "legacy"
+    if bool(floor_report.get("up_alignment_applied", False)):
+        return "legacy"
+    return "none"
+
+
+def _pose_centers(frames: Sequence[Any], np: Any) -> tuple[Any, tuple[int, ...]]:
+    centers = []
+    frame_ids = []
+    for idx, frame in enumerate(frames):
+        if isinstance(frame, Mapping):
+            T = frame.get("T_world_camera")
+            frame_id = frame.get("frame_id", idx)
+        else:
+            T = getattr(frame, "T_world_camera", None)
+            frame_id = getattr(frame, "frame_id", idx)
+        if T is None:
+            continue
+        try:
+            mat = np.asarray(T, dtype=np.float64).reshape((4, 4))
+        except (TypeError, ValueError):
+            continue
+        c = mat[:3, 3]
+        if bool(np.all(np.isfinite(c))):
+            centers.append(c)
+            frame_ids.append(int(frame_id))
+    if not centers:
+        return np.zeros((0, 3), dtype=np.float64), ()
+    return np.asarray(centers, dtype=np.float64), tuple(frame_ids)
+
+
+def _as_rotation(value: Any, np: Any) -> Any | None:
+    if value is None:
+        return None
+    try:
+        R = np.asarray(value, dtype=np.float64).reshape((3, 3))
+    except (TypeError, ValueError):
+        return None
+    if not bool(np.all(np.isfinite(R))):
+        return None
+    return R
 
 
 def _evaluate_anchor(
@@ -792,6 +1084,19 @@ def _relative_iqr(values: Any, np: Any) -> float:
     return float((np.percentile(values, 75.0) - np.percentile(values, 25.0)) / med)
 
 
+def _consensus_evidence_type(consensus: Mapping[str, Any]) -> ScaleEvidenceType:
+    raw = consensus.get("raw_uncalibrated_consensus")
+    source = raw if isinstance(raw, Mapping) else consensus
+    ids = tuple(
+        str(v)
+        for key in ("accepted_anchor_ids", "weak_anchor_ids")
+        for v in source.get(key, ())
+    )
+    if ids and all(v == CAMERA_HEIGHT_FLOOR_PRIOR_ID for v in ids):
+        return ScaleEvidenceType.SCENE_LAYOUT_PRIOR
+    return ScaleEvidenceType.LEARNED_METRIC_DEPTH_PRIOR
+
+
 def _evidence_summary(ev: ScaleEvidence) -> dict[str, Any]:
     return {
         "evidence_id": ev.evidence_id,
@@ -806,4 +1111,4 @@ def _evidence_summary(ev: ScaleEvidence) -> dict[str, Any]:
     }
 
 
-__all__ = ["run_metric_anchor_council"]
+__all__ = ["load_registered_pose_frames", "run_metric_anchor_council"]
