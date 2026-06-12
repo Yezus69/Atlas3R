@@ -2055,3 +2055,23 @@ gauge and failed scorecards, so the pre-D1 TUM live artifacts were RESTORED
 recorded follow-up (raw-anchor provenance of the original builds unclear).
 Codex's ad-hoc A3 dangerous-free metric (0.95) matches no standing field —
 disregarded; verification used the repo's standing metrics only.
+
+### Phase 26 — hazard-survival fusion: KILLED by its pre-registered falsifier (numbers recorded, spine reverted no-slop)
+
+Clean-room flag-gated implementation (Codex gpt-5.5/xhigh; OFF-mode
+byte-identity PASSED; 5 unit tests green) ran the standing falsifier on the
+two measured scenes. Verdict FAILED on every axis: dangerous_free@5cm
+xyz 0.327 -> 0.458 (+40%), desk 0.567 -> 0.807 (+42%); occupied_static_iou
+xyz 0.0303 -> 0.0034 (-89%), desk -83%; solid_recall@5cm xyz -92%, desk -61%.
+Mechanism read: 1-exp(-Z) over RAW per-observation confidences collapses
+occupied mass (the published systems drive near-binary OPTIMIZED opacities
+first — the Phase-24 audit's substitution-risk flag, realized). Free-space
+transmittance (our half of the design) inherits the same collapsed hazards.
+Spine changes REVERTED per no-slop (Task-4 precedent); full report was
+runs/_diag/codex_hazard_report.md; the brief pre-registered a kill as a
+valid outcome and the kill is the result. Weekend D3 ledger: BOTH
+repo-inspired mechanisms (Poisson stopper, hazard fusion) died on
+falsifiers in under a day combined — dangerous_free remains DEPTH-COVERAGE
+limited (Phase 16: candidate misses ~72% of co-observed band obstacles),
+pointing the next attack at coverage/refinement (render-consistency
+refinement, denser verified depth), not fusion arithmetic.
