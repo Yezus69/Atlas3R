@@ -2091,3 +2091,26 @@ xyz byte-identical (A1 PASS), 22 tests + ruff green. Verdict: D2's defect was
 downstream of D1 on this scene; the consensus path stays available (flag) for
 future low-floor-share captures, unproven and honestly marked. Desk-class
 captures (narrow heading) remain unaligned — recorded open defect.
+
+### Phase 28 — THE RULER SPEAKS: first physical scale measurement of a phone scene
+
+User staged a 0.46 m steel ruler in frame 1 of phone_room_loop. Endpoints
+back-projected through the single-gauge composite depth (frame 0, f=1080.74
+self-cal, endpoint sensitivity +-4px -> +-1%): ruler span 0.1336 pose-gauge
+units -> **scale = 3.44 m/unit** (3.41-3.47).
+Three-way convergence and one indictment:
+1. Phase 23's TENTATIVE ~3.3-4.2x scale compression: CONFIRMED at 3.44.
+2. Camera-height cross-check: 0.36 units above detected floor x 3.44 =
+   1.24 m — plausible handheld height; two independent anchors agree.
+3. The backbone's learned metric prior (s_global 2.551) UNDERSTATES scale by
+   3.44/2.55 = 1.35x — a 35% error, OUTSIDE its historically-claimed +-21%
+   band; the council's refusal to certify (non_metric, +-30% floor) is
+   VINDICATED by a $5 ruler. Phase 19 + council GT under-coverage + ruler
+   now agree from three unrelated methods.
+Derived metric facts for the user's home capture: scene span ~9.4 m, walked
+path ~23.3 m, end-to-end loop drift ~5.6 cm (0.6% of span).
+PROTOCOL ADOPTED: a known-length object in the first seconds of any capture
+= free measured scale anchor (user invented this; it works).
+NEW ANCHOR FAMILY unlocked by the floor fix: camera-height-above-detected-
+floor x handheld-height prior — internet-video-compatible, sensor-free,
+calibratable on GT rows.
