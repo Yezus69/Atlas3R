@@ -1953,3 +1953,73 @@ multi-pass capture as a GT-free cross-pass agreement channel; P3 external
 benchmark anchor (ScanNet++-class, eval-only); P3 student contract:
 supervise only in observed space (Occ3D visibility masks in TrainingSample).
 Forensics artifacts: runs/_diag/floor_forensics/, runs/_diag/depth_forensics/.
+
+### Phase 24 — four-repo deep read (user-directed): FreeOcc / LegoOcc / SelfOcc / SurroundOcc — mechanisms mapped onto the internet-video teacher
+
+Method: every repo fetched and read live (README + code + LICENSE + paper);
+every load-bearing claim independently re-fetched by an adversarial auditor
+(25/28 + 6/10 auditable claims CONFIRMED verbatim; the non-confirmed ones
+were corrections recorded below, not fabrications). One mapper honestly
+refused verdicts on reads it never received (input truncation) — re-run
+clean. STRATEGIC FRAME (owner correction, binding): production input is
+CLEAN INTERNET MONOCULAR VIDEO; no fleet, no rigs, no capture hardware as a
+data source; public GT = calibration/eval instruments only.
+
+VERDICTS (all four repos real; roots Apache-2.0):
+- FreeOcc (the-masses/FreeOcc, RSS 2026): training-free monocular indoor
+  occupancy (DROID-SLAM + 3DGS + frozen VLM + probabilistic hazard
+  Gaussian->occupancy CUDA). Closest published system to our setting.
+  ADOPT-IDEA: clean-room hazard-survival fusion occ = 1-exp(-sum h_i) at the
+  mapping._fuse_rays seam (D3 arithmetic fix). LANDMINE: its localagg_prob
+  CUDA kernel carries Inria GRAPHDECO NON-COMMERCIAL headers — never vendor.
+- LegoOcc (JuIvyy/LegoOcc, CVPR 2026 Oral): monocular indoor open-vocab
+  occupancy, geometry supervision = BINARY occupancy only. PARTIAL: lift the
+  geometry-only loss stack (Focal w=100/g=2 + Lovasz + Geo_Scal, unknown-
+  ignore, frustum mask; OpenMMLab/MonoScene Apache lineage — header-check
+  per file) into the proxy-student falsifier; its own hazard kernel has the
+  SAME GRAPHDECO NC contamination under an Apache root. Its net needs GT
+  poses + sensor-depth GT grids: NO-FIT as-is for internet video. NOTE:
+  FreeOcc+LegoOcc share authors — ONE group's validation, not independent
+  replication (auditor correction).
+- SelfOcc (huang-yh/SelfOcc, CVPR 2024): self-supervised SDF volume
+  rendering; supervision minted from the video itself (photometric
+  min-reprojection vs adjacent frames + free-space sparsity carving —
+  confirmed in code). ADOPT-IDEA x2, ORDERED: (1) grid render-consistency
+  VALIDATION channel first (ray-march the fused grid into held-out
+  non-keyframe frames; free claims that photometrically terminate early =
+  dangerous_free witnesses; authority earned via the Phase-20 certificate
+  harness, 12-config Spearman>=0.5 after coverage partialling); (2) per-scene
+  photometric refinement optimizer SECOND, separately gated, pools split
+  (pool A optimizes, pool B gates — circularity dissolved by our surplus of
+  registered non-keyframe frames). Its learned BEV/TPV encoder: NO-FIT
+  (auditor: the SDF head is hard-wired to the learned lifting; we take the
+  loss machinery only, clean-room — vendored SSIM is monodepth2/Niantic NC).
+- SurroundOcc (weiyithu/SurroundOcc, ICCV 2023): driving multi-cam net
+  NO-FIT (backbone-seam rejection UPHELD); but its dense-GT GENERATION
+  recipe (multi-frame static aggregation -> Open3D Poisson -> voxelize ->
+  NN class transfer; confirmed in tools/generate_occupancy_*) ADOPT-IDEA on
+  OUR inputs: MVS-verified multi-frame points replace LiDAR; Poisson mesh
+  becomes a provenance-marked CARVE-STOPPER channel (gates not counts,
+  candidate-only, never observed evidence) at the band free-carve levers —
+  attacks the measured D3 root cause (carve floods through missed solid
+  bases). Auditor caveats wired into the gate: Poisson hallucinates
+  watertight surface where evidence is absent (must be evidence-mass-gated +
+  density-quantile trimmed); their own-data path needs 3D boxes for dynamics
+  (we restrict to static-classified points instead); nuScenes itself is
+  CC BY-NC-SA (eval-only, and unneeded).
+
+REVISED TWO-WEEK PLAN (pre-registered gates, falsifier-first):
+1. Hazard-survival fusion falsifier (days 1-3): dangerous_free@5cm down,
+   occupied_static_iou/per_class held, empty diff when off. The
+   transmittance-derived FREE half is OUR design — neither repo validates
+   it; the falsifier carries that burden.
+2. Poisson densification falsifier (days 3-8): day-1 kill-cheap pilot on
+   the cached xyz composite; gate xyz 0.327->=<0.20, desk 0.567->=<0.45
+   dangerous_free, hallucination-trim falsifier, byte-identical when off.
+3. Render-consistency validation channel (days 8-13): reportage-only,
+   certificate-calibrated; the GT-free certifier the first two need on
+   non-GT scenes.
+HONEST GAP THE REPOS DO NOT TOUCH: metric scale for monocular video. None
+of the four anchors absolute scale (SLAM-relative / GT-posed / LiDAR).
+Scale authority remains the council + public-GT calibration-row growth
+(2 -> 8+) path. D1 (gauge) and D2 (gravity) also remain in-house fixes.
