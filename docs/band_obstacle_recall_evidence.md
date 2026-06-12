@@ -2023,3 +2023,18 @@ HONEST GAP THE REPOS DO NOT TOUCH: metric scale for monocular video. None
 of the four anchors absolute scale (SLAM-relative / GT-posed / LiDAR).
 Scale authority remains the council + public-GT calibration-row growth
 (2 -> 8+) path. D1 (gauge) and D2 (gravity) also remain in-house fixes.
+
+### Phase 24 addendum — Poisson carve-stopper pilot: KILLED (pre-registered thresholds, Codex-built, verified)
+
+Kill-cheap offline pilot on xyz vs the measured baseline
+(tools/pilot_poisson_carve_stopper.py, 16s runtime, full report
+runs/_diag/codex_poisson_pilot_report.md): false-stop rate 11.0/12.8/13.9%
+at density trims q=0.02/0.05/0.10 — ALL exceed the pre-registered 10%
+hallucination ceiling; and the cached exports lack per-voxel witness ids, so
+the dangerous_free benefit could not be demonstrated offline (recorded
+honestly as 0.0%, not fabricated). Verdict KILLED per pre-registration;
+weekend reprioritized to hazard-survival fusion as the sole D3 attack.
+Confound recorded for any future revisit: without per-voxel contributing
+frame ids the pilot blocks rays from ALL keyframes seeing a voxel, which
+over-counts false-stops; a revisit would need in-spine ray instrumentation
+(only justified if hazard fusion under-delivers on dangerous_free).
