@@ -33,6 +33,7 @@ from .contracts import (
 MAX_CONTRADICTION_RATE_FOR_ACCEPT = 0.25
 MAX_HELD_OUT_ERROR_FOR_ACCEPT = 0.50  # log-depth units
 HIGH_HELD_OUT_ERROR_DEFAULT = 1.0  # used when not computable
+MAX_RELATIVE_SCALE_UNCERTAINTY_FOR_ACCEPT = 0.15
 # Fraction of inferred dynamic mass allowed to leak into the fused static surface
 # before the metric gate rejects: dynamic is NEVER fused into static occupancy, so
 # material residual leakage must block metric-training acceptance.
@@ -132,6 +133,7 @@ def validate_and_accept(
     validation_passes = (
         held_out_error <= MAX_HELD_OUT_ERROR_FOR_ACCEPT
         and contradiction_rate <= fsc_bound
+        and scale_posterior.relative_scale_uncertainty <= MAX_RELATIVE_SCALE_UNCERTAINTY_FOR_ACCEPT
         and dynamic_leakage <= MAX_DYNAMIC_LEAKAGE_FOR_ACCEPT
         and (stage2b_passes or not cascade_applies)
     )
@@ -169,6 +171,11 @@ def validate_and_accept(
             if contradiction_rate > fsc_bound:
                 rejection_reasons.append(
                     f"free_space_contradiction_rate_too_high:{contradiction_rate:.3f}"
+                )
+            if scale_posterior.relative_scale_uncertainty > MAX_RELATIVE_SCALE_UNCERTAINTY_FOR_ACCEPT:
+                rejection_reasons.append(
+                    "relative_scale_uncertainty_too_high:"
+                    f"{scale_posterior.relative_scale_uncertainty:.3f}"
                 )
             if cascade_applies and not stage2b_passes:
                 rejection_reasons.append(
@@ -233,6 +240,8 @@ def validate_and_accept(
         "free_space_contradiction_rate": float(contradiction_rate),
         "floor_wall_consistency": float(floor_wall),
         "dynamic_leakage_score": float(dynamic_leakage),
+        "relative_scale_uncertainty": float(scale_posterior.relative_scale_uncertainty),
+        "max_relative_scale_uncertainty_for_accept": float(MAX_RELATIVE_SCALE_UNCERTAINTY_FOR_ACCEPT),
         "dynamic_leakage_note": dynamic_note,
         "validation_passes_metric_gate": bool(validation_passes),
         "gate_cascade": {
@@ -277,6 +286,7 @@ def validate_and_accept(
                 if ba_grade else "mid_chasm_expanded_population_2026_06_11"
             ),
             "held_out_render_error_0.50": "uncalibrated_unmarked_pending_injection_calibration",
+            "relative_scale_uncertainty_0.15": "ARCHITECTURE.md default reject band_pending_split_calibration",
             "dynamic_leakage_0.10": "uncalibrated_unmarked_pending_injection_calibration",
         },
         "rejection_reasons": tuple(report.rejection_reasons),

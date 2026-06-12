@@ -24,6 +24,7 @@ import argparse
 import json
 import traceback
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from .export import export_teacher_artifacts
 from .geometry_adapter import load_geometry_artifacts, load_measured_packets_from_m2
 from .m1 import DEFAULT_MANIFEST_PATH, _jsonable, _resolve_path, _write_json, load_canonical_assets
 from .mapping import fuse_static_map
+from .metric_council import run_metric_anchor_council
 from .refine import refine_scene
 from .scale import estimate_scale_posterior
 from .static_dynamic import infer_static_dynamic
@@ -158,6 +160,7 @@ def _run_track(
         "refined_pose_depth_map_status": {},
         "static_dynamic_movable_status": {},
         "visibility_residual_status": {},
+        "metric_anchor_council_status": {},
         "scale_evidence": {},
         "map_occupancy_status": {},
         "map_mesh_occupancy_artifacts": {},
@@ -261,6 +264,29 @@ def _run_track(
         else {"status": "blocked_no_packets", "authority": "none"},
     )
 
+    council_result = _stage(
+        blockers, "metric_anchor_council",
+        lambda: _metric_anchor_council(
+            asset_id, candidate_packets, root, artifacts_dir
+        )
+        if candidate_packets
+        else {
+            "status": "blocked_no_packets",
+            "blockers": ("no_candidate_packets_for_metric_anchor_council",),
+            "_scale_evidence": [],
+        },
+    )
+    council_scale_evidence = (
+        list(council_result.get("_scale_evidence", []))
+        if isinstance(council_result, Mapping)
+        else []
+    )
+    council_completed = (
+        isinstance(council_result, Mapping)
+        and council_result.get("status") == "computed"
+    )
+    report["metric_anchor_council_status"] = _strip_private(council_result)
+
     # Per-scene injected-corruption detection-limit certificate (REPORTAGE,
     # Phase 20): an accepted label names the corruption families its gate was
     # proven to catch AND the families where it has no authority. Absent
@@ -306,7 +332,11 @@ def _run_track(
         asset_id=asset_id,
         track_type=asset.track_type.value,
         packets=candidate_packets,
-        scale_evidence=list(geometry_soft_evidence),
+        scale_evidence=(
+            council_scale_evidence
+            if council_completed
+            else list(geometry_soft_evidence)
+        ),
         static_dynamic_states=static_dynamic_states,
         measured_reference=None,  # NEVER feed measured into the candidate
         packet_source="monocular_artifact",
@@ -324,8 +354,9 @@ def _run_track(
     # Honest comparison of the monocular candidate against the measured baseline.
     monocular_vs_measured = None
     if is_reference and measured_packets and candidate_packets:
+        comparison_packets = candidate_result.get("_metric_packets", candidate_packets)
         monocular_vs_measured = _compare_candidate_to_measured(
-            candidate_packets, measured_packets
+            comparison_packets, measured_packets
         )
 
     report["packet_creation_status"] = {
@@ -342,6 +373,12 @@ def _run_track(
     # Surface the candidate pipeline fields at top level (back-compat keys) and
     # record both sub-results explicitly.
     report["scale_evidence"] = candidate_result["scale_evidence_block"]
+    report["scale_evidence"]["legacy_adapter_scale_evidence_records"] = [
+        _jsonable(e) for e in geometry_soft_evidence
+    ]
+    report["scale_evidence"]["scale_evidence_source"] = (
+        "metric_anchor_council" if council_completed else "legacy_geometry_adapter"
+    )
     report["map_occupancy_status"] = candidate_result["map_status"]
     report["map_mesh_occupancy_artifacts"] = candidate_result["export_artifacts"]
     report["visual_proof_artifacts"] = candidate_result["visual_proof"]
@@ -423,6 +460,7 @@ def _run_pipeline(
         "final_category": "rejected",
         "band3d_agreement": None,
         "_voxel_3d": None,
+        "_metric_packets": list(packets),
     }
 
     measured_evidence_present = any(getattr(e, "measured", False) for e in scale_evidence)
@@ -452,6 +490,12 @@ def _run_pipeline(
         blockers.extend(local_blockers)
         return result
 
+    metric_packets, scale_application = _apply_scale_posterior_to_packets(
+        packets, scale_posterior
+    )
+    result["_metric_packets"] = metric_packets
+    result["scale_application"] = scale_application
+
     # MAP + per-voxel 3D occupancy (dynamic tagged, never fused into static). The
     # candidate occupancy-estimation policy (free-carve truncation + gravity support)
     # is applied ONLY to the monocular candidate -- never to the measured GT
@@ -465,7 +509,7 @@ def _run_pipeline(
     map_result = _stage(
         local_blockers, f"{label}_map_occupancy",
         lambda: _map(
-            packets, scale_posterior, static_dynamic_states, envelope,
+            metric_packets, scale_posterior, static_dynamic_states, envelope,
             apply_fusion_policy, camera_up_prior,
         ),
     )
@@ -483,7 +527,7 @@ def _run_pipeline(
     # band is the eval region; this candidate's FULL field is sampled there. Only
     # the monocular candidate is compared; the measured baseline IS the reference.
     band3d_agreement = _resolve_band3d_agreement(
-        label, comparison_field, measured_comparison_field, packets, measured_packets_for_band,
+        label, comparison_field, measured_comparison_field, metric_packets, measured_packets_for_band,
     )
     result["band3d_agreement"] = band3d_agreement
 
@@ -491,7 +535,7 @@ def _run_pipeline(
     export_result = _stage(
         local_blockers, f"{label}_export",
         lambda: _export(
-            asset_id, packets, voxel_map, occupancy_grid, voxel_3d,
+            asset_id, metric_packets, voxel_map, occupancy_grid, voxel_3d,
             static_dynamic_states, scale_posterior, out_dir, map_report,
         ),
     )
@@ -501,7 +545,7 @@ def _run_pipeline(
     visual_result = _stage(
         local_blockers, f"{label}_visual_proof",
         lambda: _visual_proof(
-            asset_id, track_type, packets, occupancy_grid, map_report,
+            asset_id, track_type, metric_packets, occupancy_grid, map_report,
             scale_posterior, packet_source, provenance_label, out_dir,
             report_path, export_result if isinstance(export_result, Mapping) else {},
             voxel_3d,
@@ -513,7 +557,7 @@ def _run_pipeline(
     validation_result = _stage(
         local_blockers, f"{label}_validation",
         lambda: _validate(
-            asset_id, packets, scale_posterior,
+            asset_id, metric_packets, scale_posterior,
             visibility_report,
             map_report if isinstance(map_report, Mapping) else {},
             measured_reference,
@@ -672,6 +716,68 @@ def _detection_limit_summary(asset_id: str, root: Path) -> dict[str, Any]:
 def _scale(packets: Sequence[Any], scale_evidence: Sequence[Any]) -> dict[str, Any]:
     posterior, report = estimate_scale_posterior(packets, scale_evidence)
     return {**report, "_posterior": posterior}
+
+
+def _metric_anchor_council(
+    asset_id: str,
+    packets: Sequence[Any],
+    root: Path,
+    artifacts_dir: str | Path,
+) -> dict[str, Any]:
+    evidence, report = run_metric_anchor_council(
+        asset_id,
+        packets,
+        root,
+        primary_artifacts_dir=artifacts_dir,
+    )
+    return {**report, "_scale_evidence": evidence}
+
+
+def _apply_scale_posterior_to_packets(
+    packets: Sequence[Any],
+    scale_posterior: Any,
+) -> tuple[list[Any], dict[str, Any]]:
+    """Apply the posterior scale correction to packet depth and translation.
+
+    Packet rotations, rays, camera model, confidence, and static/dynamic sample
+    alignment are unchanged. A scale of 1.0 returns the original packet objects.
+    """
+    scale = float(getattr(scale_posterior, "scale_mean", 1.0) or 1.0)
+    if abs(scale - 1.0) <= 1e-9:
+        return list(packets), {
+            "applied": False,
+            "scale_mean": scale,
+            "reason": "posterior_scale_mean_is_one",
+        }
+    import numpy as np  # lazy
+
+    scaled = []
+    for packet in packets:
+        T = np.asarray(packet.T_world_camera, dtype=np.float64).reshape((4, 4)).copy()
+        T[:3, 3] *= scale
+        depth = np.asarray(packet.radial_depth_m, dtype=np.float64) * scale
+        provenance = dict(getattr(packet, "provenance", {}) or {})
+        provenance["metric_anchor_council_scale_applied"] = {
+            "scale_mean": scale,
+            "rule": "T_world_camera.translation and radial_depth_m multiplied by scale_mean",
+        }
+        uncertainty = dict(getattr(packet, "uncertainty", {}) or {})
+        uncertainty["scale_application"] = "posterior_scale_mean_applied_to_geometry"
+        scaled.append(
+            replace(
+                packet,
+                T_world_camera=[[float(v) for v in row] for row in T],
+                radial_depth_m=depth,
+                provenance=provenance,
+                uncertainty=uncertainty,
+            )
+        )
+    return scaled, {
+        "applied": True,
+        "scale_mean": scale,
+        "packet_count": len(scaled),
+        "rule": "scaled packet translations and radial depths before mapping/export/validation",
+    }
 
 
 def _camera_up_prior(packets: Sequence[Any]) -> list[float] | None:
@@ -978,6 +1084,7 @@ def _subresult_summary(result: Mapping[str, Any] | None) -> dict[str, Any]:
         "provenance_label": result.get("provenance_label"),
         "final_category": result.get("final_category"),
         "scale_status": (result.get("scale_evidence_block", {}) or {}).get("classification", {}).get("status"),
+        "scale_application": result.get("scale_application"),
         "map_status": map_status.get("status") if isinstance(map_status, Mapping) else map_status,
         "accepted_for_metric_training": val.get("accepted_for_metric_training") if isinstance(val, Mapping) else None,
         "held_out_render_error": val.get("held_out_render_error") if isinstance(val, Mapping) else None,

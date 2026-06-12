@@ -90,19 +90,17 @@ def estimate_scale_posterior(
 
     if evidence:
         # Soft (or measured-but-non-measured-packet) evidence supports a metric
-        # pseudo-label only. Uncertainty: the evidence-confidence band combined
-        # with the measured scale-borrow misfit where one exists (Phase 19) --
-        # a scalar borrowed across a misfitting trajectory shape is exactly as
-        # untrustworthy as that misfit. Class-B tracks (no alignment record)
-        # keep the confidence band: a prior, not a measurement.
-        band = _soft_relative_uncertainty(evidence)
+        # pseudo-label only. When the metric anchor council provides an explicit
+        # scale estimate + uncertainty, use that distribution directly; older
+        # learned-prior evidence still falls back to the confidence band.
+        scale_mean, band, explicit_report = _soft_scale_distribution(evidence)
         residual_norm, scale_report_extra = _scale_borrow_residual_norm(
             evidence, packets
         )
         relative = float((band**2 + residual_norm**2) ** 0.5)
         posterior = _build_posterior(
-            scale_mean=1.0,
-            scale_std=relative,
+            scale_mean=scale_mean,
+            scale_std=scale_mean * relative,
             sources=evidence,
             anchor_residuals=_anchor_residuals(evidence),
             status=MetricAcceptanceStatus.METRIC_PSEUDO_LABEL,
@@ -113,7 +111,8 @@ def estimate_scale_posterior(
             "decision": "soft_scale_evidence_present",
             "relative_scale_uncertainty": posterior.relative_scale_uncertainty,
             "scale_std_construction": {
-                "evidence_confidence_band": band,
+                "soft_scale_distribution": explicit_report,
+                "evidence_relative_uncertainty": band,
                 "scale_borrow_residual_norm": residual_norm,
                 "rule": "sqrt(band^2 + residual_norm^2)",
                 **scale_report_extra,
@@ -176,6 +175,57 @@ def _soft_relative_uncertainty(evidence: Sequence[ScaleEvidence]) -> float:
     # Higher confidence -> tighter band, floored to keep it a pseudo-label.
     band = METRIC_PSEUDO_RELATIVE_UNCERTAINTY * (1.0 + (1.0 - mean_conf))
     return max(0.02, band)
+
+
+def _soft_scale_distribution(
+    evidence: Sequence[ScaleEvidence],
+) -> tuple[float, float, dict[str, Any]]:
+    """Return ``(scale_mean, relative_uncertainty, report)`` for soft evidence.
+
+    Council-produced evidence carries explicit ``scale_mean`` and ``scale_std``.
+    That is the real anchor distribution and should not be flattened back into a
+    fixed learned-prior confidence band. Non-council legacy evidence keeps the
+    old conservative confidence-derived band around scale 1.
+    """
+    explicit = []
+    for e in evidence:
+        mean = getattr(e, "scale_mean", None)
+        std = getattr(e, "scale_std", None)
+        if mean is None or std is None:
+            continue
+        try:
+            mean_f = float(mean)
+            std_f = float(std)
+        except (TypeError, ValueError):
+            continue
+        if mean_f > 0.0 and std_f > 0.0:
+            explicit.append((mean_f, std_f, e))
+    if not explicit:
+        band = _soft_relative_uncertainty(evidence)
+        return 1.0, band, {
+            "basis": "legacy_soft_evidence_confidence_band",
+            "scale_mean": 1.0,
+            "relative_uncertainty": band,
+        }
+
+    import math
+
+    logs = sorted(math.log(item[0]) for item in explicit)
+    mid = len(logs) // 2
+    if len(logs) % 2:
+        scale_mean = math.exp(logs[mid])
+    else:
+        scale_mean = math.exp(0.5 * (logs[mid - 1] + logs[mid]))
+    rels = [item[1] / item[0] for item in explicit]
+    anchor_disagreement = max(abs(math.log(item[0] / scale_mean)) for item in explicit)
+    relative = max(max(rels), anchor_disagreement, 0.02)
+    return float(scale_mean), float(relative), {
+        "basis": "explicit_scale_evidence_distribution",
+        "scale_mean": float(scale_mean),
+        "relative_uncertainty": float(relative),
+        "anchor_disagreement_max_abs_log": float(anchor_disagreement),
+        "evidence_ids": tuple(e.evidence_id for _, _, e in explicit),
+    }
 
 
 def _scale_borrow_residual_norm(

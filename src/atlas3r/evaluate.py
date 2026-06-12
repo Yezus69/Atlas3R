@@ -176,6 +176,41 @@ def extract_scale_posterior(report: dict[str, Any]) -> dict[str, Any]:
         "metric_acceptance_status": _pluck(classification, "status"),
         "measured_evidence_present": _pluck(report, "scale_evidence", "measured_evidence_present"),
         "scale_evidence_count": _pluck(report, "scale_evidence", "scale_evidence_count"),
+        "scale_evidence_source": _pluck(report, "scale_evidence", "scale_evidence_source"),
+    }
+
+
+def extract_metric_anchor_council(report: dict[str, Any]) -> dict[str, Any]:
+    council = _pluck(report, "metric_anchor_council_status")
+    if not isinstance(council, dict):
+        return {"status": "absent_pre_council_report"}
+    consensus = council.get("consensus") if isinstance(council.get("consensus"), dict) else {}
+    anchors = council.get("anchor_reports") if isinstance(council.get("anchor_reports"), list) else []
+    return {
+        "status": council.get("status"),
+        "consensus_status": consensus.get("status"),
+        "consensus_scale_mean": consensus.get("scale_mean"),
+        "consensus_scale_std": consensus.get("scale_std"),
+        "consensus_confidence": consensus.get("confidence"),
+        "accepted_anchor_ids": consensus.get("accepted_anchor_ids"),
+        "weak_anchor_ids": consensus.get("weak_anchor_ids"),
+        "outlier_anchor_ids": consensus.get("outlier_anchor_ids"),
+        "anchors": [
+            {
+                "anchor_id": a.get("anchor_id"),
+                "anchor_family": a.get("anchor_family"),
+                "status": a.get("status"),
+                "verdict": a.get("verdict"),
+                "consensus_role": a.get("consensus_role"),
+                "independent_metric_anchor": a.get("independent_metric_anchor"),
+                "estimated_metric_scale": a.get("estimated_metric_scale"),
+                "relative_scale_uncertainty": a.get("relative_scale_uncertainty"),
+                "common_frame_count": a.get("common_frame_count"),
+                "blockers": a.get("blockers"),
+            }
+            for a in anchors
+            if isinstance(a, dict)
+        ],
     }
 
 
@@ -386,6 +421,7 @@ def extract_track(report: dict[str, Any]) -> dict[str, Any]:
         "prerefine_severity": extract_prerefine_severity(report),
         "plane_ledger": extract_plane_ledger(report),
         "epipolar_audit": extract_epipolar_audit(report),
+        "metric_anchor_council": extract_metric_anchor_council(report),
         "scale_posterior": extract_scale_posterior(report),
         "camera_center_sim3_error": extract_camera_center_error(report),
         "band3d_agreement": extract_band3d_agreement(report),
@@ -531,6 +567,9 @@ def _canonical_sha256(scorecard: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # Numeric metric paths (dotted, into a track block) diffed as deltas.
 NUMERIC_METRICS: tuple[str, ...] = (
+    "metric_anchor_council.consensus_scale_mean",
+    "metric_anchor_council.consensus_scale_std",
+    "metric_anchor_council.consensus_confidence",
     "scale_posterior.scale_mean",
     "scale_posterior.scale_std",
     "scale_posterior.relative_scale_uncertainty",
@@ -577,6 +616,7 @@ CATEGORICAL_METRICS: tuple[str, ...] = (
     "acceptance.measured_baseline_category",
     "acceptance.monocular_candidate_category",
     "scale_posterior.metric_acceptance_status",
+    "metric_anchor_council.consensus_status",
     "camera_center_sim3_error.status",
     "band3d_agreement.status",
     "floor.method",
@@ -765,6 +805,28 @@ def render_summary(
                 f"abstention is authority loss, never a pass)"
             )
 
+        mc = track.get("metric_anchor_council", {})
+        lines.append("")
+        lines.append("### metric anchor council")
+        if mc.get("status") == "computed":
+            lines.append(
+                f"- consensus: {_fmt(mc.get('consensus_status'))}, "
+                f"scale={_fmt(mc.get('consensus_scale_mean'))}, "
+                f"std={_fmt(mc.get('consensus_scale_std'))}, "
+                f"confidence={_fmt(mc.get('consensus_confidence'))}"
+            )
+            for anchor in mc.get("anchors", []):
+                lines.append(
+                    f"- {anchor.get('anchor_id')}: status={_fmt(anchor.get('status'))}, "
+                    f"role={_fmt(anchor.get('consensus_role'))}, "
+                    f"scale={_fmt(anchor.get('estimated_metric_scale'))}, "
+                    f"rel_unc={_fmt(anchor.get('relative_scale_uncertainty'))}, "
+                    f"frames={_fmt(anchor.get('common_frame_count'))}, "
+                    f"blockers={_fmt(anchor.get('blockers'))}"
+                )
+        else:
+            lines.append(f"- status: {_fmt(mc.get('status'))}")
+
         sp = track.get("scale_posterior", {})
         lines.append("")
         lines.append("### scale posterior")
@@ -773,6 +835,7 @@ def render_summary(
         lines.append(f"- relative_scale_uncertainty: {_fmt(sp.get('relative_scale_uncertainty'))}")
         lines.append(f"- metric_acceptance_status: {_fmt(sp.get('metric_acceptance_status'))}")
         lines.append(f"- measured_evidence_present: {_fmt(sp.get('measured_evidence_present'))}")
+        lines.append(f"- scale_evidence_source: {_fmt(sp.get('scale_evidence_source'))}")
 
         cc = track.get("camera_center_sim3_error", {})
         lines.append("")
