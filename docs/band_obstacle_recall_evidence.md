@@ -1874,3 +1874,82 @@ own GT under-coverage measurement), (2) soft-path relative scale uncertainty
 floors at the council guard 0.30 (xyz monocular candidate 0.170->0.310, desk
 0.169->0.302, room 0.295->0.300) -- blunter but covers the historic 0.337
 error that the old 0.168 band missed. Verdict: integration adopted.
+
+### Phase 23 — overnight diagnosis: why the teacher failed the user's loop capture (3 root causes, all measured; claims independently re-derived)
+
+User verdict on the phone_room_loop viewer (eyes-on, their own home): poses
+scattered, free space wrong, floor inconsistent, "useless". All three
+observations traced to mechanism; an adversarial checker re-derived every
+quantitative claim below with independent code and CONFIRMED all.
+
+ROOT CAUSE 1 — artifact routing (FIXED, 8428453): backbone runners defaulted
+--out-dir to the teacher READ path, so the teacher consumed the RAW
+MapAnything artifact (48 independently-posed views) while the COLMAP-posed
+MVS-verified composite sat unused. Composite promoted + teacher rerun:
+trajectory scribble -> clean 0.6%-gap loop; held-out render error 0.210 ->
+0.125. Chain guard landed (runner defaults moved to _raw_backbone_artifacts,
+--promote with rollback, composite_shadow_blocker in the geometry adapter,
+16 tests). Reviewer flagged: reference_metric_vault's live artifact is ALSO
+raw (pre-existing; no composite sibling, so no blocker fires) -- vault Run 2
+must rebuild it as a composite.
+
+ROOT CAUSE 2 — composite gauge defect (OPEN, the next fix, biggest lever):
+the composite's COLMAP->backbone scale anchor (0.2325) was Umeyama-fit
+against the SCRIBBLED raw backbone trajectory (residual rmse 1.344 units =
+~50% of the trajectory bbox diagonal) -- a garbage anchor; AND the composite
+depth maps are internally TWO-GAUGE: verified pixels (20.7%) carry
+pose-gauge MVS depth while fill pixels (79.3%) remain at raw backbone gauge
+2.55x larger (bit-identical to raw, max diff 0.0). No per-frame uniform
+correction can fix a bimodal within-frame gauge; refine's BETA_BOUND (+-1.0)
+is anyway too small for the needed mean -0.95 log correction. This, not the
+backbone, is the dominant live depth defect (~log 0.94 of error). Fix shape:
+anchor scale on MVS-verified depth (not raw trajectories) and rescale fill
+pixels per-frame onto the pose gauge at composite build time.
+
+Backbone itself: depth SHAPE is excellent (after removing one per-frame
+scalar, p50 3.1% / p90 7.9% agreement with MVS); per-frame scale instability
+std(log) 0.239 (0.164 excl. endpoints) is real but second-order,
+content-deterministic (near-field texture-poor close-ups: the two desk
+endpoint frames hit ~6x).
+
+ROOT CAUSE 3 — band tilt under floor-gate failure (OPEN, design ready):
+gravity in the composite frame is recoverable to 3.7 deg (camera-up mean
+over 374 poses vs dominant-plane normal agree), but the axis-aligned
+fallback band is tilted 34.6 deg from gravity: 69 cm height error per meter
+traveled -- the floor crosses the ENTIRE 0.55 m band in 0.80 m of travel.
+This alone explains "floor not even consistent". The floor gate's 0.30 bar
+measures floor AREA SHARE (not reliability): walking captures give walls
+the per-pixel majority, 3-point RANSAC samples the floor with only ~63%
+probability at 0.17 share, and the camera-up prior (median of 48 pitched-down
+ups, hard 30-deg cone) measurably excluded the true floor on the raw run
+(30.95 deg). Meanwhile the loop's SfM cloud is 77% one sharp horizontal
+plane -- the floor is THERE; the estimator is the defect. Design: fuse
+camera-up prior + plane orthogonality (no floor-dominance requirement),
+falsifier on TUM scenes (needs one camera-IMU extrinsic calibration first).
+
+TENTATIVE (ruler falsifies): cameras sit 0.36 composite-m above the measured
+floor plane; at hand height 1.2-1.5 m that implies ~3.3-4.2x metric scale
+compression (consistent with scale_residual_rmse 1.344 read as log: e^1.344
+= 3.84).
+
+CAPTURE forensics (corrections to the night's own narrative): registration
+was 374/374 = 100% (the "7 unregistered" were keyframes double-counted with
+stride-8 staging); the walk was filmed 30-60 deg DOWN, floor visibility
+excellent -- capture style is NOT the floor-gate culprit on this asset;
+keyframe cap rule starves the capture ENDS (0->394 and 2310->2662 jumps =
+10x the 0.25-width budget; the ruler/loop-closure zone got only 2 degenerate
+close-ups -- selector defect, affects the ruler measurement); flow-budget
+selector has no sharpness term (4 blurred keyframes fed to the backbone in
+the dim-vinyl leg). Capture protocol draft: runs/_diag/capture_protocol_draft.md.
+
+FSD-occupancy research roadmap (prioritized, adoption-gated): P0 provenance
+hard-invariant (landed) + iPhone LiDAR/ARKit lane (user's 14 Pro: Stray
+Scanner-class apps log metric depth + poses + GRAVITY -- kills band tilt and
+scale ambiguity with measured evidence); P1 Occ3D-style three-state labels +
+per-camera visibility masks with evidential fusion; P1 backbone-native
+confidence + outlier-view rejection + cross-backbone disagreement channels;
+P2 chunked/streaming inference (VGGT-Long-class) for dense coverage; P2
+multi-pass capture as a GT-free cross-pass agreement channel; P3 external
+benchmark anchor (ScanNet++-class, eval-only); P3 student contract:
+supervise only in observed space (Occ3D visibility masks in TrainingSample).
+Forensics artifacts: runs/_diag/floor_forensics/, runs/_diag/depth_forensics/.
