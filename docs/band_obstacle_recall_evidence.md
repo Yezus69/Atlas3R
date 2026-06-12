@@ -1845,3 +1845,32 @@ family damaging labels past the margin while signals stay quiet refutes
 the bounds) and the desk/room/phone certificates. The xyz-v3 certificate
 alone already replaces "blind to drift, knife-edge margins" with measured
 margins and a measured partial detection.
+
+### Phase 22 — phone_room_loop ingestion + Codex council regression PASS + the honest demotion
+
+New first-party capture data/phone_room_loop (iPhone 14 Pro 1080p30, 88.8s
+slow-walk LOOP, start=end, 46cm metal ruler staged in-scene as a measured
+scale reference; frames extracted to 1280x720). Chain: SfM self-cal ->
+**374/381 frames ONE model, 0.535px**, f=1080.74 (FIFTH independent agreement
+with Phase-10/fragment-B reads, all within 1.6%), **loop-closure gap 0.59% of
+scene span (0.22% of 31.3-unit path)**; dense + A/B stability workspaces
+(survived a second ENOSPC -- pre-flight disk check added to run_sfm_pipeline);
+MapAnything on 48 flow-budget keyframes; pose backend 48/48; MVS verified
+fraction 0.207. Teacher verdict: **non_metric_pseudo_label, rejected for
+metric training** -- the metric anchor council (bfcdf2d) rejected ALL learned
+scale anchors on this scene (pose backend scale_residual_rmse 1.34 corroborates),
+so no scale evidence exists and the teacher says so. The 46cm ruler is the
+designed remedy (pending: user clicks ruler endpoints in the viewer ->
+measured ScaleEvidence).
+
+Codex-council REGRESSION on the four canonical tracks (pre-commit reports
+snapshotted to runs/_diag/_pre_codex_reports): geometry metrics byte-identical
+(fsc / held-out render error / dynamic leakage unchanged on all four);
+measured_metric categories preserved on the three TUM scenes; TWO designed
+changes: (1) **phone_room demoted metric_pseudo_label -> non_metric_pseudo_label**
+(council rejects all phone anchors; the learned-prior scale claim is withdrawn
+-- consistent with Phase 19's 0.337 shipped-error finding and the council's
+own GT under-coverage measurement), (2) soft-path relative scale uncertainty
+floors at the council guard 0.30 (xyz monocular candidate 0.170->0.310, desk
+0.169->0.302, room 0.295->0.300) -- blunter but covers the historic 0.337
+error that the old 0.168 band missed. Verdict: integration adopted.
