@@ -487,10 +487,15 @@ def build_robot_envelope(root: Path, run: dict[str, Any]) -> dict[str, Any]:
         env["env_override"] = run_env.get("env_override")
         for key in (
             "free_carve_margin_m",
+            "free_carve_full_column",
+            "free_carve_discipline",
+            "free_carve_unverified_margin_multiplier",
             "occupancy_support_height_m",
             "occupancy_support_min_count",
             "occupancy_support_overrides_free",
             "occupancy_close_voxels",
+            "verified_surface_min_count",
+            "gravity_consensus_alignment",
         ):
             env[key] = run_env.get(key, NOT_REPORTED)
     return env

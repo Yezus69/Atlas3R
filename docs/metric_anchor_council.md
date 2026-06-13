@@ -36,6 +36,15 @@ Measured result after excluding same-artifact self-anchors from consensus:
   self-audit and rejected on frame-scale instability 0.446, and DA3 backup
   rejected on instability 0.264, cross-view residual 0.700, and inbounds ratio
   0.015.
+- C3 added six official TUM calibration attempts through the alternate manifest
+  `config/calibration_assets.json` (not canonical tracks). Four of the six had a
+  usable independent DA3 anchor; two rejected on frame-scale instability. The
+  usable C3 additions were `calib_fr1_360`, `calib_fr1_floor`,
+  `calib_fr1_plant`, and `calib_fr2_xyz`.
+- C3 did NOT promote learned-anchor scale: only 6 measured calibration rows
+  total were usable, below the pre-registered floor of 8; raw uncertainty
+  coverage remained poor (only `calib_fr1_plant` covered among the usable C3
+  additions). Full row table: `runs/_diag/codex_c3_report.md`.
 
 Residual-monotone risk certificate:
 
@@ -47,12 +56,15 @@ Residual-monotone risk certificate:
 - The diagnostic builds a monotone envelope from measured calibration scenes:
   a target can borrow only from calibration rows whose residual risk is at least
   as hard. Outside that support, the result is `no_transfer_authority`.
-- Current calibration has only 2 usable measured rows, below the promotion floor
+- Current calibration has only 6 usable measured rows, below the promotion floor
   of 8, so the certificate status is `disabled_calibration_underpowered`.
 - Current rows: `reference_metric` risk 0.246, observed raw log-scale error
   0.303; `reference_metric_desk` risk 0.567, observed raw log-scale error
-  0.417. `reference_metric_room` and `phone_room` have no usable independent
-  anchor, so both receive `no_transfer_authority`.
+  0.417; `calib_fr1_360` risk 1.069, error 0.984; `calib_fr1_floor` risk
+  1.155, error 0.444; `calib_fr1_plant` risk 0.900, error 0.083;
+  `calib_fr2_xyz` risk 1.195, error 0.392. `reference_metric_room`,
+  `phone_room`, `calib_fr2_desk`, and `calib_fr3_long_office_household` have no
+  usable independent anchor, so they receive `no_transfer_authority`.
 
 Trainability audit:
 
