@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "purpose": "Measured TUM RGB-D calibration rows for the metric anchor council only. These are not canonical tracks and are not part of the normal evaluation gate.",
+  "tracks": [
+    {
+      "asset_id": "calib_fr1_360",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr1_360",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg1_360",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 517.306408,
+            "fy": 516.469215,
+            "cx": 318.64304,
+            "cy": 255.313989,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    },
+    {
+      "asset_id": "calib_fr1_floor",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr1_floor",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg1_floor",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 517.306408,
+            "fy": 516.469215,
+            "cx": 318.64304,
+            "cy": 255.313989,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    },
+    {
+      "asset_id": "calib_fr1_plant",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr1_plant",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg1_plant",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 517.306408,
+            "fy": 516.469215,
+            "cx": 318.64304,
+            "cy": 255.313989,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    },
+    {
+      "asset_id": "calib_fr2_xyz",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr2_xyz",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg2_xyz",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 520.9,
+            "fy": 521.0,
+            "cx": 325.1,
+            "cy": 249.7,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    },
+    {
+      "asset_id": "calib_fr2_desk",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr2_desk",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg2_desk",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 520.9,
+            "fy": 521.0,
+            "cx": 325.1,
+            "cy": 249.7,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    },
+    {
+      "asset_id": "calib_fr3_long_office_household",
+      "track_type": "reference_metric",
+      "source_uri_or_path": "data/calib_fr3_long_office_household",
+      "expected_modalities": [
+        "rgb",
+        "measured_metric_evidence"
+      ],
+      "metadata": {
+        "recommended_source": "TUM RGB-D freiburg3_long_office_household",
+        "asset_kind": "local_path",
+        "frame_glob": "rgb/*.png",
+        "metric_evidence_required_later": true,
+        "m2_reference": {
+          "format": "tum_rgbd_directory",
+          "intrinsics": {
+            "fx": 535.4,
+            "fy": 539.2,
+            "cx": 320.1,
+            "cy": 247.6,
+            "width_px": 640,
+            "height_px": 480
+          },
+          "depth_scale_to_meters": 0.0002,
+          "source_depth_convention": "optical_z",
+          "timestamp_tolerance_s": 0.02,
+          "pose_convention": "T_world_camera",
+          "pose_translation_units": "meters"
+        },
+        "license": {
+          "name": "CC BY 4.0",
+          "source": "https://cvg.cit.tum.de/data/datasets/rgbd-dataset",
+          "verified": true,
+          "verification_note": "official TUM RGB-D page states the benchmark data is licensed under Creative Commons 4.0 Attribution License (CC BY 4.0); checked 2026-06-12",
+          "attribution_required": "Sturm et al., A Benchmark for the Evaluation of RGB-D SLAM Systems, IROS 2012 (sturm12iros)"
+        }
+      }
+    }
+  ]
+}

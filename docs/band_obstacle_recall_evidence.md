@@ -2193,3 +2193,20 @@ EARNED tightness. The binding wall is now exactly one thing: METRIC-ANCHOR
 COUNCIL CALIBRATION ROWS (2 of 8 minimum) — grow with public-GT scenes so
 the council can certify sharper bands per its own pre-registered promotion
 criteria. No thresholds were touched to force emission.
+
+### Phase 33 — calibration rows 2 -> 6 usable (of 8 needed): promotion honestly withheld; the 6-row trend indicts learned-anchor confidence
+
+C3 (Codex): six TUM sequences downloaded (CC BY 4.0, ledgered in
+config/calibration_assets.json), minimal council rows built (m1/m2 measured
+packets + MapAnything candidates + independent DA3 anchors; no COLMAP/MVS
+needed for rows). Council's own criteria (floor 8, coverage, monotone
+envelope — quoted from code) decide: promotion_status
+disabled_calibration_underpowered, flag stays False, no canonical change, no
+emission attempted (no legitimate causal chain). THE TREND AT 6 ROWS:
+observed |log scale error| = {0.303, 0.417, 0.984, 0.444, 0.083, 0.392} vs
+predicted uncertainty {0.060-0.179} — 5/6 UNDER-COVERED, worst 2.7x. Two
+rows' anchors self-rejected (frame-scale instability ~0.25-0.26). If the
+trend holds at 8+, the powered conclusion is the NEGATIVE result: DA3-class
+learned metric anchors are systematically overconfident as scale evidence —
+pivoting the scale strategy toward anchor DIVERSITY (independent model
+families) + per-corpus priors rather than more of the same family.

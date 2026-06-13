@@ -7,11 +7,13 @@ only after the council estimate is produced, to check scale-error coverage.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
 import time
 import traceback
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,8 +24,10 @@ from atlas3r.geometry_adapter import (  # noqa: E402
     load_geometry_artifacts,
     load_measured_packets_from_m2,
 )
+from atlas3r.m1 import load_canonical_assets  # noqa: E402
 from atlas3r.metric_council import run_metric_anchor_council  # noqa: E402
 from atlas3r.metric_council import (  # noqa: E402
+    DEFAULT_EXTRA_ANCHORS,
     _camera_height_floor_prior_anchor,
     load_registered_pose_frames,
 )
@@ -53,25 +57,44 @@ def _consensus(report: dict) -> dict:
     return c if isinstance(c, dict) else {}
 
 
-def _scale_error(asset: str, refined) -> dict | None:
-    if asset not in MEASURED:
+def _scale_error(
+    asset: str,
+    refined,
+    *,
+    measured_assets: set[str],
+    m2_dirs: Sequence[str | Path],
+) -> dict | None:
+    if asset not in measured_assets:
         return None
-    measured, _ = load_measured_packets_from_m2(asset, ROOT)
+    last_report: dict | None = None
+    measured = []
+    loaded_dir: str | Path | None = None
+    for m2_dir in m2_dirs:
+        measured, loader_report = load_measured_packets_from_m2(asset, ROOT, m2_dir=m2_dir)
+        last_report = loader_report
+        if measured:
+            loaded_dir = m2_dir
+            break
     if not measured:
-        return {"status": "missing_measured_packets"}
+        return {"status": "missing_measured_packets", "loader_report": last_report}
     comp = T._compare_candidate_to_measured(refined, measured)
     true_scale = comp.get("estimated_scale_monocular_to_measured")
     if not isinstance(true_scale, (int, float)) or true_scale <= 0.0:
         return {"status": "true_scale_not_computable", "camera_comparison": comp}
     return {
         "status": "computed",
+        "m2_dir": str(loaded_dir),
         "true_scale_from_camera_sim3": float(true_scale),
         "camera_comparison": comp,
     }
 
 
-def _teacher_map_inputs(asset: str) -> tuple[dict | None, object | None, dict]:
-    path = ROOT / "runs/teacher" / f"{asset}_teacher_report.json"
+def _teacher_map_inputs(
+    asset: str,
+    *,
+    teacher_report_dir: str | Path = "runs/teacher",
+) -> tuple[dict | None, object | None, dict]:
+    path = ROOT / teacher_report_dir / f"{asset}_teacher_report.json"
     if not path.exists():
         return None, None, {
             "status": "missing_teacher_report",
@@ -120,9 +143,20 @@ def _teacher_map_inputs(asset: str) -> tuple[dict | None, object | None, dict]:
     }
 
 
-def _row(asset: str, split: str) -> dict:
+def _row(
+    asset: str,
+    split: str,
+    *,
+    candidate_artifacts_dir: str | Path,
+    extra_anchors: Sequence[Mapping[str, object]] | None,
+    measured_assets: set[str],
+    m2_dirs: Sequence[str | Path],
+    teacher_report_dir: str | Path,
+) -> dict:
     t0 = time.time()
-    mono, adapter = load_geometry_artifacts(asset, ROOT, artifacts_dir="external/teacher_artifacts")
+    mono, adapter = load_geometry_artifacts(
+        asset, ROOT, artifacts_dir=candidate_artifacts_dir
+    )
     if not mono:
         return {
             "asset": asset,
@@ -132,19 +166,30 @@ def _row(asset: str, split: str) -> dict:
         }
     soft = adapter.get("_scale_evidence", [])
     refined, refine_report = refine_scene(mono, fix_global_scale=bool(soft))
-    floor_report, floor_rotation, floor_status = _teacher_map_inputs(asset)
-    pose_frames, pose_status = load_registered_pose_frames(asset, ROOT)
+    floor_report, floor_rotation, floor_status = _teacher_map_inputs(
+        asset,
+        teacher_report_dir=teacher_report_dir,
+    )
+    pose_frames, pose_status = load_registered_pose_frames(
+        asset, ROOT, artifacts_dir=candidate_artifacts_dir
+    )
     evidence, council = run_metric_anchor_council(
         asset,
         refined,
         ROOT,
-        primary_artifacts_dir="external/teacher_artifacts",
+        primary_artifacts_dir=candidate_artifacts_dir,
+        extra_anchors=extra_anchors,
         floor_report=floor_report,
         registered_pose_frames=pose_frames if pose_status.get("status") == "loaded" else None,
         floor_align_rotation=floor_rotation,
     )
     posterior, posterior_report = estimate_scale_posterior(refined, evidence)
-    scale_check = _scale_error(asset, refined)
+    scale_check = _scale_error(
+        asset,
+        refined,
+        measured_assets=measured_assets,
+        m2_dirs=m2_dirs,
+    )
     cons = _consensus(council)
     scale_mean = cons.get("scale_mean")
     rel_unc = cons.get("relative_scale_uncertainty")
@@ -409,9 +454,20 @@ def _cached_true_scale(asset: str) -> tuple[float | None, dict]:
     return None, {"status": "true_scale_not_found", "path": str(path)}
 
 
-def _height_anchor_row(asset: str, split: str) -> dict:
-    floor_report, floor_rotation, floor_status = _teacher_map_inputs(asset)
-    pose_frames, pose_status = load_registered_pose_frames(asset, ROOT)
+def _height_anchor_row(
+    asset: str,
+    split: str,
+    *,
+    candidate_artifacts_dir: str | Path = "external/teacher_artifacts",
+    teacher_report_dir: str | Path = "runs/teacher",
+) -> dict:
+    floor_report, floor_rotation, floor_status = _teacher_map_inputs(
+        asset,
+        teacher_report_dir=teacher_report_dir,
+    )
+    pose_frames, pose_status = load_registered_pose_frames(
+        asset, ROOT, artifacts_dir=candidate_artifacts_dir
+    )
     anchor = _camera_height_floor_prior_anchor(
         asset,
         floor_report,
@@ -450,8 +506,20 @@ def _height_anchor_row(asset: str, split: str) -> dict:
     }
 
 
-def _height_anchor_falsifier() -> dict:
-    rows = [_height_anchor_row(asset, split) for asset, split in HEIGHT_FALSIFIER_SCENES]
+def _height_anchor_falsifier(
+    *,
+    candidate_artifacts_dir: str | Path = "external/teacher_artifacts",
+    teacher_report_dir: str | Path = "runs/teacher",
+) -> dict:
+    rows = [
+        _height_anchor_row(
+            asset,
+            split,
+            candidate_artifacts_dir=candidate_artifacts_dir,
+            teacher_report_dir=teacher_report_dir,
+        )
+        for asset, split in HEIGHT_FALSIFIER_SCENES
+    ]
     available = [
         row for row in rows
         if row.get("available")
@@ -543,9 +611,100 @@ def _write_height_anchor_markdown(report: dict) -> Path:
     return out
 
 
-def main() -> int:
-    if "--height-only" in sys.argv:
-        height_report = _height_anchor_falsifier()
+def _manifest_scenes(path: str | Path) -> tuple[tuple[str, str], ...]:
+    assets = load_canonical_assets(path, repo_root=ROOT)
+    return tuple((asset.asset_id, "calibration") for asset in assets)
+
+
+def _manifest_measured_assets(path: str | Path) -> set[str]:
+    assets = load_canonical_assets(path, repo_root=ROOT)
+    return {
+        asset.asset_id
+        for asset in assets
+        if getattr(asset.track_type, "value", str(asset.track_type)) == "reference_metric"
+    }
+
+
+def _dedupe_scenes(scenes: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for asset, split in scenes:
+        if asset in seen:
+            continue
+        seen.add(asset)
+        out.append((asset, split))
+    return tuple(out)
+
+
+def _parse_extra_anchor(raw: str) -> dict[str, object]:
+    try:
+        anchor_id, rest = raw.split("=", 1)
+    except ValueError as exc:
+        raise SystemExit(
+            "--extra-anchor must be anchor_id=artifacts_dir[:anchor_family[:license_status]]"
+        ) from exc
+    parts = rest.split(":")
+    artifacts_dir = parts[0]
+    if not anchor_id.strip() or not artifacts_dir.strip():
+        raise SystemExit("--extra-anchor requires non-empty anchor_id and artifacts_dir")
+    return {
+        "anchor_id": anchor_id.strip(),
+        "artifacts_dir": artifacts_dir.strip(),
+        "anchor_family": parts[1].strip() if len(parts) > 1 and parts[1].strip() else "learned_metric_depth",
+        "license_status": parts[2].strip() if len(parts) > 2 and parts[2].strip() else "not_certified",
+    }
+
+
+def _extra_anchor_specs(raw_values: Sequence[str]) -> tuple[Mapping[str, object], ...] | None:
+    if not raw_values:
+        return None
+    return tuple([*DEFAULT_EXTRA_ANCHORS, *(_parse_extra_anchor(v) for v in raw_values)])
+
+
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--calibration-manifest")
+    parser.add_argument(
+        "--manifest-only",
+        action="store_true",
+        help="use only --calibration-manifest scenes instead of appending to defaults",
+    )
+    parser.add_argument("--candidate-artifacts-dir", default="external/teacher_artifacts")
+    parser.add_argument("--m2-dir", default="runs/m2")
+    parser.add_argument(
+        "--m2-fallback-dir",
+        action="append",
+        default=[],
+        help="additional M2 output dir to search when measured packets are absent in --m2-dir",
+    )
+    parser.add_argument("--teacher-report-dir", default="runs/teacher")
+    parser.add_argument(
+        "--extra-anchor",
+        action="append",
+        default=[],
+        help="anchor_id=artifacts_dir[:anchor_family[:license_status]]; may be repeated",
+    )
+    parser.add_argument("--report-json", default="runs/_diag/metric_anchor_council_report.json")
+    parser.add_argument("--height-only", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    extra_anchors = _extra_anchor_specs(args.extra_anchor)
+    m2_dirs = (args.m2_dir, *tuple(args.m2_fallback_dir))
+    measured_assets = set(MEASURED)
+    scenes: list[tuple[str, str]] = [] if args.manifest_only else list(SCENES)
+    if args.calibration_manifest:
+        scenes.extend(_manifest_scenes(args.calibration_manifest))
+        measured_assets.update(_manifest_measured_assets(args.calibration_manifest))
+    scenes_tuple = _dedupe_scenes(scenes)
+
+    if args.height_only:
+        height_report = _height_anchor_falsifier(
+            candidate_artifacts_dir=args.candidate_artifacts_dir,
+            teacher_report_dir=args.teacher_report_dir,
+        )
         out = _write_height_anchor_markdown(height_report)
         print(f"[metric_anchor_council] wrote {out}")
         print(json.dumps({
@@ -556,10 +715,18 @@ def main() -> int:
         return 0
 
     rows = []
-    for asset, split in SCENES:
+    for asset, split in scenes_tuple:
         print(f"[metric_anchor_council] {asset} ({split}) ...", flush=True)
         try:
-            row = _row(asset, split)
+            row = _row(
+                asset,
+                split,
+                candidate_artifacts_dir=args.candidate_artifacts_dir,
+                extra_anchors=extra_anchors,
+                measured_assets=measured_assets,
+                m2_dirs=m2_dirs,
+                teacher_report_dir=args.teacher_report_dir,
+            )
         except Exception as exc:  # keep blockers explicit per scene
             row = {
                 "asset": asset,
@@ -580,16 +747,22 @@ def main() -> int:
     report = {
         "module": "metric_anchor_council_diagnostic",
         "recipe": {
-            "candidate_artifacts_dir": "external/teacher_artifacts",
+            "candidate_artifacts_dir": args.candidate_artifacts_dir,
+            "m2_dirs": m2_dirs,
+            "calibration_manifest": args.calibration_manifest,
             "candidate_refine": "refine_scene(fix_global_scale=bool(adapter_soft_evidence))",
             "gt_use": "post-council evaluation only, never candidate construction",
+            "extra_anchors": extra_anchors,
         },
         "rows": rows,
         "analysis": _analysis(rows),
         "scale_risk_certificate": _risk_certificate(rows),
-        "height_anchor_falsifier": _height_anchor_falsifier(),
+        "height_anchor_falsifier": _height_anchor_falsifier(
+            candidate_artifacts_dir=args.candidate_artifacts_dir,
+            teacher_report_dir=args.teacher_report_dir,
+        ),
     }
-    out = ROOT / "runs/_diag/metric_anchor_council_report.json"
+    out = ROOT / args.report_json
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     height_out = _write_height_anchor_markdown(report["height_anchor_falsifier"])
